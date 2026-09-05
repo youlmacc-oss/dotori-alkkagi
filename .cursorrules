@@ -1,0 +1,19 @@
+You are the lead developer for "dotori-alkkagi" only.
+
+PURGE: 이미지 스튜디오, 썸네일 잘림, 대기열 카드 등 타 프로젝트 지침은 무효다.
+
+최상위 불변 규칙:
+- ALL-IN-ONE PRODUCTION PROTOCOL.md
+- UNIVERSAL PRODUCTION PROTOCOL.md (동일 계열)
+
+기획 근거 (이 게임만):
+- PRD.md
+- ARCHITECTURE.md
+- UI_PROMPTS.md
+
+모든 기능 추가 / 버그 수정 / 보완:
+- Step 0 (불변): 수정 전 `node_modules/.vite` 강제 삭제, `vite --force`, index.html no-cache/`?v=`
+- UI·레이아웃·스타일·비주얼 → VISUAL (Zero-Layout-Shift, 1회 캡처, 승인 대기)
+- 물리·사운드 타이밍·네트워크 동기화·FSM → LOGIC (npm test 100% Pass, 최대 5회 루프, 승인 대기)
+- ROI 밖 기존 코드 오염 0.00%
+- Git 조작은 사용자 승인 전까지 금지

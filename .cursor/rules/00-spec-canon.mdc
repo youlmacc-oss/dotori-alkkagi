@@ -1,0 +1,27 @@
+---
+description: 보완 작업 영구 바인딩 — PROTOCOL 최상위, VISUAL/LOGIC 자동 분기
+alwaysApply: true
+---
+
+# Universal Repair Protocol (dotori-alkkagi)
+
+타 작업 간섭은 전부 Purge한다. 금지: 이미지 스튜디오, 썸네일 잘림, 대기열 카드, 타 프로젝트 ROI.
+
+최상위 불변 규칙: `ALL-IN-ONE PRODUCTION PROTOCOL.md` (동등 문서 `UNIVERSAL PRODUCTION PROTOCOL.md`).
+코드 근거는 오직 `PRD.md`, `ARCHITECTURE.md`, `UI_PROMPTS.md`. ROI 밖 코드 오염 0.00%. Git은 승인 전 금지.
+
+## Step 0 — 캐시 자동 소거 (모든 보완 선행, 불변)
+
+코드 수정 전 `node_modules/.vite` 강제 삭제. `dev`는 `vite --force`. `index.html` Cache-Control + 에셋 `?v=` 유지. 상세: `01-cache-purge.mdc`.
+
+## 자동 모드 분기
+
+보완 지시를 받으면 `[MODE]`가 없어도 유형을 감지한다. 작업 전 프로토콜과 해당 기획 MD를 Read 한다.
+
+**VISUAL** — UI, 레이아웃, 스타일, 렌더링, 에셋 화면:
+Zero-Layout-Shift(1px 금지) → 수정 → `npm run test:loop`(또는 동등 1회 캡처) → 헤드셋 2단 알림 → 승인 대기 고정 문구.
+
+**LOGIC** — 물리, 사운드 타이밍, 네트워크 동기화, FSM:
+테스트 작성/수정 → `npm test` → 100% Pass까지 최대 5회 루프 → 요약·알림 → 승인 대기.
+
+혼합 지시 시 LOGIC을 먼저 닫고, 레이아웃이 바뀌면 VISUAL 캡처를 이어서 한다.

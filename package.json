@@ -1,0 +1,35 @@
+{
+  "name": "dotori-alkkagi",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "cache:purge": "node scripts/purge-cache.js",
+    "predev": "node scripts/purge-cache.js",
+    "dev": "vite --force",
+    "prebuild": "node scripts/purge-cache.js",
+    "build": "vite build",
+    "pretest": "node scripts/purge-cache.js",
+    "test": "vitest run",
+    "pretest:loop": "node scripts/purge-cache.js",
+    "test:loop": "node scripts/loop-test.js",
+    "pretest:lobby": "node scripts/purge-cache.js",
+    "test:lobby": "node scripts/lobby-scenario.js",
+    "beep": "node scripts/headset-beep.js",
+    "beep:remind": "node scripts/headset-beep.js --remind",
+    "posttest": "node scripts/headset-beep.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "canvas-confetti": "^1.9.3",
+    "gsap": "^3.13.0",
+    "howler": "^2.2.4",
+    "matter-js": "^0.20.0",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0",
+    "vite": "^7.1.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,1112 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content, user-scalable=no" />
+    <meta name="theme-color" content="#1b0e0c" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>도토리 알까기</title>
+    <link rel="stylesheet" href="/src/style.css?v=20260906b" />
+    <style>
+      :root {
+        --hud-gold: #f4c06e;
+        --hud-dark: rgba(22, 13, 10, 0.88);
+        --hud-border: rgba(244, 192, 110, 0.35);
+      }
+      body, html {
+        margin: 0; padding: 0; width: 100%; height: 100%; height: 100svh;
+        overflow: hidden; background: #0f0705;
+        user-select: none; -webkit-user-select: none;
+      }
+      #table {
+        position: fixed; top: 0; left: 0;
+        width: var(--app-shell-w, 100%);
+        height: var(--app-shell-h, 100svh);
+        min-height: 0; box-sizing: border-box; overflow: hidden;
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        padding-left: env(safe-area-inset-left, 0px);
+        display: flex; justify-content: center; align-items: center;
+      }
+      #stage-slot {
+        width: 100%; height: 100%; display: flex; justify-content: center; align-items: center;
+      }
+      #stage {
+        position: relative; width: 100%; height: 100%; max-width: 540px;
+        overflow: hidden;
+      }
+      #board {
+        width: 100% !important; height: 100% !important; display: block;
+      }
+
+      /* 상단 HUD 대형 버튼 */
+      #stage .hud-top {
+        position: absolute;
+        top: max(16px, env(safe-area-inset-top));
+        left: var(--board-left, 12px); right: auto;
+        width: var(--board-width, calc(100% - 24px)); height: 52px;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 6px; z-index: 20; pointer-events: none;
+        padding: 0;
+      }
+      .hud-top > * { pointer-events: auto; }
+      #stage .hud-top .seat-name-far {
+        position: absolute; left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+      }
+      #stage .hud-top .acorn-wallet { margin-right: auto; }
+      #stage .hud-top .match-timer { margin-left: auto; }
+      #stage .settings-btn { display: none !important; }
+      .acorn-wallet {
+        height: 46px; padding: 0 14px; border-radius: 23px;
+        background: var(--hud-dark); border: 1.5px solid var(--hud-border);
+        display: flex; align-items: center; gap: 8px; color: #fff; font-size: 18px; font-weight: 700;
+      }
+      #stage .match-timer {
+        height: 46px; min-width: 110px; border-radius: 23px;
+        background: var(--hud-dark); border: none;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--hud-gold); font-size: 18px; font-weight: 800; padding: 0 16px;
+        position: relative; overflow: visible;
+      }
+      #stage .match-timer .timer-ring {
+        position: absolute; inset: 0; left: 0; top: 0; width: 100%; height: 100%;
+        opacity: 1; overflow: visible; pointer-events: none; z-index: 2;
+        filter: drop-shadow(0 0 4px rgba(244, 192, 110, 0.55));
+      }
+      #stage .match-timer .timer-track,
+      #stage .match-timer .timer-fill {
+        fill: none; stroke-width: 3; stroke-linecap: round;
+      }
+      #stage .match-timer .timer-track { stroke: rgba(244, 192, 110, 0.22); }
+      #stage .match-timer .timer-fill {
+        stroke: #f4c06e; stroke-dasharray: 100; stroke-dashoffset: 0;
+        transition: stroke-dashoffset 80ms linear;
+      }
+      #stage .match-timer.is-urgent .timer-fill { stroke: #ff5252; }
+      #stage .match-badge {
+        min-width: 0; height: auto; border: none; background: transparent;
+        box-shadow: none; padding: 0; position: relative; z-index: 1;
+        color: inherit; font-size: 18px; font-weight: 800;
+      }
+      #stage .hud-mode {
+        display: none !important;
+        visibility: hidden; pointer-events: none;
+      }
+      #stage .lobby-modes {
+        display: flex; gap: 6px; width: 100%; padding: 10px 16px 0;
+      }
+      #stage .lobby-mode-btn {
+        flex: 1 1 0; height: 36px; border-radius: 18px;
+        border: 1px solid rgba(244, 192, 110, 0.45);
+        background: rgba(16, 10, 8, 0.7); color: #e8c4b0;
+        font-size: 13px; font-weight: 800; cursor: pointer;
+      }
+      #stage .lobby-mode-btn.is-on {
+        border-color: #f4c06e; background: #f4c06e; color: #160d0a;
+      }
+      #stage .lobby-mode-btn.is-invite-blink {
+        animation: blink 1s step-end infinite;
+      }
+      #stage .lobby-empty {
+        padding: 20px 16px 4px;
+      }
+      #stage .lobby-pvp-hint {
+        padding: 0 16px 16px;
+        text-align: center;
+        color: #fff3c8;
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1.4;
+      }
+      #stage .pvp-guide-pick {
+        position: absolute;
+        inset: 0;
+        z-index: 4;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.45);
+        pointer-events: auto;
+      }
+      #stage .pvp-guide-pick[hidden] { display: none !important; }
+      #stage .match-start-gate {
+        position: absolute; inset: 0; z-index: 45;
+        display: block;
+        pointer-events: none;
+      }
+      #stage .match-start-gate[hidden] { display: none !important; }
+      #stage .pvp-start-hint {
+        position: absolute;
+        left: var(--board-cx, 50%);
+        top: calc(var(--board-cy, 50%) - 40px);
+        transform: translate(-50%, -100%);
+        width: max-content;
+        max-width: calc(100% - 12px);
+        padding: 8px 10px; border-radius: 14px;
+        border: 1.5px solid #f4c06e;
+        background: rgba(22, 13, 10, 0.92); color: #f4c06e;
+        font-size: min(13px, 3.15vw); font-weight: 800; text-align: center; line-height: 1.2;
+        white-space: nowrap;
+        animation: pvp-hint-blink 1s step-end infinite;
+        pointer-events: auto;
+      }
+      #stage .pvp-start-hint[hidden] { display: none !important; }
+      #stage .ready-ask-box {
+        position: absolute;
+        left: var(--board-cx, 50%);
+        top: var(--board-cy, 50%);
+        transform: translate(-50%, -50%);
+        width: max-content;
+        max-width: calc(100% - 16px);
+        padding: 16px 18px;
+        border-radius: 16px;
+        border: 1.5px solid #f4c06e;
+        background: rgba(22, 13, 10, 0.94);
+        pointer-events: auto;
+      }
+      #stage .ready-ask-box[hidden] { display: none !important; }
+      #stage .ready-ask {
+        margin: 0 0 12px;
+        color: #fff3c8;
+        font-size: min(15px, 3.6vw);
+        font-weight: 800;
+        text-align: center;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+      #stage .ready-ask-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+      }
+      #stage .ready-ask-actions button {
+        min-width: 88px;
+        height: 40px;
+        border-radius: 20px;
+        border: 1.5px solid #f4c06e;
+        background: linear-gradient(180deg, #fff3b8 0%, #d4a018 100%);
+        color: #2c1b14;
+        font-size: 15px;
+        font-weight: 900;
+        cursor: pointer;
+        pointer-events: auto;
+      }
+      @keyframes pvp-hint-blink {
+        0%, 49% { opacity: 1; }
+        50%, 100% { opacity: 0.28; }
+      }
+      #stage #match-start {
+        position: absolute;
+        left: var(--board-cx, 50%);
+        top: var(--board-cy, 50%);
+        transform: translate(-50%, -50%);
+        min-width: 160px; height: 48px; padding: 0 22px; border-radius: 24px;
+        border: 2px solid #fff6c8;
+        background: linear-gradient(180deg, #fff3b8 0%, #d4a018 100%);
+        color: #2c1b14; font-size: 18px; font-weight: 900; cursor: pointer;
+        pointer-events: auto;
+      }
+      #stage #match-start[hidden] { display: none !important; }
+      #stage #match-start:disabled {
+        opacity: 0.45; cursor: not-allowed;
+      }
+      .hud-mode-btn {
+        height: 40px; min-width: 36px; padding: 0 8px; border-radius: 20px; border: none;
+        background: transparent; color: #bbb; font-weight: 700; font-size: 13px; cursor: pointer;
+      }
+      .hud-mode-btn.is-on { background: var(--hud-gold); color: #160d0a; }
+      .settings-btn {
+        width: 46px; height: 46px; border-radius: 23px; border: 1.5px solid var(--hud-border);
+        background: var(--hud-dark); font-size: 20px; cursor: pointer; color: #fff;
+      }
+
+      /* 하단 조작계 & 전광판 */
+      .hud-bottom-zone {
+        position: absolute; bottom: 0; left: 0; right: 0;
+        display: flex; flex-direction: column; align-items: center; gap: 8px;
+        z-index: 20; pointer-events: none;
+      }
+      .hud-bottom-zone > * { pointer-events: auto; }
+      .control-panel {
+        width: calc(100% - 28px); margin-bottom: 0;
+        display: flex; align-items: center; gap: 10px;
+      }
+      #stage .power-slot {
+        flex: 1 1 auto; width: auto; max-width: none; height: 50px;
+        background: var(--hud-dark); border: 1.5px solid var(--hud-border);
+        border-radius: 25px; display: flex; flex-direction: row; align-items: center;
+        padding: 0 16px; gap: 10px;
+      }
+      #stage .power-label {
+        flex: 0 0 auto; font-size: 14px; font-weight: 900;
+        color: var(--hud-gold); letter-spacing: 1px;
+      }
+      #stage .power-track {
+        flex: 1 1 auto; width: auto; min-width: 0; align-self: center;
+        height: 14px; background: rgba(255,255,255,0.15); border-radius: 7px; overflow: hidden;
+      }
+      #stage .guide-btn { flex: 0 0 50px; width: 50px; height: 50px; }
+      #stage .power-fill {
+        display: block; width: 100%; height: 100%; max-width: 100%;
+        background: linear-gradient(90deg, #f4c06e, #e25822); border-radius: 7px;
+        transform-origin: left center; transform: scaleX(0);
+        box-shadow: none;
+      }
+      #stage .power-fill.is-charged { box-shadow: 0 0 10px rgba(244, 192, 110, 0.55); }
+      #stage .power-fill.is-hot { background: linear-gradient(90deg, #f4c06e, #ff6a1a 70%, #ff3b1a); }
+      .guide-btn {
+        width: 50px; height: 50px; border-radius: 25px; border: 1.5px solid var(--hud-border);
+        background: var(--hud-dark); font-size: 22px; cursor: pointer;
+      }
+
+      .ticker-billboard {
+        width: calc(100% - 24px); height: 38px; border-radius: 19px;
+        background: #180d0b; border: 1px solid rgba(244, 192, 110, 0.2);
+        box-shadow: inset 0 2px 6px rgba(0,0,0,0.8);
+        display: flex; align-items: center; justify-content: center;
+        margin-bottom: max(16px, env(safe-area-inset-bottom));
+        padding: 0 16px; overflow: hidden;
+      }
+      .ticker-text {
+        font-size: 13px; font-weight: 700; color: #e9b360;
+        white-space: nowrap; text-shadow: 0 0 6px rgba(233,179,96,0.6);
+      }
+      #stage .pull-block-toast {
+        position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%);
+        z-index: 40; pointer-events: none;
+        max-width: calc(100% - 48px); padding: 12px 18px;
+        border-radius: 16px; border: 1.5px solid var(--hud-border);
+        background: rgba(22, 13, 10, 0.92); color: var(--hud-gold);
+        font-size: 14px; font-weight: 800; text-align: center;
+        line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+        white-space: nowrap; width: max-content;
+      }
+      #stage .pull-block-toast[hidden] { display: none !important; }
+
+      #stage .floating-buttons {
+        position: relative; right: auto; bottom: auto; top: auto; left: auto;
+        width: auto; height: 50px;
+        display: flex; flex-direction: row; justify-content: center; align-items: center;
+        gap: 10px; z-index: 48;
+      }
+      #stage .lobby-users {
+        z-index: 50;
+        isolation: isolate;
+      }
+      #stage.is-lobby .hud-top,
+      #stage.is-lobby .hud-bottom-zone,
+      #stage.is-lobby .floating-buttons,
+      #stage.is-lobby .seat-names,
+      #stage.is-lobby .seat-watchers,
+      #stage.is-lobby .spectator-badge,
+      #stage.is-lobby .spectate-bar,
+      #stage.is-lobby .match-start-gate,
+      #stage.is-lobby #board,
+      #stage:has(#lobby-users:not([hidden])) .floating-buttons,
+      #stage:has(#lobby-users:not([hidden])) .spectate-bar {
+        visibility: hidden;
+        pointer-events: none;
+      }
+      #stage .lobby-toggle {
+        flex: 0 0 50px; width: 50px; height: 50px; border-radius: 25px;
+        background: var(--hud-dark); border: 1.5px solid var(--hud-border);
+        font-size: 20px; cursor: pointer; color: #fff;
+      }
+      #stage .lobby-leave-fab {
+        flex: 0 0 50px; width: 50px; min-width: 50px; max-width: 50px;
+        height: 50px; padding: 0; border-radius: 7px;
+        border: 1.5px solid var(--hud-border);
+        background: var(--hud-dark); color: #f4c06e;
+        font-size: 11px; font-weight: 900; cursor: pointer;
+      }
+      #stage .lobby-leave-fab[hidden] { display: none !important; }
+      #stage .surrender-fab {
+        position: relative;
+        flex: 0 0 50px; width: 50px; min-width: 50px; max-width: 50px;
+        height: 50px; padding: 0; border-radius: 7px;
+        display: flex; align-items: center; justify-content: center;
+        border: 2px solid transparent;
+        background:
+          linear-gradient(#2a100e, #2a100e) padding-box,
+          linear-gradient(135deg, #f0c878, #8a4a24 42%, #f0c878) border-box;
+        color: #e8c4b0;
+        font-size: 12px; font-weight: 900; letter-spacing: 0.04em;
+        cursor: pointer;
+        text-indent: 0;
+        text-shadow: 0 1px 0 #140806;
+        box-shadow:
+          inset 0 0 0 1px rgba(196, 122, 72, 0.35),
+          inset 0 8px 10px rgba(0, 0, 0, 0.28),
+          0 2px 0 #120806;
+      }
+      #stage .surrender-fab::before {
+        content: "";
+        position: absolute; inset: 5px;
+        border: 1px solid rgba(224, 176, 120, 0.4);
+        border-radius: 3px; pointer-events: none;
+      }
+      #stage .surrender-fab::after {
+        content: "";
+        position: absolute; left: 8px; right: 8px; top: 50%;
+        height: 1px; margin-top: -11px;
+        background: linear-gradient(90deg, transparent, rgba(224, 176, 120, 0.55), transparent);
+        pointer-events: none;
+      }
+      #stage .result-sheet {
+        width: min(420px, calc(100% - 32px)) !important;
+        max-width: calc(100% - 32px);
+        box-sizing: border-box;
+      }
+      #stage #result-again {
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        flex: 0 0 44px; height: 44px; width: 100%; border-radius: 6px;
+        white-space: nowrap;
+        border: 2px solid #fff6c8;
+        background:
+          repeating-linear-gradient(90deg, transparent 0 10px, rgba(90, 50, 8, 0.07) 10px 11px),
+          linear-gradient(180deg, #fff3b8 0%, #f0c44a 32%, #d4a018 68%, #9a6810 100%);
+        color: #2c1b14;
+        font-size: 16px; font-weight: 900; letter-spacing: 0.16em;
+        text-shadow: 0 1px 0 rgba(255, 244, 200, 0.7);
+        box-shadow:
+          inset 0 2px 0 rgba(255, 255, 230, 0.72),
+          inset 0 -3px 0 rgba(90, 50, 8, 0.28),
+          0 0 0 3px #4a2c10,
+          0 7px 16px rgba(244, 192, 110, 0.28);
+      }
+      #stage #result-again .again-acorn {
+        font-size: 15px; line-height: 1; filter: drop-shadow(0 1px 0 rgba(255, 244, 200, 0.6));
+      }
+      #stage .result-actions {
+        width: 100%; max-width: 100%; min-width: 0;
+        display: flex; flex-direction: column; gap: 10px;
+      }
+      #stage #result-exit {
+        position: relative;
+        flex: 0 0 44px; height: 44px; width: 100%; border-radius: 7px; padding: 0;
+        white-space: nowrap;
+        border: 2px solid transparent;
+        background:
+          linear-gradient(#2a100e, #2a100e) padding-box,
+          linear-gradient(135deg, #f0c878, #8a4a24 42%, #f0c878) border-box;
+        color: #e8c4b0;
+        font-size: 15px; font-weight: 900; letter-spacing: 0.18em;
+        cursor: pointer;
+        text-shadow: 0 1px 0 #140806;
+        box-shadow:
+          inset 0 0 0 1px rgba(196, 122, 72, 0.35),
+          inset 0 8px 10px rgba(0, 0, 0, 0.28),
+          0 2px 0 #120806;
+      }
+      #stage .game-exit-screen {
+        position: absolute; inset: 0; z-index: 80;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 10px;
+        background: rgba(8, 4, 3, 0.94); color: #f4c06e;
+        pointer-events: auto;
+      }
+      #stage .game-exit-screen[hidden] { display: none !important; }
+      #stage .game-exit-title { margin: 0; font-size: 22px; font-weight: 900; }
+      #stage .game-exit-sub { margin: 0; font-size: 14px; font-weight: 700; color: #e8c4b0; }
+
+      .power-ratio-panel {
+        position: absolute;
+        top: calc(max(16px, env(safe-area-inset-top)) + 58px);
+        left: 12px;
+        z-index: 22;
+        width: min(292px, calc(100% - 24px));
+        padding: 8px 10px 9px;
+        border-radius: 16px;
+        background: rgba(20, 15, 10, 0.85);
+        border: 1.5px solid rgba(244, 192, 110, 0.38);
+        box-shadow: inset 0 1px 0 rgba(255, 224, 130, 0.18), 0 8px 18px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        pointer-events: auto;
+        touch-action: manipulation;
+        color: #f4c06e;
+      }
+      .power-ratio-panel[hidden] { display: none !important; }
+      .power-ratio-label {
+        display: block;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        margin-bottom: 6px;
+      }
+      .power-ratio-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .power-ratio-btn {
+        flex: 0 0 28px;
+        width: 28px;
+        height: 28px;
+        border-radius: 14px;
+        border: 1px solid rgba(244, 192, 110, 0.45);
+        background: rgba(40, 26, 16, 0.9);
+        color: #f4c06e;
+        font-size: 16px;
+        font-weight: 800;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .power-ratio-btn:disabled { opacity: 0.35; cursor: default; }
+      #power-ratio-slider {
+        flex: 1;
+        min-width: 0;
+        height: 22px;
+        accent-color: #f4c06e;
+        touch-action: none;
+      }
+      .power-ratio-value {
+        flex: 0 0 42px;
+        text-align: right;
+        font-size: 13px;
+        font-weight: 800;
+        color: #ffe082;
+      }
+
+      #stage .seat-names {
+        position: absolute; inset: 0; z-index: 12; pointer-events: none;
+      }
+      #stage .seat-name {
+        position: absolute; left: 50%; right: auto; transform: translateX(-50%);
+        width: max-content; min-width: 0; max-width: calc(100% - 84px);
+        padding: 4px 12px;
+        border-radius: 14px; border: 1px solid rgba(244, 192, 110, 0.45);
+        background: rgba(22, 13, 10, 0.78); color: #f4c06e;
+        font-size: 13px; font-weight: 800; text-align: center;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      #stage .seat-name-far { top: calc(max(16px, env(safe-area-inset-top)) + 62px); }
+      #stage .seat-name-near {
+        top: auto;
+        bottom: max(178px, calc(100% - var(--board-bottom, 70%) - 38px));
+      }
+      #stage .seat-watchers {
+        position: absolute; left: 12px; right: 12px; transform: none;
+        top: calc(max(16px, env(safe-area-inset-top)) + 96px);
+        z-index: 13; pointer-events: none;
+        padding: 4px 10px;
+        border-radius: 12px; border: 1px solid rgba(244, 192, 110, 0.35);
+        background: rgba(22, 13, 10, 0.78); color: #e8c4b0;
+        font-size: 12px; font-weight: 800; text-align: center;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      #stage .seat-watchers[hidden] { display: none !important; }
+      #stage .spectator-badge {
+        left: 12px; right: 12px; transform: none; max-width: none;
+        top: calc(max(16px, env(safe-area-inset-top)) + 128px);
+        justify-content: center;
+      }
+      #stage .spectate-bar {
+        position: absolute; left: 12px; right: 12px; transform: none;
+        bottom: 186px; top: auto;
+        z-index: 26; display: flex; gap: 8px; pointer-events: auto;
+        justify-content: flex-start; flex-wrap: wrap;
+      }
+      #stage .spectate-bar[hidden] { display: none !important; }
+      #stage .spectate-stop,
+      #stage .spectate-leave {
+        height: 34px; padding: 0 12px; border-radius: 17px;
+        font-size: 12px; font-weight: 800; cursor: pointer;
+      }
+      #stage .spectate-stop {
+        border: 1px solid #f4c06e; background: #f4c06e; color: #160d0a;
+      }
+      #stage .spectate-leave {
+        border: 1px solid rgba(244, 192, 110, 0.5);
+        background: rgba(22, 13, 10, 0.88); color: #e8c4b0;
+      }
+      #stage.is-settings .hud-top,
+      #stage.is-settings .hud-bottom-zone,
+      #stage.is-settings .floating-buttons,
+      #stage.is-settings .spectator-badge,
+      #stage.is-settings .spectate-bar,
+      #stage.is-settings .seat-watchers,
+      #stage.is-settings .match-start-gate,
+      #stage.is-settings .seat-names,
+      #stage.is-settings .lobby-users,
+      #stage.is-settings #board {
+        visibility: hidden;
+        pointer-events: none;
+      }
+      #stage.is-settings .settings-lab-stage {
+        background: #160d0a;
+        border-radius: 16px;
+      }
+      #stage #power-ratio-panel {
+        display: none !important;
+      }
+      #stage #settings-power-ratio {
+        position: relative;
+        top: auto;
+        left: auto;
+        width: 100%;
+        max-width: none;
+        margin: 0 0 4px;
+        padding: 3px 8px;
+        flex: 0 0 auto;
+        z-index: 2;
+      }
+      #stage #settings-power-ratio .power-ratio-label {
+        font-size: 10px;
+        margin-bottom: 2px;
+        letter-spacing: 0;
+      }
+      #stage #settings-power-ratio .power-ratio-row { gap: 4px; }
+      #stage #settings-power-ratio .power-ratio-btn {
+        flex-basis: 22px;
+        width: 22px;
+        height: 22px;
+        border-radius: 11px;
+        font-size: 13px;
+      }
+      #stage #settings-power-ratio input[type="range"] { height: 16px; }
+      #stage #settings-power-ratio .power-ratio-value {
+        flex-basis: 36px;
+        font-size: 11px;
+      }
+      #stage .settings-play-toggles {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 10px;
+        flex: 0 0 auto;
+        margin: 0 0 4px;
+        padding: 4px 8px;
+        border-radius: 12px;
+        background: rgba(20, 15, 10, 0.85);
+        border: 1.5px solid rgba(244, 192, 110, 0.38);
+        box-shadow: inset 0 1px 0 rgba(255, 224, 130, 0.18);
+        color: #f4c06e;
+        pointer-events: auto;
+        box-sizing: border-box;
+      }
+      #stage .settings-check {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex: 1 1 148px;
+        min-width: 0;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      #stage .settings-check input {
+        width: 15px;
+        height: 15px;
+        margin: 0;
+        flex: 0 0 15px;
+        accent-color: #f4c06e;
+      }
+
+      .board-tone-panel {
+        position: relative;
+        flex: 0 0 auto;
+        width: auto;
+        max-width: calc(100% - 20px);
+        margin: 6px 10px 0;
+        padding: 5px 10px 6px;
+        border-radius: 16px;
+        background: rgba(20, 15, 10, 0.85);
+        border: 1.5px solid rgba(244, 192, 110, 0.38);
+        box-shadow: inset 0 1px 0 rgba(255, 224, 130, 0.18);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        pointer-events: auto;
+        touch-action: manipulation;
+        color: #f4c06e;
+        box-sizing: border-box;
+      }
+      .board-tone-panel[hidden] { display: none !important; }
+      .board-tone-top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .board-tone-top .power-ratio-label { margin: 0; flex: 0 0 auto; }
+      .board-tone-top .color-chips { flex: 1; justify-content: flex-start; margin: 0; gap: 6px; }
+      .board-tone-panel .color-chip { width: 22px; height: 22px; }
+      .board-tone-top .color-reset {
+        height: 24px;
+        margin: 0;
+        padding: 0 10px;
+        border-radius: 12px;
+        font-size: 11px;
+        width: auto;
+      }
+      .board-tone-sliders {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 2px;
+      }
+      .board-tone-panel .slider-row {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #f4c06e;
+        font-size: 11px;
+        font-weight: 800;
+        margin: 0;
+        min-width: 0;
+      }
+      .board-tone-panel .slider-row input {
+        flex: 1;
+        min-width: 0;
+        height: 20px;
+        accent-color: #f4c06e;
+        touch-action: none;
+      }
+      #settings-mute {
+        flex: 0 0 auto;
+        height: 24px;
+        margin: 0;
+        padding: 0 8px;
+        min-width: 44px;
+      }
+
+      #stage .settings-modal[hidden] { display: none !important; }
+      #stage .settings-modal {
+        z-index: 60;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: stretch;
+        padding: 0;
+        background: rgba(12, 7, 5, 0.42);
+        pointer-events: none;
+      }
+      #stage .settings-bar,
+      #stage .board-tone-panel,
+      #stage .settings-play-toggles,
+      #stage .settings-dock { pointer-events: auto; }
+      #stage .settings-bar {
+        flex: 0 0 52px;
+        height: 52px;
+        margin: max(10px, env(safe-area-inset-top)) 10px 0;
+        padding: 0 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 26px;
+        background: rgba(20, 15, 10, 0.9);
+        border: 1.5px solid rgba(244, 192, 110, 0.38);
+      }
+      #stage .settings-bar h2 { flex: 1; font-size: 17px; color: #f4c06e; }
+      #stage .settings-x,
+      #stage .settings-apply {
+        flex: 0 0 72px;
+        width: 72px;
+        height: 40px;
+        border-radius: 20px;
+        font-size: 15px;
+        font-weight: 800;
+      }
+      #stage .settings-lab {
+        flex: 1 1 0;
+        min-height: 0;
+        margin: 4px 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        pointer-events: auto;
+      }
+      #stage .settings-lab-stage {
+        flex: 1 1 0;
+        min-height: 0;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #stage .settings-board-wrap {
+        position: relative;
+        flex: 0 0 auto;
+        width: min(100%, 52vh);
+        height: min(100%, 52vh);
+      }
+      #stage .settings-lab-caption {
+        position: relative;
+        flex: 0 0 auto;
+        margin: 0 0 4px;
+        font-size: 11px;
+        font-weight: 800;
+        color: #ffe082;
+        text-align: center;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+        pointer-events: none;
+      }
+      #stage .formation-preview {
+        display: block !important;
+        width: 100%;
+        height: 100%;
+        max-width: none;
+        border: 1.5px solid rgba(244, 192, 110, 0.5);
+        border-radius: 14px;
+        background: #2c1b14;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+      }
+      #stage .formation-status {
+        position: relative;
+        flex: 0 0 auto;
+        min-height: 16px;
+        margin: 4px 0 0;
+        font-size: 11px;
+        font-weight: 700;
+        color: #f4c06e;
+        text-align: center;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+        pointer-events: none;
+      }
+      #stage .settings-dock {
+        flex: 0 0 auto;
+        margin: 0 10px max(10px, env(safe-area-inset-bottom));
+        padding: 6px 8px 8px;
+        border-radius: 16px;
+        background: rgba(20, 15, 10, 0.9);
+        border: 1.5px solid rgba(244, 192, 110, 0.38);
+        max-height: none;
+        overflow: visible;
+      }
+      #stage .settings-dock .settings-block { padding: 4px 4px 2px; gap: 4px; border: none; }
+      #stage .settings-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #stage .settings-row[hidden] { display: none !important; }
+      #stage .settings-row-label {
+        flex: 0 0 40px;
+        font-size: 11px;
+        font-weight: 800;
+        color: #f4c06e;
+        letter-spacing: -0.02em;
+      }
+      #stage .settings-row > div { flex: 1; min-width: 0; gap: 4px; }
+      #stage .settings-dock .formation-tab,
+      #stage .settings-dock .formation-chip,
+      #stage .settings-dock .formation-shape,
+      #stage .settings-dock .settings-guide,
+      #stage .settings-dock .formation-load,
+      #stage .settings-dock .surrender-slot {
+        height: 28px;
+        min-height: 28px;
+        border-radius: 14px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      #stage .settings-dock-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin: 0;
+      }
+      @media (max-height: 740px) {
+        #stage .settings-bar { flex-basis: 46px; height: 46px; }
+        #stage .settings-dock { padding: 4px 6px 6px; }
+        #stage .settings-dock .formation-tab,
+        #stage .settings-dock .formation-chip,
+        #stage .settings-dock .formation-shape,
+        #stage .settings-dock .settings-guide,
+        #stage .settings-dock .formation-load {
+          height: 26px;
+          min-height: 26px;
+          font-size: 11px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="table">
+      <div id="stage-slot">
+        <div id="stage">
+          <canvas id="board" aria-label="알까기 바둑판"></canvas>
+
+          <!-- 상단 HUD -->
+          <header class="hud-top" aria-label="상단 상태">
+            <div class="acorn-wallet" id="acorn-wallet">
+              <span class="acorn-icon" aria-hidden="true">🌰</span>
+              <span class="acorn-count" id="acorn-count">10</span>
+            </div>
+            <div class="seat-name seat-name-far" id="seat-name-white"></div>
+            <div class="match-timer" id="match-timer">
+              <svg class="timer-ring" viewBox="0 0 120 46" preserveAspectRatio="none" aria-hidden="true">
+                <rect class="timer-track" x="1.75" y="1.75" width="116.5" height="42.5" rx="21.25" pathLength="100" />
+                <rect class="timer-fill" id="timer-ring" x="1.75" y="1.75" width="116.5" height="42.5" rx="21.25" pathLength="100" />
+              </svg>
+              <div class="match-badge" id="match-badge">흑 턴 15</div>
+            </div>
+
+            <div class="hud-mode" id="hud-mode">
+              <button type="button" class="hud-mode-btn" data-mode="solo">1인</button>
+              <button type="button" class="hud-mode-btn is-on" data-mode="ai">AI</button>
+              <button type="button" class="hud-mode-btn" data-mode="pvp">1:1</button>
+            </div>
+
+            <button type="button" class="settings-btn" id="settings-btn" hidden aria-hidden="true" tabindex="-1" aria-label="설정">⚙️</button>
+          </header>
+
+          <div class="seat-names" id="seat-names" aria-label="대국 닉네임">
+            <div class="seat-name seat-name-near" id="seat-name-black"></div>
+          </div>
+
+          <div class="match-start-gate" id="match-start-gate" hidden>
+            <p class="pvp-start-hint" id="pvp-start-hint" hidden>도토리가 적은 사람이 시작 버튼을 누르고 선공합니다.</p>
+            <div class="ready-ask-box" id="ready-ask-box" hidden>
+              <p class="ready-ask" id="ready-ask">바둑돌을 재배치 하시겠습니까?</p>
+              <div class="ready-ask-actions">
+                <button type="button" id="ready-ask-yes">예</button>
+                <button type="button" id="ready-ask-no">아니오</button>
+              </div>
+            </div>
+            <button type="button" id="match-start" hidden aria-label="시작">시작</button>
+          </div>
+          <div class="pull-block-toast" id="pull-block-toast" hidden role="status">붙어 있는 돌 방향으로는 당길 수 없습니다.</div>
+          <div class="tutorial-coach" id="tutorial-coach" hidden>
+            <div class="tutorial-coach-card">
+              <p class="tutorial-kicker">튜토리얼</p>
+              <p class="tutorial-title" id="tutorial-title">1. 알 잡기</p>
+              <p class="tutorial-text" id="tutorial-text">아래쪽 검은 알을 손가락으로 누르세요.</p>
+              <div class="tutorial-actions">
+                <button type="button" id="tutorial-skip">건너뛰기</button>
+                <button type="button" id="tutorial-finish" hidden>가이드로</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="spectator-badge" id="spectator-badge" hidden>
+            <span class="spectator-icon">🔴</span>
+            <span class="spectator-text">실시간 관전 중 (Player A vs Player B)</span>
+          </div>
+          <div class="spectate-bar" id="spectate-bar" hidden>
+            <button type="button" class="spectate-stop" id="spectate-stop">관람 종료</button>
+            <button type="button" class="spectate-leave" id="spectate-leave">게임방 나가기</button>
+          </div>
+          <div class="seat-watchers" id="seat-watchers" hidden></div>
+
+          <!-- 하단 영역 & 전광판 -->
+          <div class="hud-bottom-zone">
+            <div class="floating-buttons">
+              <button type="button" class="surrender-fab" id="surrender-btn" aria-label="기권">기권</button>
+              <button type="button" class="lobby-leave-fab" id="lobby-leave" aria-label="대기방">대기방</button>
+              <button type="button" class="guide-btn is-on" id="guide-btn" aria-label="조준선" title="조준선" aria-pressed="true">🎯</button>
+            </div>
+            <div class="control-panel">
+              <div class="power-slot">
+                <span class="power-label">POWER</span>
+                <div class="power-track">
+                  <div class="power-fill" id="power-fill"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="ticker-billboard">
+              <span class="ticker-text" id="ticker-billboard-text">READY: 바둑알을 뒤로 당겨 튕겨내세요!</span>
+            </div>
+          </div>
+
+          <!-- 설정 모달 (FormationModal 필수 DOM 완비) -->
+          <section class="settings-modal" id="settings-modal" hidden aria-label="설정">
+            <header class="settings-bar">
+              <button type="button" class="settings-x" id="settings-close" aria-label="닫기">✕</button>
+              <h2>설정</h2>
+              <button type="button" class="settings-apply" id="settings-apply">저장</button>
+            </header>
+
+            <aside id="board-tone-panel" class="board-tone-panel" aria-label="바둑판 톤">
+              <div class="board-tone-top">
+                <span class="power-ratio-label">바둑판 톤</span>
+                <div class="color-chips" id="board-color-chips">
+                  <button type="button" class="color-chip is-on" data-hex="#f1bf70" data-preset="kaya" aria-label="비자나무" style="background:#f1bf70"></button>
+                  <button type="button" class="color-chip" data-hex="#3A2B20" data-preset="ebony" aria-label="흑단" style="background:#3A2B20"></button>
+                  <button type="button" class="color-chip" data-hex="#2A4849" data-preset="jade" aria-label="청옥" style="background:#2A4849"></button>
+                  <button type="button" class="color-chip" data-hex="#DFD3C3" data-preset="maple" aria-label="메이플" style="background:#DFD3C3"></button>
+                </div>
+                <button type="button" class="color-reset" id="board-color-reset">기본값</button>
+              </div>
+              <div class="board-tone-sliders">
+                <label class="slider-row">색조
+                  <input id="board-hue" type="range" min="-40" max="40" value="0" />
+                </label>
+                <label class="slider-row">밝기
+                  <input id="board-bright" type="range" min="65" max="135" value="100" />
+                </label>
+                <label class="slider-row" id="settings-volume-row">♪
+                  <input id="settings-volume" type="range" min="0" max="100" value="80" />
+                  <button type="button" class="color-reset" id="settings-mute" aria-pressed="false">소리</button>
+                </label>
+              </div>
+            </aside>
+
+            <div class="settings-lab">
+              <div class="settings-play-toggles" id="settings-play-toggles">
+                <label class="settings-check" for="settings-action-cam">
+                  <input id="settings-action-cam" type="checkbox" checked />
+                  <span>액션캠 사용여부</span>
+                </label>
+                <label class="settings-check" for="settings-rearrange-ask">
+                  <input id="settings-rearrange-ask" type="checkbox" checked />
+                  <span>게임시작전 재배치 사용여부</span>
+                </label>
+              </div>
+              <aside id="settings-power-ratio" class="power-ratio-panel" aria-label="발사 감도 배율">
+                <span class="power-ratio-label">발사 감도</span>
+                <div class="power-ratio-row">
+                  <button type="button" data-power-dec class="power-ratio-btn" aria-label="감소">[-]</button>
+                  <input type="range" min="1.0" max="6.0" step="0.1" value="3.8" />
+                  <button type="button" data-power-inc class="power-ratio-btn" aria-label="증가">[+]</button>
+                  <span class="power-ratio-value">3.8x</span>
+                </div>
+              </aside>
+              <span class="settings-lab-caption">설정 바둑판 · 진형 미리보기 · 돌을 당겨 발사 테스트</span>
+              <div class="settings-lab-stage">
+                <div class="settings-board-wrap">
+                  <canvas id="formation-preview" class="formation-preview" width="360" height="360" aria-label="설정용 바둑판"></canvas>
+                </div>
+              </div>
+              <p class="formation-status" id="formation-status">진형을 고르면 이 판에 바로 보입니다</p>
+            </div>
+
+            <div class="settings-dock">
+              <section class="settings-block">
+                <div class="settings-row">
+                  <span class="settings-row-label">대전</span>
+                  <div class="mode-tabs" id="mode-tabs">
+                    <button type="button" class="formation-tab" data-mode="solo" title="혼자서 흑·백 번갈아">1인</button>
+                    <button type="button" class="formation-tab is-on" data-mode="ai" title="컴퓨터와 연습">AI 연습</button>
+                    <button type="button" class="formation-tab" data-mode="pvp" title="사람끼리 맞대결">1:1 대전</button>
+                  </div>
+                </div>
+                <div class="settings-row" id="ai-diff-chips">
+                  <span class="settings-row-label">난이도</span>
+                  <div class="diff-chips">
+                    <button type="button" class="formation-chip" data-diff="beginner" title="쉬운 AI">초급</button>
+                    <button type="button" class="formation-chip is-on" data-diff="intermediate" title="보통 AI">중급</button>
+                    <button type="button" class="formation-chip" data-diff="expert" title="강한 AI">고급</button>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-row-label">돌 수</span>
+                  <div class="formation-chips">
+                    <button type="button" class="formation-chip" data-count="3" title="한쪽 3알">3알</button>
+                    <button type="button" class="formation-chip is-on" data-count="5" title="한쪽 5알">5알</button>
+                    <button type="button" class="formation-chip" data-count="7" title="한쪽 7알">7알</button>
+                    <button type="button" class="formation-chip" data-count="9" title="한쪽 9알">9알</button>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-row-label">진형</span>
+                  <div class="formation-shapes" id="formation-shapes"></div>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-row-label">배치</span>
+                  <div class="formation-tabs">
+                    <button type="button" class="formation-tab is-on" data-tab="preset" title="누를 때마다 임의 배치">프리셋</button>
+                    <button type="button" class="formation-tab" data-tab="custom" title="둘째 선에 직접 놓기">직접 놓기</button>
+                    <button type="button" class="formation-tab" data-tab="mine" title="돌을 자유롭게 옮기기">내 진형</button>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-row-label">조작</span>
+                  <div class="settings-dock-row">
+                    <button type="button" class="settings-guide is-on" id="settings-guide" aria-pressed="true" title="조준선 표시">조준선</button>
+                    <button type="button" class="formation-load" id="formation-save" title="선택한 배치 유형에 저장">진형 저장</button>
+                    <button type="button" class="formation-load" id="formation-load" title="선택한 배치 유형의 마지막 진형">진형 열기</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <!-- 결과 모달 -->
+          <section class="result-modal" id="result-modal" hidden aria-label="승패">
+            <div class="result-sheet">
+              <p class="result-title" id="result-title">승리!</p>
+              <p class="result-sub" id="result-sub"></p>
+              <div class="result-actions">
+                <button type="button" class="settings-apply result-again" id="result-again"><span class="again-acorn" aria-hidden="true">🌰</span>한 판 더</button>
+                <button type="button" class="result-exit" id="result-exit" aria-label="대기실">대기실</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="game-exit-screen" id="game-exit-screen" hidden aria-label="게임 종료">
+            <p class="game-exit-title">게임이 종료되었습니다</p>
+            <p class="game-exit-sub">창을 닫아 주세요</p>
+          </section>
+
+          <section class="lobby-users" id="lobby-users" hidden>
+            <div class="lobby-overlay" id="lobby-overlay"></div>
+            <div class="lobby-panel" id="lobby-panel">
+              <header class="lobby-header">
+                <button type="button" class="lobby-title" id="lobby-book-open" aria-label="안내와 점검">👥 대국 방 (<span id="user-count">0</span>/10)</button>
+                <button type="button" class="lobby-close" id="lobby-settings" aria-label="설정">⚙️</button>
+                <button type="button" class="lobby-close" id="lobby-close">✕</button>
+              </header>
+              <div class="lobby-modes" id="lobby-modes" aria-label="대전 모드">
+                <button type="button" class="lobby-mode-btn" id="lobby-mode-solo" data-mode="solo">1인</button>
+                <button type="button" class="lobby-mode-btn is-on" id="lobby-mode-ai" data-mode="ai">AI</button>
+                <button type="button" class="lobby-mode-btn" id="lobby-mode-pvp" data-mode="pvp">1:1</button>
+              </div>
+              <div class="lobby-nick">
+                <label class="lobby-nick-label" for="lobby-nick-input">닉네임</label>
+                <input id="lobby-nick-input" class="lobby-nick-input" type="text" maxlength="5" autocomplete="off" spellcheck="false" aria-describedby="lobby-nick-hint" />
+                <button type="button" class="lobby-nick-save" id="lobby-nick-save" aria-label="닉네임 저장">저장</button>
+                <span class="lobby-nick-hint" id="lobby-nick-hint">닉네임은 5글자 이내</span>
+                <button type="button" class="lobby-location-guide" id="lobby-location-guide" aria-label="안내와 점검">1인 연습 · AI 대국 · 1:1은 상대가 와야 시작</button>
+              </div>
+              <div class="lobby-book-bar" id="lobby-book-bar">
+                <button type="button" class="lobby-book-bar-btn" id="lobby-book-bar-guide">가이드북</button>
+                <button type="button" class="lobby-book-bar-btn" id="lobby-book-bar-clinic">점검</button>
+              </div>
+              <div class="lobby-list" id="lobby-list"></div>
+              <footer class="lobby-footer">
+                <button type="button" class="lobby-exit" id="lobby-exit" aria-label="게임종료">게임종료</button>
+              </footer>
+            </div>
+            <div class="pvp-guide-pick" id="pvp-guide-pick" hidden>
+              <div class="pvp-guide-card">
+                <p class="pvp-guide-ask" id="pvp-guide-ask">가이드선을 사용하시겠습니까?</p>
+                <div class="pvp-guide-actions">
+                  <button type="button" id="pvp-guide-on">사용</button>
+                  <button type="button" id="pvp-guide-off">미사용</button>
+                  <button type="button" id="pvp-guide-cancel">취소</button>
+                </div>
+              </div>
+            </div>
+            <div class="lobby-book" id="lobby-book" hidden>
+              <header class="book-top">
+                <div class="book-tabs" role="tablist">
+                  <button type="button" class="book-tab is-on" id="lobby-book-tab-guide" role="tab">안내</button>
+                  <button type="button" class="book-tab" id="lobby-book-tab-clinic" role="tab">점검</button>
+                </div>
+                <button type="button" class="lobby-close" id="lobby-book-close" aria-label="닫기">✕</button>
+              </header>
+              <div class="book-body" id="lobby-book-body"></div>
+              <footer class="book-nav" id="lobby-book-nav">
+                <button type="button" class="book-nav-btn" id="lobby-book-prev">이전</button>
+                <div class="book-dots" id="lobby-book-dots"></div>
+                <button type="button" class="book-nav-btn" id="lobby-book-next">다음</button>
+              </footer>
+              <button type="button" class="book-tutorial-btn is-dock" id="lobby-book-tutorial">튜토리얼 시작</button>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js?v=20260906b"></script>
+  </body>
+</html>

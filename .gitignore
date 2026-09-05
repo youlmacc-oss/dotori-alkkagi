@@ -1,0 +1,12 @@
+node_modules
+dist
+.DS_Store
+*.log
+coverage
+.vite
+.env
+.env.*
+!.env.example
+.vercel
+.supabase
+public/test-result.png

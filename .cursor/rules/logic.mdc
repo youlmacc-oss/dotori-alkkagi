@@ -1,0 +1,15 @@
+---
+description: LOGIC 보완 — 물리/네트워크/AI/테스트 시 PRD·ARCHITECTURE 우선
+globs: src/physics/**,src/network/**,src/ai/**,tests/**
+alwaysApply: false
+---
+
+# LOGIC 경로
+
+이 파일을 만질 때는 `PRD.md`와 `ARCHITECTURE.md`를 연 뒤 구현한다.
+
+- 가상 뷰포트 720×1280, Matter.js, 흑·백 5알, 슬링샷, 낙사, 턴 FSM
+- 충돌 상대 속도 → `SoundEngine.playClashByVelocity(velocity)` 만 사용
+- 채널 10 / Presence 락, AI는 로컬 Worker (서버 트래픽 0)
+- 자유 채팅 없음. 협상은 버튼 프리셋만
+- `npm test` 물리 테스트는 깨지지 않게 유지

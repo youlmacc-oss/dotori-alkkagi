@@ -1,0 +1,476 @@
+import { describe, test, expect, beforeEach } from 'vitest';
+import { PHASE, GAME_MODE, GameEngine, STONE_COLOR } from '../src/physics/GameEngine.js';
+import { RealtimeManager, MockSupabaseClient } from '../src/network/RealtimeManager.js';
+import { roomsFromPresence } from '../src/network/LobbyRooms.js';
+
+describe('관전 모드 (Spectator Mode)', () => {
+  let engine;
+
+  beforeEach(() => {
+    engine = new GameEngine({ autoStart: false });
+  });
+
+  test('관전 모드 진입 시 SPECTATING 페이즈로 전환', () => {
+    const spectatorData = {
+      matchId: 'test_match_001',
+      playerA: '호치',
+      playerB: '달이'
+    };
+
+    engine.enterSpectatorMode(spectatorData);
+
+    expect(engine.phase).toBe(PHASE.SPECTATING);
+    expect(engine.gameMode).toBe(GAME_MODE.SPECTATE);
+    expect(engine.inputLocked).toBe(true);
+    expect(engine.spectatorData).toEqual(spectatorData);
+  });
+
+  test('관전 모드에서 사용자 입력 차단', () => {
+    engine.enterSpectatorMode({
+      matchId: 'test_match_001',
+      playerA: '호치',
+      playerB: '달이'
+    });
+
+    // 관전 모드에서는 입력이 차단되어야 함
+    expect(engine.isHumanInputBlocked()).toBe(true);
+
+    // 포인터 다운 이벤트가 처리되지 않아야 함
+    const mockEvent = {
+      preventDefault: () => {},
+      clientX: 360,
+      clientY: 400
+    };
+
+    // 관전 모드에서는 IDLE 상태가 아니므로 포인터 이벤트가 무시됨
+    expect(engine.phase).toBe(PHASE.SPECTATING);
+    expect(engine.aim).toBeNull();
+  });
+
+  test('관전 모드 종료 시 정상 모드로 복귀', () => {
+    engine.enterSpectatorMode({
+      matchId: 'test_match_001',
+      playerA: '호치',
+      playerB: '달이'
+    });
+
+    engine.exitSpectatorMode();
+
+    expect(engine.phase).toBe(PHASE.IDLE);
+    expect(engine.gameMode).toBe(GAME_MODE.AI);
+    expect(engine.inputLocked).toBe(false);
+    expect(engine.spectatorData).toBeNull();
+  });
+
+  test('관전 중에도 AI/1인 모드로 바로 연습할 수 있다', () => {
+    engine.enterSpectatorMode({
+      matchId: 'test_match_001',
+      playerA: '호치',
+      playerB: '달이',
+    });
+    engine.setMatchConfig({ mode: GAME_MODE.SOLO });
+    expect(engine.phase).toBe(PHASE.IDLE);
+    expect(engine.gameMode).toBe(GAME_MODE.SOLO);
+    expect(engine.inputLocked).toBe(false);
+    expect(engine.spectatorData).toBeNull();
+    expect(engine.isHumanInputBlocked()).toBe(false);
+
+    engine.enterSpectatorMode({
+      matchId: 'test_match_002',
+      playerA: '호치',
+      playerB: '달이',
+    });
+    engine.setMatchConfig({ mode: GAME_MODE.AI });
+    expect(engine.gameMode).toBe(GAME_MODE.AI);
+    expect(engine.phase).toBe(PHASE.IDLE);
+    expect(engine.spectatorData).toBeNull();
+  });
+
+  test('관전 중 게임 상태 업데이트', () => {
+    engine.enterSpectatorMode({
+      matchId: 'test_match_001',
+      playerA: '호치',
+      playerB: '달이'
+    });
+
+    const mockGameState = {
+      phase: PHASE.RESOLVING,
+      currentTurn: STONE_COLOR.WHITE,
+      turnRemainingMs: 10000,
+      stones: [
+        {
+          position: { x: 100, y: 200 },
+          velocity: { x: 5, y: -3 },
+          fallen: false
+        },
+        {
+          position: { x: 200, y: 300 },
+          velocity: { x: 0, y: 0 },
+          fallen: false
+        }
+      ]
+    };
+
+    engine.updateSpectatorState(mockGameState);
+
+    // 관전자는 항상 SPECTATING 페이즈를 유지해야 함
+    expect(engine.phase).toBe(PHASE.SPECTATING);
+    expect(engine.currentTurn).toBe(STONE_COLOR.WHITE);
+    expect(engine.turnRemainingMs).toBe(10000);
+  });
+
+  test('관전 모드가 아닐 때 spectator 업데이트 무시', () => {
+    // 일반 모드에서는 spectator 업데이트가 무시되어야 함
+    const originalPhase = engine.phase;
+    const originalTurn = engine.currentTurn;
+
+    engine.updateSpectatorState({
+      phase: PHASE.RESOLVING,
+      currentTurn: STONE_COLOR.WHITE,
+      turnRemainingMs: 5000
+    });
+
+    expect(engine.phase).toBe(originalPhase);
+    expect(engine.currentTurn).toBe(originalTurn);
+  });
+});
+
+describe('대기실 접속자 관리 (Lobby Presence)', () => {
+  let realtimeManager;
+  let mockClient;
+  let presenceUpdates;
+  let userJoins;
+  let userLeaves;
+
+  beforeEach(async () => {
+    mockClient = new MockSupabaseClient();
+    presenceUpdates = [];
+    userJoins = [];
+    userLeaves = [];
+    
+    realtimeManager = new RealtimeManager({
+      supabaseClient: mockClient,
+      channelName: 'test-lobby',
+      userId: 'test_user_001',
+      userNickname: '호치',
+      userCharacter: '🐶',
+      onPresenceUpdate: (users) => {
+        presenceUpdates.push([...users]);
+      },
+      onUserJoin: (user) => {
+        userJoins.push(user);
+      },
+      onUserLeave: (user) => {
+        userLeaves.push(user);
+      }
+    });
+
+    await realtimeManager.connect();
+  });
+
+  test('닉네임을 안 주면 접속 순으로 도토리N을 받는다', async () => {
+    const client = new MockSupabaseClient();
+    const first = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'nick-order',
+      userId: 'n1',
+    });
+    const second = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'nick-order',
+      userId: 'n2',
+    });
+    expect(await first.connect()).toBe('SUBSCRIBED');
+    expect(first.userNickname).toBe('도토리1');
+    expect(first.seat).toBe(1);
+    const store = new Map();
+    const night = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => { store.set(k, String(v)); },
+      removeItem: (k) => { store.delete(k); },
+    };
+    const saved = new RealtimeManager({
+      supabaseClient: new MockSupabaseClient(),
+      channelName: 'nick-reload',
+      userId: 'n-reload',
+      nicknameStorage: night,
+    });
+    expect(await saved.connect()).toBe('SUBSCRIBED');
+    expect(saved.userNickname).toBe('도토리1');
+    const again = new RealtimeManager({
+      supabaseClient: new MockSupabaseClient(),
+      channelName: 'nick-reload-2',
+      userId: 'n-reload',
+      nicknameStorage: night,
+    });
+    expect(await again.connect()).toBe('SUBSCRIBED');
+    expect(again.userNickname).toBe('도토리1');
+    expect(await second.connect()).toBe('SUBSCRIBED');
+    expect(second.userNickname).toBe('도토리2');
+    expect(second.seat).toBe(2);
+  });
+
+  test('저장된 임의 닉네임은 5글자 이내만 쓰고 좌석은 유지한다', async () => {
+    const store = new Map();
+    const storage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => { store.set(k, String(v)); },
+      removeItem: (k) => { store.delete(k); },
+    };
+    const client = new MockSupabaseClient();
+    const player = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'nick-custom',
+      userId: 'n3',
+      nicknameStorage: storage,
+    });
+    const tooLong = player.setDisplayNickname('가나다라마바');
+    expect(tooLong.ok).toBe(false);
+    expect(tooLong.nickname).toBe('가나다라마');
+    expect(player.userNickname).toBe('가나다라마');
+    const named = player.setDisplayNickname('달이');
+    expect(named.ok).toBe(true);
+    expect(player.userNickname).toBe('달이');
+    expect(await player.connect()).toBe('SUBSCRIBED');
+    expect(player.userNickname).toBe('달이');
+    expect(player.seat).toBe(1);
+    expect(storage.getItem('dotori-alkkagi-nickname')).toBe('달이');
+    const locked = player.setDisplayNickname('호치');
+    expect(locked.ok).toBe(false);
+    expect(locked.locked).toBe(true);
+    expect(player.userNickname).toBe('달이');
+  });
+
+  test('자신의 Presence 추적', async () => {
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    expect(presenceUpdates.length).toBeGreaterThan(0);
+    const lastUpdate = presenceUpdates[presenceUpdates.length - 1];
+    expect(lastUpdate.length).toBe(1);
+    expect(lastUpdate[0].userId).toBe('test_user_001');
+    expect(lastUpdate[0].nickname).toBe('호치');
+    expect(lastUpdate[0].character).toBe('🐶');
+  });
+
+  test('다른 사용자 Presence 상태 확인', () => {
+    const users = Array.from(realtimeManager.onlineUsers.values());
+    expect(users.length).toBe(1);
+    expect(users[0].userId).toBe('test_user_001');
+  });
+
+  test('연결 해제 시 Presence 정리', async () => {
+    await realtimeManager.disconnect();
+    
+    expect(realtimeManager.isConnected).toBe(false);
+    expect(realtimeManager.onlineUsers.size).toBe(0);
+  });
+
+  test('Presence에 게임방 상태를 올린다', async () => {
+    const ok = await realtimeManager.updatePresence({
+      status: 'playing',
+      mode: 'solo',
+      roomId: 'room_test_user_001',
+    });
+    expect(ok).toBe(true);
+    const me = realtimeManager.onlineUsers.get('test_user_001');
+    expect(me.status).toBe('playing');
+    expect(me.mode).toBe('solo');
+    expect(me.roomId).toBe('room_test_user_001');
+  });
+
+  test('같은 채널의 다른 클라이언트가 서로의 방을 본다', async () => {
+    const client = new MockSupabaseClient();
+    const seenByB = [];
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'shared-lobby',
+      userId: 'host_a',
+      userNickname: '호치',
+    });
+    const guest = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'shared-lobby',
+      userId: 'guest_b',
+      userNickname: '달이',
+      onPresenceUpdate: (users) => { seenByB.push([...users]); },
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    expect(await guest.connect()).toBe('SUBSCRIBED');
+    await host.updatePresence({ status: 'playing', mode: 'solo', roomId: 'room_host_a' });
+    await guest.updatePresence({ status: 'playing', mode: 'ai', roomId: 'room_guest_b' });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const rooms = roomsFromPresence(seenByB.at(-1));
+    expect(rooms).toHaveLength(2);
+    expect(rooms.map((r) => r.mode).sort()).toEqual(['ai', 'solo']);
+  });
+
+  test('9명이 대국 중이면 10번째는 입장하고 11번째는 거절된다', async () => {
+    const client = new MockSupabaseClient();
+    const channel = client.channel('cap-step');
+    for (let i = 0; i < 9; i += 1) {
+      await channel.track({
+        userId: `seat_${i}`,
+        nickname: `유저${i}`,
+        status: 'playing',
+        mode: ['solo', 'ai', 'pvp'][i % 3],
+        roomId: `room_seat_${i}`,
+      });
+    }
+    const tenth = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'cap-step',
+      userId: 'seat_9',
+      userNickname: '열번째',
+    });
+    expect(await tenth.connect()).toBe('SUBSCRIBED');
+    const eleventh = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'cap-step',
+      userId: 'seat_10',
+      userNickname: '열한번째',
+    });
+    expect(await eleventh.connect()).toBe('FULL');
+    expect(eleventh.isConnected).toBe(false);
+    expect(tenth.isConnected).toBe(true);
+  });
+
+  test('정원이 차 있어도 기존 유저는 다시 들어온다', async () => {
+    const client = new MockSupabaseClient();
+    const channel = client.channel('rejoin-lobby');
+    for (let i = 0; i < 10; i += 1) {
+      await channel.track({
+        userId: `old_${i}`,
+        nickname: `유저${i}`,
+        status: 'playing',
+        mode: 'pvp',
+        roomId: `room_old_${i}`,
+      });
+    }
+    const again = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'rejoin-lobby',
+      userId: 'old_3',
+      userNickname: '기존',
+    });
+    expect(await again.connect()).toBe('SUBSCRIBED');
+    expect(again.isConnected).toBe(true);
+  });
+
+  test('원격 유저가 나가면 방 목록에서 빠진다', async () => {
+    const client = new MockSupabaseClient();
+    const channel = client.channel('leave-lobby');
+    const seen = [];
+    const watcher = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'leave-lobby',
+      userId: 'watch_1',
+      userNickname: '감시',
+      onPresenceUpdate: (users) => { seen.push([...users]); },
+    });
+    expect(await watcher.connect()).toBe('SUBSCRIBED');
+    await channel.track({
+      userId: 'gone_1',
+      nickname: '금동이',
+      status: 'playing',
+      mode: 'solo',
+      roomId: 'room_gone_1',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(roomsFromPresence(seen.at(-1)).some((r) => r.hostId === 'gone_1')).toBe(true);
+    await channel.untrack('gone_1');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(roomsFromPresence(seen.at(-1)).some((r) => r.hostId === 'gone_1')).toBe(false);
+  });
+
+  test('대기실이 10명이면 신규 입장을 거부한다', async () => {
+    const fullClient = new MockSupabaseClient();
+    const channel = fullClient.channel('full-lobby');
+    for (let i = 0; i < 10; i += 1) {
+      await channel.track({
+        userId: `full_${i}`,
+        nickname: `유저${i}`,
+        status: 'playing',
+        mode: i % 2 ? 'ai' : 'solo',
+        roomId: `room_full_${i}`,
+      });
+    }
+    const blocked = new RealtimeManager({
+      supabaseClient: fullClient,
+      channelName: 'full-lobby',
+      userId: 'full_11',
+      userNickname: '열한번째',
+    });
+    const status = await blocked.connect();
+    expect(status).toBe('FULL');
+    expect(blocked.isConnected).toBe(false);
+  });
+});
+
+describe('관전 데이터 브로드캐스트', () => {
+  let realtimeManager;
+  let mockClient;
+  let spectatorUpdates;
+
+  beforeEach(async () => {
+    mockClient = new MockSupabaseClient();
+    spectatorUpdates = [];
+    
+    realtimeManager = new RealtimeManager({
+      supabaseClient: mockClient,
+      channelName: 'test-match',
+      userId: 'spectator_001',
+      userNickname: '관전자',
+      onSpectatorData: (gameState) => {
+        spectatorUpdates.push(gameState);
+      }
+    });
+
+    await realtimeManager.connect();
+  });
+
+  test('게임 상태 브로드캐스트', async () => {
+    const gameState = {
+      matchId: 'match_001',
+      phase: PHASE.RESOLVING,
+      currentTurn: STONE_COLOR.BLACK,
+      turnRemainingMs: 12000,
+      stones: [
+        {
+          id: 'stone_1',
+          body: { 
+            position: { x: 100, y: 200 },
+            velocity: { x: 2, y: -1 }
+          },
+          fallen: false,
+          color: STONE_COLOR.BLACK
+        }
+      ],
+      winner: null
+    };
+
+    const result = await realtimeManager.broadcastSpectatorData(gameState);
+    expect(result).toBe(true);
+
+    // Mock 환경에서 브로드캐스트 수신 확인
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(spectatorUpdates.length).toBe(1);
+    
+    const received = spectatorUpdates[0];
+    expect(received.matchId).toBe('match_001');
+    expect(received.phase).toBe(PHASE.RESOLVING);
+    expect(received.currentTurn).toBe(STONE_COLOR.BLACK);
+    expect(received.stones.length).toBe(1);
+    expect(received.stones[0].position).toEqual({ x: 100, y: 200 });
+  });
+
+  test('연결되지 않은 상태에서 브로드캐스트 실패', async () => {
+    await realtimeManager.disconnect();
+    
+    const result = await realtimeManager.broadcastSpectatorData({
+      matchId: 'test',
+      phase: PHASE.IDLE
+    });
+    
+    expect(result).toBe(false);
+  });
+});

@@ -1,0 +1,14 @@
+---
+description: AUDIO 보완 — Howler·충돌음·햅틱 시 PRD 3.6·ARCHITECTURE 사운드 우선
+globs: src/audio/**
+alwaysApply: false
+---
+
+# AUDIO 경로
+
+이 파일을 만질 때는 `PRD.md` §3.6과 `ARCHITECTURE.md` 사운드/햅틱 절을 연다.
+
+- 엔트리: `playClashByVelocity(velocity)` 만. GameEngine이 V_rel을 넘긴다
+- Howler 스프라이트: hit_light / hit_medium / hit_heavy
+- intensity = clamp(V_rel / 25, 0.1, 1.0), 볼륨·피치 동적 변조
+- 강타 시 `navigator.vibrate` (ARCHITECTURE의 intensity × 45)

@@ -1,0 +1,15 @@
+---
+description: VISUAL 보완 — UI·에셋 시 UI_PROMPTS·PRD 시각 규격 우선
+globs: src/ui/**,public/**,index.html,**/*.css,**/*.html
+alwaysApply: false
+---
+
+# VISUAL 경로
+
+이 파일을 만질 때는 `UI_PROMPTS.md`와 `PRD.md`의 시각/반응형 절을 연다.
+
+- 테마: Modern Neo-Traditional (옻칠 원목 + 3D 질감)
+- 토큰: 월넛 `#2C1B14`, 비자나무 `#E8C382`, 골드 `#FFD13B`, 앰버 `#C87A38`
+- 720×1280 고정 + Safe-Area, 여백은 pillarbox 원목 테이블
+- 화면: 대기실, 정형 협상 모달, 인게임 슬링샷, 2-Step 기권
+- 에셋 프롬프트(보드, 도토리 코인, 아바타)는 `UI_PROMPTS.md`를 소스 오브 트루스로 쓴다

@@ -1,0 +1,204 @@
+import { describe, expect, it } from 'vitest';
+import {
+  LOBBY_CAP,
+  canAdmitUser,
+  isPlayableLobbyMode,
+  mergeSelfPresence,
+  presenceFromMatch,
+  openRoomCount,
+  roomTitle,
+  roomsFromPresence,
+  canJoinPvpRoom,
+  lobbyGuideLine,
+  lobbyPvpWaitGuide,
+  presenceStatusLabel,
+  roomStatusLabel,
+  userStatusLabel,
+  watcherLine,
+  watchersForRoom,
+  LOBBY_MODE_HINT,
+  PVP_WAIT_GUIDE,
+  PVP_WAIT_ROOM_HINT,
+} from '../src/network/LobbyRooms.js';
+import { defaultGameModeForLobbyCount, GAME_MODE } from '../src/physics/GameEngine.js';
+
+function user(id, extra = {}) {
+  return {
+    userId: id,
+    nickname: extra.nickname ?? id,
+    character: '🐶',
+    status: extra.status ?? 'playing',
+    mode: extra.mode ?? 'ai',
+    roomId: extra.roomId ?? `room_${id}`,
+  };
+}
+
+describe('대기실 게임방', () => {
+  it('1인·AI·1:1은 모두 방 개설로 본다', () => {
+    expect(isPlayableLobbyMode(GAME_MODE.SOLO)).toBe(true);
+    expect(isPlayableLobbyMode(GAME_MODE.AI)).toBe(true);
+    expect(isPlayableLobbyMode(GAME_MODE.PVP)).toBe(true);
+    expect(isPlayableLobbyMode(GAME_MODE.SPECTATE)).toBe(false);
+
+    const rooms = roomsFromPresence([
+      user('a', { mode: 'solo', nickname: '호치' }),
+      user('b', { mode: 'ai', nickname: '달이' }),
+      user('c', { mode: 'pvp', nickname: '금동이' }),
+      user('d', { status: 'lobby', mode: null, roomId: null }),
+    ]);
+    expect(rooms).toHaveLength(3);
+    expect(rooms.map((r) => r.mode).sort()).toEqual(['ai', 'pvp', 'solo']);
+    expect(roomTitle(rooms.find((r) => r.mode === 'solo'))).toBe('호치 · 1인');
+    expect(roomTitle(rooms.find((r) => r.mode === 'ai'))).toBe('달이 · AI');
+    expect(roomTitle(rooms.find((r) => r.mode === 'pvp'))).toBe('금동이 · 1:1');
+    expect(rooms.find((r) => r.mode === 'pvp').status).toBe('waiting');
+    expect(roomStatusLabel(rooms.find((r) => r.mode === 'pvp'))).toBe(PVP_WAIT_ROOM_HINT);
+    expect(lobbyPvpWaitGuide(rooms)).toBe(PVP_WAIT_GUIDE);
+    expect(PVP_WAIT_GUIDE).toContain('게이머를 기다리');
+    expect(canJoinPvpRoom(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(true);
+    expect(canJoinPvpRoom(rooms.find((r) => r.mode === 'pvp'), 'c')).toBe(false);
+    expect(presenceStatusLabel(user('c', { mode: 'pvp', nickname: '금동이' }), rooms)).toBe('상대 대기');
+  });
+
+  it('접속 10명까지 모드 제한 없이 각자 방을 연다', () => {
+    const modes = ['solo', 'ai', 'pvp'];
+    const users = Array.from({ length: LOBBY_CAP }, (_, i) => user(`u${i}`, {
+      mode: modes[i % 3],
+      nickname: `유저${i}`,
+    }));
+    const rooms = roomsFromPresence(users);
+    expect(rooms).toHaveLength(10);
+    expect(rooms.filter((r) => r.mode === 'solo')).toHaveLength(4);
+    expect(rooms.filter((r) => r.mode === 'ai')).toHaveLength(3);
+    expect(rooms.filter((r) => r.mode === 'pvp')).toHaveLength(3);
+  });
+
+  it('같은 roomId의 1:1은 한 방으로 묶는다', () => {
+    const rooms = roomsFromPresence([
+      user('a', { mode: 'pvp', nickname: '호치', roomId: 'room_pvp_1' }),
+      user('b', { mode: 'pvp', nickname: '달이', roomId: 'room_pvp_1' }),
+    ]);
+    expect(rooms).toHaveLength(1);
+    expect(roomTitle(rooms[0])).toBe('호치 vs 달이');
+    expect(rooms[0].status).toBe('playing');
+    expect(roomStatusLabel(rooms[0])).toBe('대국 중');
+    expect(canJoinPvpRoom(rooms[0], 'guest')).toBe(false);
+    expect(lobbyPvpWaitGuide(rooms)).toBe('');
+    expect(lobbyGuideLine(rooms, '접속된 게이머의 위치는 항상 공개됩니다')).toEqual({
+      text: '접속된 게이머의 위치는 항상 공개됩니다',
+      blink: false,
+    });
+  });
+
+  it('방 없을 때는 모드 한 줄을 쓰고, 1:1 대기면 점멸 안내가 우선한다', () => {
+    expect(LOBBY_MODE_HINT).toContain('1인');
+    expect(LOBBY_MODE_HINT).toContain('AI');
+    expect(LOBBY_MODE_HINT).toContain('1:1');
+    expect(lobbyGuideLine([], '위치')).toEqual({ text: LOBBY_MODE_HINT, blink: false });
+    expect(lobbyGuideLine(null, '위치')).toEqual({ text: LOBBY_MODE_HINT, blink: false });
+    const waiting = roomsFromPresence([
+      user('c', { mode: 'pvp', nickname: '금동이' }),
+    ]);
+    expect(lobbyGuideLine(waiting, '위치')).toEqual({ text: PVP_WAIT_GUIDE, blink: true });
+  });
+
+  it('대기·관전은 방을 열지 않는다', () => {
+    expect(roomsFromPresence([
+      user('a', { status: 'lobby', mode: null }),
+      user('b', { status: 'spectating', mode: 'ai' }),
+    ])).toHaveLength(0);
+    expect(userStatusLabel('playing')).toBe('대국 중');
+    expect(userStatusLabel('spectating')).toBe('관전 중');
+    expect(userStatusLabel('lobby')).toBe('대기중');
+    expect(openRoomCount([
+      user('a', { status: 'lobby', mode: null, roomId: null }),
+    ])).toBe(0);
+  });
+
+  it('presenceFromMatch는 플레이 모드를 방 상태로 올린다', () => {
+    expect(presenceFromMatch({
+      userId: 'u1', nickname: '호치', mode: 'solo', phase: 'idle',
+    })).toMatchObject({ status: 'playing', mode: 'solo', roomId: 'room_u1' });
+    expect(presenceFromMatch({
+      userId: 'u1', mode: 'ai', phase: 'spectating',
+    })).toMatchObject({ status: 'spectating', mode: null, roomId: null });
+    expect(presenceFromMatch({
+      userId: 'u2', nickname: '달이', phase: 'spectating', watchRoomId: 'room_a',
+    })).toMatchObject({ status: 'spectating', roomId: 'room_a' });
+    expect(presenceFromMatch({
+      userId: 'u1', mode: 'ai', phase: 'idle', inRoom: false,
+    })).toMatchObject({ status: 'lobby', mode: null, roomId: null });
+    expect(presenceFromMatch({
+      userId: 'u1', mode: 'pvp', phase: 'idle', rearranging: true,
+    }).rearranging).toBe(true);
+  });
+
+  it('관람자가 들어오면 그 대전 방에 닉네임이 붙는다', () => {
+    const users = [
+      user('a', { mode: 'ai', nickname: '호치', roomId: 'room_a' }),
+      {
+        userId: 'b', nickname: '달이', status: 'spectating', mode: null, roomId: 'room_a',
+      },
+      {
+        userId: 'c', nickname: '금동', status: 'spectating', mode: null, roomId: 'room_other',
+      },
+    ];
+    const rooms = roomsFromPresence(users);
+    expect(rooms).toHaveLength(1);
+    expect(watchersForRoom(users, 'room_a').map((w) => w.nickname)).toEqual(['달이']);
+    expect(rooms[0].watchers.map((w) => w.nickname)).toEqual(['달이']);
+    expect(watcherLine(rooms[0].watchers)).toBe('관람 달이');
+  });
+
+  it('정원 10명을 넘기면 신규 입장만 막는다', () => {
+    const ten = Array.from({ length: 10 }, (_, i) => user(`u${i}`));
+    expect(canAdmitUser(ten, 'u0')).toBe(true);
+    expect(canAdmitUser(ten, 'u10')).toBe(false);
+    expect(canAdmitUser(ten.slice(0, 9), 'u9')).toBe(true);
+  });
+
+  it('모드를 바꿔도 자기 방 제목만 갱신한다', () => {
+    let list = mergeSelfPresence([], presenceFromMatch({
+      userId: 'u1', nickname: '호치', mode: 'ai', phase: 'idle',
+    }));
+    expect(roomTitle(roomsFromPresence(list)[0])).toBe('호치 · AI');
+    list = mergeSelfPresence(list, presenceFromMatch({
+      userId: 'u1', nickname: '호치', mode: 'solo', phase: 'idle',
+    }));
+    expect(roomsFromPresence(list)).toHaveLength(1);
+    expect(roomTitle(roomsFromPresence(list)[0])).toBe('호치 · 1인');
+    list = mergeSelfPresence(list, presenceFromMatch({
+      userId: 'u1', nickname: '호치', mode: 'pvp', phase: 'idle',
+    }));
+    expect(roomTitle(roomsFromPresence(list)[0])).toBe('호치 · 1:1');
+  });
+
+  it('조준·진행·종료 중에도 방은 유지되고 관전만 접는다', () => {
+    for (const phase of ['idle', 'aiming', 'resolving', 'gameOver']) {
+      const row = presenceFromMatch({ userId: 'u1', nickname: '호치', mode: 'pvp', phase });
+      expect(row.status).toBe('playing');
+      expect(roomsFromPresence([row])).toHaveLength(1);
+    }
+    expect(roomsFromPresence([
+      presenceFromMatch({ userId: 'u1', mode: 'ai', phase: 'spectating' }),
+    ])).toHaveLength(0);
+  });
+
+  it('한 명이 나가면 그 방만 사라지고 나머지는 유지된다', () => {
+    const users = Array.from({ length: 10 }, (_, i) => user(`u${i}`, {
+      mode: ['solo', 'ai', 'pvp'][i % 3],
+      nickname: `유저${i}`,
+    }));
+    const left = users.filter((u) => u.userId !== 'u4');
+    const rooms = roomsFromPresence(left);
+    expect(rooms).toHaveLength(9);
+    expect(rooms.some((r) => r.hostId === 'u4')).toBe(false);
+    expect(rooms.some((r) => r.hostId === 'u0')).toBe(true);
+  });
+
+  it('접속 10명이어도 모드를 1:1로 강제하지 않는다', () => {
+    expect(defaultGameModeForLobbyCount(10)).toBeNull();
+    expect(defaultGameModeForLobbyCount(2)).toBeNull();
+    expect(defaultGameModeForLobbyCount(1)).toBe(GAME_MODE.AI);
+  });
+});

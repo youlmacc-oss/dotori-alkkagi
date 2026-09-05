@@ -1,0 +1,403 @@
+/**
+ * Supabase Realtime 연동 관리자
+ * 관전 데이터 브로드캐스트와 Presence 관리를 담당한다.
+ */
+
+import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser } from './LobbyRooms.js';
+import {
+  defaultNickname,
+  NICKNAME_LOCKED_HINT,
+  nextSeat,
+  readStoredNickname,
+  sanitizeNickname,
+  writeStoredNickname,
+} from './Nickname.js';
+import { parseAcorn } from './AcornPolicy.js';
+
+export const LOBBY_CHANNEL = 'dotori-lobby';
+
+export function lobbyChannelConfig(userId) {
+  return {
+    config: {
+      broadcast: { ack: false, self: false },
+      presence: { key: String(userId || 'anon') },
+    },
+  };
+}
+
+export class RealtimeManager {
+  constructor(options = {}) {
+    this.supabaseClient = options.supabaseClient;
+    this.channelName = options.channelName || LOBBY_CHANNEL;
+    this.userId = options.userId || `user_${Date.now()}`;
+    this._fixedNickname = Object.prototype.hasOwnProperty.call(options, 'userNickname');
+    this.userNickname = this._fixedNickname ? (options.userNickname || '익명') : '';
+    this.userCharacter = options.userCharacter || '🐶';
+    this.seat = options.seat ?? null;
+    this.nicknameStorage = options.nicknameStorage ?? globalThis.sessionStorage;
+    this.lobbyCap = options.lobbyCap ?? LOBBY_CAP;
+    this.presence = {
+      status: PRESENCE_STATUS.LOBBY,
+      mode: null,
+      roomId: null,
+    };
+    
+    this.channel = null;
+    this.isConnected = false;
+    this.onlineUsers = new Map();
+    this._listeners = new Map();
+    this._lobbyFull = false;
+    
+    // 콜백 함수들
+    this.onPresenceUpdate = options.onPresenceUpdate || (() => {});
+    this.onSpectatorData = options.onSpectatorData || (() => {});
+    this.onUserJoin = options.onUserJoin || (() => {});
+    this.onUserLeave = options.onUserLeave || (() => {});
+    this.onLobbyFull = options.onLobbyFull || (() => {});
+  }
+
+  _presenceUsers() {
+    return Array.from(this.onlineUsers.values());
+  }
+
+  canAdmitSelf() {
+    const state = this.channel?.presenceState?.() || {};
+    const listed = Object.values(state).map((row) => row[0]).filter(Boolean);
+    const pool = listed.length ? listed : this._presenceUsers();
+    return canAdmitUser(pool, this.userId, this.lobbyCap);
+  }
+
+  /**
+   * Realtime 연결을 시작한다.
+   */
+  async connect() {
+    if (!this.supabaseClient || this.isConnected) return this.isConnected ? 'SUBSCRIBED' : undefined;
+
+    try {
+      this._lobbyFull = false;
+      this.channel = this.supabaseClient
+        .channel(this.channelName, lobbyChannelConfig(this.userId))
+        .on('presence', { event: 'sync' }, () => {
+          this._handlePresenceSync();
+        })
+        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+          this._handlePresenceJoin(key, newPresences);
+        })
+        .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+          this._handlePresenceLeave(key, leftPresences);
+        })
+        .on('broadcast', { event: 'spectator_update' }, ({ payload }) => {
+          this._handleSpectatorUpdate(payload);
+        });
+
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('realtime timeout')), 8000);
+        this.channel.subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            this._handlePresenceSync();
+            if (!this.canAdmitSelf()) {
+              this._lobbyFull = true;
+              clearTimeout(timer);
+              resolve('FULL');
+              return;
+            }
+            this.assignJoinIdentity(this._presenceUsers());
+            await this._trackPresence();
+            this.isConnected = true;
+            this.emit('connected');
+            clearTimeout(timer);
+            resolve('SUBSCRIBED');
+            return;
+          }
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            clearTimeout(timer);
+            reject(new Error(status));
+          }
+        });
+      });
+
+      if (this._lobbyFull) {
+        if (this.channel) {
+          await this.channel.unsubscribe();
+          this.channel = null;
+        }
+        this.isConnected = false;
+        this.emit('lobbyFull');
+        this.onLobbyFull();
+        return 'FULL';
+      }
+
+      return 'SUBSCRIBED';
+    } catch (error) {
+      console.error('Realtime 연결 실패:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Realtime 연결을 종료한다.
+   */
+  async disconnect() {
+    if (this.channel) {
+      await this.channel.unsubscribe();
+      this.channel = null;
+    }
+    this.isConnected = false;
+    this.onlineUsers.clear();
+    this.emit('disconnected');
+  }
+
+  /**
+   * 관전 데이터를 브로드캐스트한다.
+   */
+  async broadcastSpectatorData(gameState) {
+    if (!this.isConnected || !this.channel || !gameState) return false;
+
+    const spectatorUpdate = {
+      matchId: gameState.matchId || `match_${Date.now()}`,
+      timestamp: Date.now(),
+      phase: gameState.phase,
+      currentTurn: gameState.currentTurn,
+      turnRemainingMs: gameState.turnRemainingMs,
+      stones: gameState.stones?.map(stone => ({
+        id: stone.id,
+        position: stone.body ? { x: stone.body.position.x, y: stone.body.position.y } : stone.position,
+        velocity: stone.body ? stone.body.velocity : { x: 0, y: 0 },
+        fallen: stone.fallen,
+        color: stone.color
+      })) || [],
+      winner: gameState.winner
+    };
+
+    try {
+      await this.channel.send({
+        type: 'broadcast',
+        event: 'spectator_update',
+        payload: spectatorUpdate
+      });
+      return true;
+    } catch (error) {
+      console.error('관전 데이터 브로드캐스트 실패:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 현재 사용자의 Presence를 추적한다.
+   */
+  assignJoinIdentity(users) {
+    const others = (users || []).filter((u) => u.userId !== this.userId);
+    this.seat = this.seat || nextSeat(others) || 1;
+    const fallback = defaultNickname(this.seat);
+    if (this._fixedNickname) {
+      if (!this.userNickname) this.userNickname = fallback;
+      return this.userNickname;
+    }
+    const stored = readStoredNickname(this.nicknameStorage);
+    const result = sanitizeNickname(stored, fallback);
+    this.userNickname = result.nickname;
+    writeStoredNickname(this.userNickname, this.nicknameStorage);
+    return this.userNickname;
+  }
+
+  setDisplayNickname(raw) {
+    if (this.isConnected) {
+      return {
+        ok: false,
+        locked: true,
+        nickname: this.userNickname || defaultNickname(this.seat || 1),
+        custom: false,
+        hint: NICKNAME_LOCKED_HINT,
+      };
+    }
+    const fallback = defaultNickname(this.seat || 1);
+    const result = sanitizeNickname(raw, fallback);
+    this.userNickname = result.nickname;
+    writeStoredNickname(result.custom ? result.nickname : '', this.nicknameStorage);
+    if (this.isConnected) {
+      this.updatePresence({ nickname: this.userNickname, seat: this.seat });
+    }
+    return result;
+  }
+
+  async _trackPresence() {
+    if (!this.channel) return;
+
+    const presenceData = {
+      userId: this.userId,
+      nickname: this.userNickname,
+      character: this.userCharacter,
+      seat: this.seat,
+      status: this.presence.status ?? PRESENCE_STATUS.LOBBY,
+      mode: this.presence.mode ?? null,
+      roomId: this.presence.roomId ?? null,
+      acorns: parseAcorn(this.presence.acorns),
+      rearranging: Boolean(this.presence.rearranging),
+      joinedAt: this.presence.joinedAt ?? Date.now(),
+    };
+
+    await this.channel.track(presenceData);
+  }
+
+  async updatePresence(patch = {}) {
+    this.presence = { ...this.presence, ...patch };
+    if (patch.nickname != null) this.userNickname = patch.nickname;
+    if (patch.seat != null) this.seat = patch.seat;
+    if (!this.channel || !this.isConnected) return false;
+    await this._trackPresence();
+    return true;
+  }
+
+  /**
+   * Presence 동기화를 처리한다.
+   */
+  _handlePresenceSync() {
+    const presenceState = this.channel.presenceState();
+    this.onlineUsers.clear();
+
+    Object.keys(presenceState).forEach(userId => {
+      const presence = presenceState[userId][0];
+      this.onlineUsers.set(userId, presence);
+    });
+
+    const users = Array.from(this.onlineUsers.values());
+    this.onPresenceUpdate(users);
+  }
+
+  /**
+   * 사용자 입장을 처리한다.
+   */
+  _handlePresenceJoin(key, newPresences) {
+    newPresences.forEach(presence => {
+      this.onlineUsers.set(presence.userId, presence);
+      this.onUserJoin(presence);
+    });
+
+    const users = Array.from(this.onlineUsers.values());
+    this.onPresenceUpdate(users);
+  }
+
+  /**
+   * 사용자 퇴장을 처리한다.
+   */
+  _handlePresenceLeave(key, leftPresences) {
+    leftPresences.forEach(presence => {
+      this.onlineUsers.delete(presence.userId);
+      this.onUserLeave(presence);
+    });
+
+    const users = Array.from(this.onlineUsers.values());
+    this.onPresenceUpdate(users);
+  }
+
+  /**
+   * 관전 데이터를 처리한다.
+   */
+  _handleSpectatorUpdate(payload) {
+    this.onSpectatorData(payload);
+  }
+
+  /**
+   * 이벤트 리스너를 추가한다.
+   */
+  on(event, callback) {
+    if (!this._listeners.has(event)) {
+      this._listeners.set(event, []);
+    }
+    this._listeners.get(event).push(callback);
+  }
+
+  /**
+   * 이벤트를 발생시킨다.
+   */
+  emit(event, data) {
+    const callbacks = this._listeners.get(event) || [];
+    callbacks.forEach(callback => callback(data));
+  }
+}
+
+// 임시 Mock 클라이언트 (실제 Supabase 없이 테스트용)
+export class MockSupabaseClient {
+  constructor() {
+    this.channels = new Map();
+  }
+
+  channel(name) {
+    if (!this.channels.has(name)) {
+      this.channels.set(name, new MockChannel(name));
+    }
+    return this.channels.get(name);
+  }
+}
+
+class MockChannel {
+  constructor(name) {
+    this.name = name;
+    this.listeners = new Map();
+    this._presenceState = new Map();
+    this.isSubscribed = false;
+  }
+
+  on(type, filter, callback) {
+    const key = `${type}:${filter.event || 'default'}`;
+    if (!this.listeners.has(key)) {
+      this.listeners.set(key, []);
+    }
+    this.listeners.get(key).push(callback);
+    return this;
+  }
+
+  async subscribe(callback) {
+    this._subs = (this._subs || 0) + 1;
+    this.isSubscribed = true;
+    setTimeout(() => callback('SUBSCRIBED'), 10);
+    return 'SUBSCRIBED';
+  }
+
+  async unsubscribe() {
+    this._subs = Math.max(0, (this._subs || 1) - 1);
+    if (this._subs === 0) {
+      this.isSubscribed = false;
+      this.listeners.clear();
+      this._presenceState.clear();
+    }
+  }
+
+  async track(data) {
+    this._presenceState.set(data.userId, [data]);
+    this._emitPresence('sync');
+    return data;
+  }
+
+  async untrack(userId) {
+    this._presenceState.delete(userId);
+    this._emitPresence('sync');
+  }
+
+  async send({ type, event, payload }) {
+    // Mock 브로드캐스트 - 실제로는 다른 클라이언트에게 전달됨
+    setTimeout(() => {
+      this._emitBroadcast(event, payload);
+    }, 50);
+  }
+
+  presenceState() {
+    const state = {};
+    this._presenceState.forEach((presences, userId) => {
+      state[userId] = presences;
+    });
+    return state;
+  }
+
+  _emitPresence(event) {
+    const key = `presence:${event}`;
+    const callbacks = this.listeners.get(key) || [];
+    callbacks.forEach(callback => callback());
+  }
+
+  _emitBroadcast(event, payload) {
+    const key = `broadcast:${event}`;
+    const callbacks = this.listeners.get(key) || [];
+    callbacks.forEach(callback => callback({ payload }));
+  }
+}

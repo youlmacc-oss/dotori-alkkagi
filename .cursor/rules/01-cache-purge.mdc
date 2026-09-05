@@ -1,0 +1,15 @@
+---
+description: VISUAL/LOGIC 보완 전 Step 0 — Vite/브라우저 캐시 자동 소거 (불변)
+alwaysApply: true
+---
+
+# Step 0 — Auto Cache Purge (불변)
+
+모든 `[VISUAL]` / `[LOGIC]` 보완의 **첫 전제**. 코드 수정·빌드·캡처·테스트 전에 반드시 실행한다.
+
+1. `node_modules/.vite`를 강제 삭제한다 (`scripts/purge-cache.js` 또는 `npm run cache:purge`).
+2. `package.json`의 `dev`는 항상 `vite --force`를 유지한다.
+3. `index.html`은 Cache-Control(`no-cache, no-store, must-revalidate`) 메타와 CSS/JS `?v=` 쿼리를 유지한다.
+4. `npm run test:loop` / Vite 서버는 `force: true`로 이전 트랜스폼 캐시를 쓰지 않는다.
+
+금지: 캐시 소거 없이 화면 검증이나 `npm test`를 시작하는 것.
