@@ -772,7 +772,7 @@ body {
 .pvp-guide-pick {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 60;
   display: flex;
   align-items: center;
   justify-content: center;

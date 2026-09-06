@@ -24,6 +24,7 @@ import {
   lobbyInviteAsk,
   presenceInvitePayload,
   shouldOpenPresenceInvite,
+  sentInviteFields,
   shouldRepublishOpenRoom,
   LOBBY_INVITE_SENT,
   LOBBY_INVITE_BTN,
@@ -149,6 +150,14 @@ describe('대기실 1:1 안내', () => {
     expect(lobbyInviteAsk('도토리1')).toContain('도토리1');
     expect(LOBBY_INVITE_SENT).toContain('초대');
     expect(LOBBY_INVITE_BTN).toContain('초대');
+    expect(sentInviteFields({
+      inRoom: true, started: false, mode: 'pvp', hasOpponent: false,
+      sent: { inviteTargetId: 'guest', inviteAt: 9 },
+    })).toEqual({ inviteTargetId: 'guest', inviteAt: 9 });
+    expect(sentInviteFields({
+      inRoom: true, started: false, mode: 'pvp', hasOpponent: true,
+      sent: { inviteTargetId: 'guest', inviteAt: 9 },
+    })).toEqual({ inviteTargetId: null, inviteAt: null });
     expect(shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp' })).toBe(true);
     expect(shouldRepublishOpenRoom({ inRoom: true, mode: 'solo' })).toBe(true);
     expect(shouldRepublishOpenRoom({ inRoom: false, mode: 'pvp' })).toBe(false);

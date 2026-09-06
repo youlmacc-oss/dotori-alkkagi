@@ -8,6 +8,8 @@ import {
   FORMATION_ZONE,
   formationStorageKey,
   GAME_MODE,
+  finalizeStartedMode,
+  intendedGameMode,
   POWER_RATIO,
   SLINGSHOT,
   STONE_COLOR,
@@ -496,11 +498,10 @@ export class SettingsModal {
 
   syncLobbyDefaultMode(mode) {
     if (mode == null) return false;
-    const next = mode === GAME_MODE.PVP
-      ? GAME_MODE.PVP
-      : mode === GAME_MODE.SOLO
-        ? GAME_MODE.SOLO
-        : GAME_MODE.AI;
+    if (this.gameMode === GAME_MODE.PVP || this.engine.gameMode === GAME_MODE.PVP) {
+      return false;
+    }
+    const next = intendedGameMode(mode);
     if (this.gameMode === next && this.engine.gameMode === next) {
       this.syncChrome();
       return false;
@@ -510,18 +511,21 @@ export class SettingsModal {
   }
 
   setGameMode(mode, options = {}) {
-    this.gameMode = mode === GAME_MODE.PVP
-      ? GAME_MODE.PVP
-      : mode === GAME_MODE.SOLO
-        ? GAME_MODE.SOLO
-        : GAME_MODE.AI;
-    saveMatchConfig(this.gameMode, this.aiDifficulty);
-    this.engine.setMatchConfig({ mode: this.gameMode, difficulty: this.aiDifficulty });
+    const next = intendedGameMode(mode);
+    this.gameMode = next;
+    saveMatchConfig(next, this.aiDifficulty);
+    this.engine.setMatchConfig({ mode: next, difficulty: this.aiDifficulty });
+    const kept = finalizeStartedMode(next, this.engine.gameMode);
+    if (this.gameMode !== kept || this.engine.gameMode !== kept) {
+      this.gameMode = kept;
+      saveMatchConfig(kept, this.aiDifficulty);
+      this.engine.setMatchConfig({ mode: kept, difficulty: this.aiDifficulty });
+    }
     this.renderer.resetFx();
     this.syncChrome();
     this.drawPreview();
     if (options.startMatch) {
-      this.onApply?.({ mode: this.gameMode, difficulty: this.aiDifficulty, reset: true, toLobby: false });
+      this.onApply?.({ mode: kept, difficulty: this.aiDifficulty, reset: true, toLobby: false });
     }
   }
 

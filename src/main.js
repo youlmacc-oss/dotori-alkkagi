@@ -6,6 +6,7 @@ import {
   PULL_OVER_NOTICE,
   STONE_COLOR,
   defaultGameModeForLobbyCount,
+  intendedGameMode,
   isOutsideInnerBoard,
   shouldApplyLobbyDefaultMode,
 } from './physics/GameEngine.js';
@@ -124,6 +125,7 @@ import {
   lobbyInviteAsk,
   presenceInvitePayload,
   shouldOpenPresenceInvite,
+  sentInviteFields,
   shouldRepublishOpenRoom,
   readStoredInviteRoom,
   resolveInviteRoom,
@@ -284,6 +286,7 @@ let matchReady = null;
 let lastPublishedRearranging = false;
 let activeRoomId = null;
 let joiningRoom = false;
+let startingPvp = false;
 let pvpOpenedAt = null;
 let pvpExpireTimer = 0;
 let pendingInviteRoom = readInviteRoomId(window.location.search) || readStoredInviteRoom();
@@ -300,7 +303,7 @@ let settingsModal = null;
 function applyLobbyDefaultMode(count) {
   const next = defaultGameModeForLobbyCount(count);
   if (!settingsModal) return;
-  if (inMatchRoom || joiningRoom) {
+  if (inMatchRoom || joiningRoom || startingPvp) {
     lastLobbyModeCount = count;
     return;
   }
@@ -316,6 +319,7 @@ function applyLobbyDefaultMode(count) {
   if (!shouldApplyLobbyDefaultMode(engine.getSnapshot(), next, {
     inRoom: inMatchRoom,
     joining: joiningRoom,
+    startingPvp,
   })) return;
   lastLobbyModeCount = count;
   settingsModal.syncLobbyDefaultMode(next);
@@ -671,11 +675,18 @@ function clearSentLobbyInvite() {
 }
 
 function currentSentInvite() {
-  if (!inMatchRoom || matchStarted || engine.gameMode !== GAME_MODE.PVP) {
-    return { inviteTargetId: null, inviteAt: null };
-  }
-  if (hasPvpOpponent(matchPlayers())) return { inviteTargetId: null, inviteAt: null };
-  return sentLobbyInvite || { inviteTargetId: null, inviteAt: null };
+  return sentInviteFields({
+    inRoom: inMatchRoom,
+    started: matchStarted,
+    mode: engine.gameMode,
+    sent: sentLobbyInvite,
+    hasOpponent: hasPvpOpponent(matchPlayersFromPresence(lobbyUserList, {
+      myId: realtimeManager.userId,
+      myAcorns: myAcorns(),
+      mode: engine.gameMode,
+      roomId: currentMatchRoomId(),
+    })),
+  });
 }
 
 function syncPresenceInvites(users) {
@@ -811,7 +822,19 @@ function openPvpGuidePick() {
 function confirmPvpGuide(enabled) {
   settingsModal?.setGuideEnabled(enabled);
   closePvpGuidePick();
-  settingsModal?.setGameMode(GAME_MODE.PVP, { startMatch: true });
+  startOwnPvpRoom();
+}
+
+function startOwnPvpRoom() {
+  startingPvp = true;
+  try {
+    settingsModal?.setGameMode(GAME_MODE.PVP, { startMatch: true });
+    if (engine.gameMode !== GAME_MODE.PVP) {
+      engine.setMatchConfig({ mode: GAME_MODE.PVP, difficulty: engine.aiDifficulty });
+    }
+  } finally {
+    startingPvp = false;
+  }
 }
 
 function refreshLobbyPresence({ reconnect = false, publish = false } = {}) {
@@ -1199,13 +1222,18 @@ function resolveJoinablePvp(room) {
 
 function enterJoinedPvp(room) {
   joiningRoom = true;
+  startingPvp = true;
   activeRoomId = room.id;
   try {
     settingsModal.setGameMode(GAME_MODE.PVP, { startMatch: true });
+    if (engine.gameMode !== GAME_MODE.PVP) {
+      engine.setMatchConfig({ mode: GAME_MODE.PVP, difficulty: engine.aiDifficulty });
+    }
   } finally {
     joiningRoom = false;
+    startingPvp = false;
   }
-  return inMatchRoom && activeRoomId === room.id;
+  return inMatchRoom && activeRoomId === room.id && engine.gameMode === GAME_MODE.PVP;
 }
 
 function joinPvpRoom(room) {
@@ -1411,8 +1439,8 @@ function joinRoom(roomId, extras = {}) {
   if (room.hostId === realtimeManager.userId) {
     joiningRoom = false;
     activeRoomId = room.id;
-    settingsModal.setGameMode(GAME_MODE.PVP, { startMatch: true });
-    return true;
+    startOwnPvpRoom();
+    return engine.gameMode === GAME_MODE.PVP;
   }
   const verdict = evaluateInviteJoin(room, realtimeManager.userId);
   if (!verdict.ok) return false;
@@ -1853,6 +1881,10 @@ settingsModal = new SettingsModal({
       publishIdleLobby();
       showLobby();
     } else {
+      const mode = intendedGameMode(payload?.mode);
+      if (payload?.mode && engine.gameMode !== mode) {
+        engine.setMatchConfig({ mode, difficulty: payload?.difficulty });
+      }
       enterMatchRoom();
     }
     matchBadge.textContent = '흑 턴 15';

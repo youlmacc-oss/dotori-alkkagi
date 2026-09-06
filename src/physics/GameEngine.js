@@ -198,8 +198,21 @@ export function defaultGameModeForLobbyCount(count) {
   return Number(count) >= 2 ? null : GAME_MODE.AI;
 }
 
+export function intendedGameMode(mode) {
+  if (mode === GAME_MODE.PVP) return GAME_MODE.PVP;
+  if (mode === GAME_MODE.SOLO) return GAME_MODE.SOLO;
+  if (mode === GAME_MODE.SPECTATE) return GAME_MODE.SPECTATE;
+  return GAME_MODE.AI;
+}
+
+/** 1:1을 연 뒤에는 대기실 기본값(혼자=AI)이 모드를 덮지 못한다. */
+export function finalizeStartedMode(requested, current) {
+  const want = intendedGameMode(requested);
+  return current === want ? current : want;
+}
+
 export function shouldApplyLobbyDefaultMode(snapshot, nextMode, extras = {}) {
-  if (extras.inRoom || extras.joining) return false;
+  if (extras.inRoom || extras.joining || extras.startingPvp) return false;
   if (!snapshot || nextMode == null) return false;
   if (snapshot.phase === PHASE.SPECTATING || snapshot.gameMode === GAME_MODE.SPECTATE) return false;
   if (

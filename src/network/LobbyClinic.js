@@ -24,6 +24,7 @@ import {
   boardGridLineMatterY,
   getFormationZones,
   shouldApplyLobbyDefaultMode,
+  finalizeStartedMode,
 } from '../physics/GameEngine.js';
 import { MY_NICK_LABEL, NICKNAME_MAX } from './Nickname.js';
 import {
@@ -42,6 +43,7 @@ import {
   evaluateLobbyInvite,
   idleLobbyInvitees,
   shouldOpenPresenceInvite,
+  sentInviteFields,
   shouldRepublishOpenRoom,
   PVP_WAIT_EXPIRE_MS,
 } from './PvpInvite.js';
@@ -161,6 +163,14 @@ export function pvpInviteAcceptClinicOk() {
     })
     && !shouldHoldPvpStartGate({ started: true, hasOpponent: false })
     && shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp' })
+    && sentInviteFields({
+      inRoom: true, started: false, mode: 'pvp', hasOpponent: false,
+      sent: { inviteTargetId: 'guest', inviteAt: 1 },
+    }).inviteTargetId === 'guest'
+    && sentInviteFields({
+      inRoom: true, started: false, mode: 'pvp', hasOpponent: true,
+      sent: { inviteTargetId: 'guest', inviteAt: 1 },
+    }).inviteTargetId == null
     && shouldOpenPresenceInvite({
       userId: 'host',
       status: 'playing',
@@ -227,7 +237,9 @@ export function pvpHoldClinicOk() {
   };
   return shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI, { inRoom: true }) === false
     && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI) === false
-    && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI, { joining: true }) === false;
+    && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI, { joining: true }) === false
+    && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI, { startingPvp: true }) === false
+    && finalizeStartedMode(GAME_MODE.PVP, GAME_MODE.AI) === GAME_MODE.PVP;
 }
 
 export function nickClinicOk() {

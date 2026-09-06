@@ -195,6 +195,20 @@ export function evaluateLobbyInvite(payload, myId) {
   return { ok: true, invite, hint: '' };
 }
 
+/** Presence에 올릴 초대. selfPresence 안에서 matchPlayers를 부르면 순환한다. */
+export function sentInviteFields({
+  inRoom,
+  started,
+  mode,
+  sent,
+  hasOpponent,
+} = {}) {
+  if (!inRoom || started || mode !== 'pvp' || hasOpponent) {
+    return { inviteTargetId: null, inviteAt: null };
+  }
+  return sent || { inviteTargetId: null, inviteAt: null };
+}
+
 /** 방을 연 동안 Presence를 자주 올려 대기실이 새로고침 없이 방을 보게 한다. */
 export function shouldRepublishOpenRoom({ inRoom, mode } = {}) {
   return Boolean(inRoom && isPlayableLobbyMode(mode));

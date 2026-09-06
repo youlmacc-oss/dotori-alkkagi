@@ -17,6 +17,7 @@ import {
   GameEngine,
   defaultGameModeForLobbyCount,
   shouldApplyLobbyDefaultMode,
+  finalizeStartedMode,
   PHASE,
   POWER_RATIO,
   REST,
@@ -348,6 +349,8 @@ describe('대기실 인원 기본 모드', () => {
     expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP }, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP }, GAME_MODE.AI, { inRoom: true })).toBe(false);
     expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP }, GAME_MODE.AI, { joining: true })).toBe(false);
+    expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP }, GAME_MODE.AI, { startingPvp: true })).toBe(false);
+    expect(finalizeStartedMode(GAME_MODE.PVP, GAME_MODE.AI)).toBe(GAME_MODE.PVP);
     expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP, phase: PHASE.AIMING }, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode(null, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode(idle, null)).toBe(false);
