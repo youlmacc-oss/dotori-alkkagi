@@ -1399,8 +1399,8 @@ export class ThreeRenderer {
 
       if (pullDist > 1) {
         const visualScale = aimGuideVisualScale({
-          width: this.canvas?.clientWidth || this.canvas?.width,
-          height: this.canvas?.clientHeight || this.canvas?.height,
+          width: globalThis.innerWidth || this.canvas?.clientWidth || this.canvas?.width,
+          height: globalThis.innerHeight || this.canvas?.clientHeight || this.canvas?.height,
         });
         const scaledAim = scaleAimGuideEnd(pullFrom, aim.aimEnd, visualScale);
         const mapped = scaledAim ? this._matterToThree(scaledAim.x, scaledAim.y) : null;

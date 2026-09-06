@@ -35,19 +35,40 @@ export function skipReadyAsk(state, now) {
   return { ...base, enteredAt: at - READY_ASK_MS };
 }
 
+export function rearrangeRemainMs(state, now) {
+  if (!state || state.answer !== true) return 0;
+  return Math.max(0, (Number(state.rearrangeUntil) || 0) - (Number(now) || 0));
+}
+
+/** 10 → 1 내림. 0이면 재배치 끝. */
+export function rearrangeCountDown(remainMs) {
+  const left = Number(remainMs) || 0;
+  if (left <= 0) return 0;
+  return Math.max(1, Math.min(10, Math.ceil(left / 1000)));
+}
+
+export function rearrangeCountHint(count) {
+  const n = Math.floor(Number(count) || 0);
+  return n > 0 ? String(n) : '';
+}
+
 export function stepMatchReady(state, now, extras = {}) {
   const at = Number(now) || 0;
   const s = state ?? createMatchReady(at);
   const elapsed = Math.max(0, at - s.enteredAt);
   const askEnabled = extras.askEnabled !== false;
   const startAt = askEnabled ? READY_ASK_MS : 0;
-  const rearranging = s.answer === true && at < (Number(s.rearrangeUntil) || 0);
+  const remainMs = rearrangeRemainMs(s, at);
+  const rearranging = s.answer === true && remainMs > 0;
+  const rearrangeCount = rearranging ? rearrangeCountDown(remainMs) : 0;
   return {
     ...s,
     elapsed,
+    remainMs,
+    rearrangeCount,
     askVisible: askEnabled && s.answer == null && elapsed < READY_ASK_MS,
-    startVisible: elapsed >= startAt,
-    firstHint: elapsed >= startAt + FIRST_HINT_AFTER_MS,
+    startVisible: !rearranging && elapsed >= startAt,
+    firstHint: !rearranging && elapsed >= startAt + FIRST_HINT_AFTER_MS,
     rearranging,
     peerRearranging: Boolean(extras.peerRearranging),
   };

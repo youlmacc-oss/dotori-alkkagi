@@ -10,6 +10,10 @@ import {
   pullClinicOk,
   pvpExpireClinicOk,
   pvpHoldClinicOk,
+  pvpInviteAcceptClinicOk,
+  pvpJoinClinicOk,
+  pvpPresenceClinicOk,
+  pvpRearrangeClinicOk,
   readyClinicOk,
   runLobbyClinic,
 } from '../src/network/LobbyClinic.js';
@@ -69,7 +73,11 @@ describe('대기실 자가진단', () => {
     });
     expect(report.ok).toBe(true);
     expect(report.fails).toBe(0);
-    expect(report.total).toBe(24);
+    expect(report.total).toBe(28);
+    expect(report.items.find((row) => row.id === 'pvpJoin')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'pvpAccept')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'pvpPresence')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'pvpPlace')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'invite')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'pvpHold')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'bookSkip')?.ok).toBe(true);
@@ -88,6 +96,10 @@ describe('대기실 자가진단', () => {
     expect(guidePageCount()).toBe(10);
     expect(guidePageAt(0).id).toBe('cover');
     expect(guidePageAt(10).id).toBe('cover');
+    expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.points.some((line) => line.includes('둘째 선'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.points.some((line) => line.includes('10부터'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('참가하기'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('참가하기는 없고'))).toBe(false);
     expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.title).toContain('다시 놓기');
     expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.title).toContain('먼저');
     expect(GUIDE_PAGES.find((page) => page.id === 'fall')?.points.some((line) => line.includes('액션캠'))).toBe(true);
@@ -100,6 +112,10 @@ describe('대기실 자가진단', () => {
     expect(renderGuidePage(guidePageAt(3))).toContain('재배치');
     expect(renderClinicList(report)).toContain('clinic-row');
     expect(renderClinicList(report)).toContain('액션캠');
+    expect(pvpJoinClinicOk()).toBe(true);
+    expect(pvpInviteAcceptClinicOk()).toBe(true);
+    expect(pvpPresenceClinicOk()).toBe(true);
+    expect(pvpRearrangeClinicOk()).toBe(true);
     expect(readyClinicOk()).toBe(true);
     expect(pvpHoldClinicOk()).toBe(true);
     expect(nickClinicOk()).toBe(true);

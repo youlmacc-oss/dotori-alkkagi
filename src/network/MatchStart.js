@@ -24,6 +24,24 @@ export function hasPvpOpponent(players) {
   return uniquePlayerIds(players).size >= 2;
 }
 
+export function matchPlayersFromPresence(users, {
+  myId,
+  myAcorns = DEFAULT_ACORNS,
+  mode,
+  roomId,
+} = {}) {
+  const mine = { userId: myId, acorns: Number.isFinite(Number(myAcorns)) ? Number(myAcorns) : DEFAULT_ACORNS };
+  const others = (Array.isArray(users) ? users : [])
+    .filter((user) => (user?.userId ?? user?.id) && (user.userId ?? user.id) !== myId)
+    .filter((user) => user.status === 'playing' && (!mode || user.mode === mode))
+    .filter((user) => !roomId || user.roomId === roomId)
+    .map((user) => ({
+      userId: user.userId ?? user.id,
+      acorns: Number.isFinite(Number(user.acorns)) ? Number(user.acorns) : DEFAULT_ACORNS,
+    }));
+  return mine.userId ? [mine, ...others] : others;
+}
+
 export function acornOf(player) {
   return parseAcorn(player?.acorns, DEFAULT_ACORNS);
 }

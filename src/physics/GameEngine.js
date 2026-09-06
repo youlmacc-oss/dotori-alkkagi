@@ -65,6 +65,20 @@ export const SLINGSHOT = Object.freeze({
   FRICTION_AIR: 0.025,
 });
 
+/** 3D 상판과 같은 치수. 격자선이 아니라 나무판 끝까지 생존한다. */
+export const BOARD_VISUAL = Object.freeze({
+  MESH: 480,
+  INSET: 68,
+});
+
+export function boardFallBounds(world = VIRTUAL_WIDTH) {
+  const usable = BOARD_VISUAL.MESH - BOARD_VISUAL.INSET;
+  const half = BOARD_VISUAL.MESH / 2;
+  const span = half * (world / usable);
+  const mid = world / 2;
+  return { min: mid - span, max: mid + span };
+}
+
 /** 드래그 거리 ↔ 발사 속도/조준선 길이 배율 (호스트 전용 UI) */
 export const POWER_RATIO = Object.freeze({
   MIN: 1,
@@ -81,11 +95,11 @@ export function clampPowerScale(value) {
   return Number(clamped.toFixed(1));
 }
 
-/** 발사 물리와 분리한 조준선 화면 길이. 노트북은 1, 휴대폰만 뷰포트에 연동해 줄인다. */
+/** 발사 물리와 분리한 조준선 화면 길이. 노트북도 짧게, 휴대폰은 더 짧게. */
 export const AIM_GUIDE_VISUAL = Object.freeze({
-  DESKTOP: 1,
-  PHONE_MIN: 0.52,
-  PHONE_MAX: 0.72,
+  DESKTOP: 0.30,
+  PHONE_MIN: 0.18,
+  PHONE_MAX: 0.24,
   REF_WIDTH: 720,
   PHONE_MAX_WIDTH: 480,
   PHONE_TALL_MAX_WIDTH: 600,
@@ -387,18 +401,22 @@ export function simulatePreviewLaunch(stones, index, velocity, ticks = 240) {
   return state;
 }
 
-// 돌 중심이 바둑판 상판(0~720) 밖으로 나가면 낙사. 가장자리 벽은 반사하지 않는다.
-export const FALL_BOUNDS = Object.freeze({ min: 0, max: 720 });
+// 돌 중심이 나무 상판 밖으로 나가면 낙사. 격자선이 아니라 판 끝.
+export const FALL_BOUNDS = boardFallBounds(VIRTUAL_WIDTH);
 /** 장외로 날아간 돌을 받는 안전망. 상판보다 멀리 두어 끝 반사를 막는다. */
 export const WORLD_CATCH_PAD = 280;
 
 export function isOutsideInnerBoard(position, _inner = BOARD.inner) {
-  const { min, max } = FALL_BOUNDS;
+  const { min, max } = boardFallBounds();
+  const x = Number(position?.x);
+  const y = Number(position?.y);
   return (
-    position.x < min
-    || position.x > max
-    || position.y < min
-    || position.y > max
+    !Number.isFinite(x)
+    || !Number.isFinite(y)
+    || x < min
+    || x > max
+    || y < min
+    || y > max
   );
 }
 
@@ -542,6 +560,12 @@ export const FORMATION_MODE = Object.freeze({
   CUSTOM: 'custom',
 });
 
+/** 9줄 바둑판에서 진영 둘째 선(위 2 · 아래 6). */
+export const FORMATION_SECOND_LINE = Object.freeze({
+  WHITE: 2,
+  BLACK: 6,
+});
+
 /** 3D 상판 9줄과 같은 격자선 → Matter Y */
 export function boardGridLineMatterY(index, world = VIRTUAL_WIDTH) {
   const tex = 1024;
@@ -572,8 +596,8 @@ export function getFormationZones(board = BOARD, kind = FORMATION_ZONE.PRESET) {
   const maxX = inner.x + inner.size - r;
   if (kind === FORMATION_ZONE.CUSTOM) {
     const outer = board.outer ?? BOARD.outer;
-    const whiteFar = boardGridLineMatterY(2);
-    const blackFar = boardGridLineMatterY(6);
+    const whiteFar = boardGridLineMatterY(FORMATION_SECOND_LINE.WHITE);
+    const blackFar = boardGridLineMatterY(FORMATION_SECOND_LINE.BLACK);
     return {
       inner,
       kind: FORMATION_ZONE.CUSTOM,

@@ -2,28 +2,47 @@
  * 대기실 자가진단: 기능·연동 포인트를 한 번에 점검한다.
  */
 
-import { LOBBY_CAP, LOBBY_MODE_HINT, PVP_WAIT_GUIDE } from './LobbyRooms.js';
+import {
+  LOBBY_CAP,
+  LOBBY_MODE_HINT,
+  PVP_WAIT_GUIDE,
+  canJoinPvpFromLobby,
+  canJoinPvpRoom,
+  preferNewerPresence,
+} from './LobbyRooms.js';
 import { SESSION_ACORNS, shouldForfeitOnLeave, shouldSettleAcorns } from './AcornPolicy.js';
 import { RESULT_BEAT_MS, RESULT_FALL_HOLD_MS } from '../physics/ResultBeat.js';
 import {
+  BOARD,
+  FORMATION_SECOND_LINE,
+  FORMATION_ZONE,
   GAME_MODE,
   PHASE,
   STONE_COLOR,
+  boardGridLineMatterY,
+  getFormationZones,
   shouldApplyLobbyDefaultMode,
 } from '../physics/GameEngine.js';
 import { MY_NICK_LABEL, NICKNAME_MAX } from './Nickname.js';
-import { PVP_START_HINT, PVP_WAIT_HINT } from './MatchStart.js';
+import { PVP_START_HINT, PVP_WAIT_HINT, hasPvpOpponent, matchPlayersFromPresence } from './MatchStart.js';
 import {
   canInviteLobbyUser,
+  canShareInvite,
+  evaluateInviteJoin,
+  evaluateLobbyInvite,
+  idleLobbyInvitees,
   PVP_WAIT_EXPIRE_MS,
 } from './PvpInvite.js';
+import { LOBBY_STATE_EVENT } from './RealtimeManager.js';
 import { BOOK_PLAY_LABEL, BOOK_SKIP_LABEL } from '../ui/GuideBook.js';
 import {
   FIRST_HINT,
   READY_ASK,
   READY_ASK_MS,
   REARRANGE_MS,
+  answerReady,
   createMatchReady,
+  rearrangeCountDown,
   stepMatchReady,
 } from './MatchReady.js';
 
@@ -49,14 +68,85 @@ export function isLiveRealtime(client) {
 export function readyClinicOk() {
   const askOn = stepMatchReady(createMatchReady(0), 0);
   const askOff = stepMatchReady(createMatchReady(0), 0, { askEnabled: false });
+  const yes = answerReady(createMatchReady(0), true, 0);
+  const counting = stepMatchReady(yes, 0);
+  const lastTick = stepMatchReady(yes, REARRANGE_MS - 1);
+  const done = stepMatchReady(yes, REARRANGE_MS);
   return READY_ASK.includes('재배치')
     && FIRST_HINT.includes('도토리가 적은 사람')
     && READY_ASK_MS === 5000
     && REARRANGE_MS === 10000
+    && rearrangeCountDown(REARRANGE_MS) === 10
+    && counting.rearranging === true
+    && counting.rearrangeCount === 10
+    && counting.startVisible === false
+    && lastTick.rearrangeCount === 1
+    && done.rearranging === false
     && askOn.askVisible === true
     && askOn.startVisible === false
     && askOff.askVisible === false
     && askOff.startVisible === true;
+}
+
+export function pvpJoinClinicOk() {
+  const waiting = {
+    id: 'room_host',
+    mode: 'pvp',
+    status: 'waiting',
+    hostId: 'host',
+    players: [{ userId: 'host' }],
+  };
+  return canJoinPvpRoom(waiting, 'guest')
+    && canJoinPvpFromLobby(waiting, 'guest')
+    && !canJoinPvpRoom(waiting, 'host')
+    && evaluateInviteJoin(waiting, 'guest').ok === true;
+}
+
+export function pvpInviteAcceptClinicOk() {
+  const invite = evaluateLobbyInvite({
+    roomId: 'room_host',
+    hostId: 'host',
+    hostName: '호치',
+    targetId: 'guest',
+  }, 'guest');
+  const players = matchPlayersFromPresence([
+    { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'room_host' },
+    { userId: 'guest', status: 'playing', mode: 'pvp', roomId: 'room_host' },
+  ], { myId: 'host', mode: 'pvp', roomId: 'room_host' });
+  return invite.ok
+    && hasPvpOpponent(players)
+    && idleLobbyInvitees([{ userId: 'guest', status: 'lobby' }], 'host').length === 1
+    && canShareInvite({
+      mode: GAME_MODE.PVP,
+      inRoom: true,
+      started: false,
+      isHost: true,
+      hasOpponent: false,
+    })
+    && !canShareInvite({
+      mode: GAME_MODE.PVP,
+      inRoom: true,
+      started: false,
+      isHost: true,
+      hasOpponent: true,
+    });
+}
+
+export function pvpPresenceClinicOk() {
+  const kept = preferNewerPresence(
+    { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 200 },
+    { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 100 },
+  );
+  return kept.status === 'playing'
+    && kept.roomId === 'room_h'
+    && LOBBY_STATE_EVENT === 'lobby_state';
+}
+
+export function pvpRearrangeClinicOk() {
+  const zones = getFormationZones(BOARD, FORMATION_ZONE.CUSTOM);
+  return readyClinicOk()
+    && Math.abs(zones.white.maxY - boardGridLineMatterY(FORMATION_SECOND_LINE.WHITE)) < 1e-6
+    && Math.abs(zones.black.minY - boardGridLineMatterY(FORMATION_SECOND_LINE.BLACK)) < 1e-6;
 }
 
 export function pullClinicOk(input = {}) {
@@ -216,12 +306,38 @@ export function runLobbyClinic(input = {}) {
           : '액션캠 설정 없음',
     ),
     item(
+      'pvpJoin',
+      '1:1 참가',
+      pvpJoinClinicOk(),
+      pvpJoinClinicOk() ? '대기 1:1은 참가하기 · 호스트는 불가' : '1:1 참가 규칙 오류',
+    ),
+    item(
+      'pvpAccept',
+      '1:1 초대 수락',
+      pvpInviteAcceptClinicOk(),
+      pvpInviteAcceptClinicOk() ? '수락하면 호스트 방에 붙고 상대가 보인다' : '초대 수락·상대 감지 오류',
+    ),
+    item(
+      'pvpPresence',
+      '1:1 실시간 입장',
+      pvpPresenceClinicOk(),
+      pvpPresenceClinicOk() ? '옛 대기 힌트가 입장을 덮지 않음' : '입장 동기화 오류',
+    ),
+    item(
+      'pvpPlace',
+      '1:1 둘째 선 재배치',
+      pvpRearrangeClinicOk() && Boolean(input.hasReadyAsk && input.hasRearrangeAsk),
+      pvpRearrangeClinicOk()
+        ? (input.rearrangeAskOn === false ? '꺼짐 · 시작 버튼 바로 표시' : '예 하면 10초 내림 카운트 · 둘째 선 안')
+        : '재배치 카운트/둘째 선 오류',
+    ),
+    item(
       'ready',
       '시작 전 재배치',
       readyClinicOk() && Boolean(input.hasReadyAsk && input.hasRearrangeAsk),
       input.rearrangeAskOn === false
         ? '꺼짐 · 시작 버튼 바로 표시'
-        : '5초 질문 · 예 하면 10초 재배치',
+        : '5초 질문 · 예 하면 10초 내림 카운트',
     ),
     item(
       'pull',

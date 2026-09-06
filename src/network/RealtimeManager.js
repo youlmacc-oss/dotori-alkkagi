@@ -3,7 +3,7 @@
  * 관전 데이터 브로드캐스트와 Presence 관리를 담당한다.
  */
 
-import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, presenceViewKey, usersFromPresenceState } from './LobbyRooms.js';
+import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, mergePresenceWithHints, preferNewerPresence, presenceViewKey, usersFromPresenceState } from './LobbyRooms.js';
 import { PVP_INVITE_EVENT } from './PvpInvite.js';
 import {
   defaultNickname,
@@ -28,6 +28,7 @@ import {
 } from './PresencePolicy.js';
 
 export const LOBBY_SWEEP_EVENT = 'lobby_sweep';
+export const LOBBY_STATE_EVENT = 'lobby_state';
 
 export const LOBBY_CHANNEL = 'dotori-lobby';
 
@@ -85,6 +86,7 @@ export class RealtimeManager {
     this._presenceViewKey = '';
     this._connecting = false;
     this._unloading = false;
+    this._peerHints = new Map();
   }
 
   rememberLocalPresence(users) {
@@ -113,8 +115,15 @@ export class RealtimeManager {
     return next;
   }
 
+  _mergePeerHints(users) {
+    return mergePresenceWithHints(users, Array.from(this._peerHints.values()));
+  }
+
   _visibleUsers(users) {
-    return keepConnectedUsers(activeLobbyUsers(this._mergeLocalSeeds(users)), this.keepNickname);
+    return keepConnectedUsers(
+      activeLobbyUsers(this._mergeLocalSeeds(this._mergePeerHints(users))),
+      this.keepNickname,
+    );
   }
 
   _shouldSelfEvict() {
@@ -176,6 +185,9 @@ export class RealtimeManager {
         })
         .on('broadcast', { event: PVP_INVITE_EVENT }, ({ payload }) => {
           this.onPvpInvite?.(payload);
+        })
+        .on('broadcast', { event: LOBBY_STATE_EVENT }, ({ payload }) => {
+          this._handleLobbyState(payload);
         });
 
       await new Promise((resolve, reject) => {
@@ -241,8 +253,11 @@ export class RealtimeManager {
   async disconnect() {
     this._stopHeartbeat();
     this._clearStaleTimer();
+    const key = this.presenceKey || this.userId;
+    await this._broadcastLobbyState({ userId: key, presenceKey: key }, true);
     await this._teardownChannel();
     this.onlineUsers.clear();
+    this._peerHints.clear();
     this._presenceViewKey = '';
     this.emit('disconnected');
   }
@@ -497,6 +512,42 @@ export class RealtimeManager {
     };
 
     await this.channel.track(presenceData);
+    await this._broadcastLobbyState(presenceData);
+  }
+
+  async _broadcastLobbyState(user, left = false) {
+    if (!this.channel) return false;
+    try {
+      await this.channel.send({
+        type: 'broadcast',
+        event: LOBBY_STATE_EVENT,
+        payload: { user, left: Boolean(left) },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  _handleLobbyState(payload = {}) {
+    const row = payload.user;
+    const key = String(row?.presenceKey || row?.userId || row?.id || '').trim();
+    if (!key || key === (this.presenceKey || this.userId)) return;
+    if (payload.left) {
+      this._peerHints.delete(key);
+      this.onlineUsers.delete(key);
+      this.resyncPresence({ force: true });
+      return;
+    }
+    const incoming = {
+      ...row,
+      userId: key,
+      id: key,
+      presenceKey: key,
+    };
+    const prev = this._peerHints.get(key) || this.onlineUsers.get(key);
+    this._peerHints.set(key, preferNewerPresence(prev, incoming));
+    this.resyncPresence({ force: true });
   }
 
   async updatePresence(patch = {}) {
@@ -514,6 +565,14 @@ export class RealtimeManager {
   resyncPresence({ force = false } = {}) {
     const state = this.channel?.presenceState?.() || {};
     const users = usersFromPresenceState(state);
+    for (const user of users) {
+      const key = String(user.presenceKey || user.userId || '');
+      const hint = key ? this._peerHints.get(key) : null;
+      if (!hint) continue;
+      const hintAt = Number(hint.lastSeen || hint.joinedAt) || 0;
+      const liveAt = Number(user.lastSeen || user.joinedAt) || 0;
+      if (liveAt >= hintAt) this._peerHints.delete(key);
+    }
     return this._applyVisiblePresence(activeLobbyUsers(users), { force });
   }
 
@@ -560,6 +619,8 @@ export class RealtimeManager {
       this.onlineUsers.delete(presence.id);
       this._localSeeds.delete(key);
       this._localSeeds.delete(presence.userId);
+      this._peerHints.delete(key);
+      this._peerHints.delete(presence.userId);
       this.onUserLeave(presence);
       console.info('[dotori-presence] leave', key, presence.nickname || '');
     });

@@ -8,6 +8,7 @@ import {
   FORMATION_SHAPE,
   FORMATION_SLOT,
   FORMATION_STORAGE_KEY,
+  FORMATION_SECOND_LINE,
   FORMATION_ZONE,
   boardGridLineMatterY,
   campsAreSegregated,
@@ -29,6 +30,7 @@ import {
   canControlPowerRatio,
   AIM_GUIDE_VISUAL,
   aimGuideVisualScale,
+  boardFallBounds,
   clampPowerScale,
   clampPullVector,
   isPhoneAimViewport,
@@ -219,14 +221,14 @@ describe('슬링샷 텐션·클램프', () => {
     engine.destroy();
   });
 
-  it('휴대폰 조준선 시각 배율만 줄이고 노트북은 1이다', () => {
+  it('노트북 조준선도 당김보다 짧게 그리고 휴대폰은 더 줄인다', () => {
     expect(isPhoneAimViewport({ width: 1280, height: 800 })).toBe(false);
     expect(aimGuideVisualScale({ width: 1280, height: 800 })).toBe(AIM_GUIDE_VISUAL.DESKTOP);
+    expect(AIM_GUIDE_VISUAL.DESKTOP).toBeLessThan(1);
     expect(isPhoneAimViewport({ width: 390, height: 844 })).toBe(true);
     const phone = aimGuideVisualScale({ width: 390, height: 844 });
-    expect(phone).toBeCloseTo(390 / AIM_GUIDE_VISUAL.REF_WIDTH);
-    expect(phone).toBeGreaterThanOrEqual(AIM_GUIDE_VISUAL.PHONE_MIN);
-    expect(phone).toBeLessThan(1);
+    expect(phone).toBe(AIM_GUIDE_VISUAL.PHONE_MAX);
+    expect(phone).toBeLessThan(AIM_GUIDE_VISUAL.DESKTOP);
     const end = scaleAimGuideEnd({ x: 10, y: 20 }, { x: 10, y: 120 }, phone);
     expect(end.x).toBe(10);
     expect(end.y).toBeCloseTo(20 + 100 * phone);
@@ -373,17 +375,18 @@ describe('근접 돌 방향 당김 금지', () => {
 });
 
 describe('장외 낙사 판정', () => {
-  it('내면 안은 생존, 밖은 낙사로 판정한다', () => {
+  it('격자선이 아니라 나무판 밖으로 중심이 나가야 낙사다', () => {
     const inner = BOARD.inner;
+    const face = boardFallBounds();
     const center = { x: inner.x + inner.size / 2, y: inner.y + inner.size / 2 };
     expect(isOutsideInnerBoard(center, inner)).toBe(false);
     expect(isOutsideInnerBoard({ x: inner.x, y: inner.y }, inner)).toBe(false);
     expect(isOutsideInnerBoard({ x: 0, y: 0 }, inner)).toBe(false);
-    expect(isOutsideInnerBoard({ x: -1, y: 360 }, inner)).toBe(true);
-    expect(isOutsideInnerBoard({ x: 721, y: 360 }, inner)).toBe(true);
-    expect(isOutsideInnerBoard({ x: -30, y: -30 }, inner)).toBe(true);
-    expect(isOutsideInnerBoard({ x: 750, y: center.y }, inner)).toBe(true);
-    expect(isOutsideInnerBoard({ x: center.x, y: -30 }, inner)).toBe(true);
+    expect(isOutsideInnerBoard({ x: -1, y: 360 }, inner)).toBe(false);
+    expect(isOutsideInnerBoard({ x: 721, y: 360 }, inner)).toBe(false);
+    expect(isOutsideInnerBoard({ x: face.min + 1, y: 360 })).toBe(false);
+    expect(isOutsideInnerBoard({ x: face.min - 1, y: 360 })).toBe(true);
+    expect(isOutsideInnerBoard({ x: face.max + 1, y: 360 })).toBe(true);
     expect(isOutsideInnerBoard({ x: 60, y: center.y }, inner)).toBe(false);
   });
 });
@@ -423,7 +426,8 @@ describe('GameEngine 통합', () => {
     engine = createEngine();
     const stone = engine.stones[0];
     Matter.Sleeping.set(stone.body, false);
-    Matter.Body.setPosition(stone.body, { x: -40, y: -40 });
+    const face = boardFallBounds();
+    Matter.Body.setPosition(stone.body, { x: face.min - 20, y: face.min - 20 });
 
     engine.step(1);
 
@@ -624,7 +628,7 @@ describe('GameEngine 통합', () => {
   it('돌이 내면 밖으로 나가면 충돌을 끄고 stoneFallen을 낸다', async () => {
     engine = createEngine();
     const stone = engine.getAliveStones(STONE_COLOR.BLACK)[0];
-    Matter.Body.setPosition(stone.body, { x: -40, y: stone.body.position.y });
+    Matter.Body.setPosition(stone.body, { x: boardFallBounds().min - 20, y: stone.body.position.y });
     let fallen = null;
     engine.on('stoneFallen', (payload) => {
       fallen = payload;
@@ -832,7 +836,7 @@ describe('진형 프리셋·구역·겹침', () => {
 
   it('내 진형은 둘째 선 이내에서만 유효하고 가운데는 밖으로 본다', () => {
     const custom = getFormationZones(BOARD, FORMATION_ZONE.CUSTOM);
-    const second = boardGridLineMatterY(2);
+    const second = boardGridLineMatterY(FORMATION_SECOND_LINE.WHITE);
     expect(custom.white.minY).toBeCloseTo(BOARD.outer.y + 24, 5);
     expect(custom.white.maxY).toBeCloseTo(second, 5);
     expect(custom.white.maxY - custom.white.minY).toBeGreaterThan(80);

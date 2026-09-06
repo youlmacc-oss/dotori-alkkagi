@@ -8,6 +8,7 @@ import {
   canStartMatch,
   firstPlayerId,
   hasPvpOpponent,
+  matchPlayersFromPresence,
   readAcornCount,
 } from '../src/network/MatchStart.js';
 
@@ -21,6 +22,17 @@ describe('선공·시작 권한', () => {
     expect(hasPvpOpponent([{ userId: 'solo', acorns: 3 }])).toBe(false);
     expect(canStartMatch({ mode: 'pvp', userId: 'solo', players: [{ userId: 'solo', acorns: 3 }] })).toBe(false);
     expect(canStartMatch({ mode: 'pvp', userId: 'solo', players: [] })).toBe(false);
+    const afterInvite = matchPlayersFromPresence([
+      { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'room_host', acorns: 10 },
+      { userId: 'guest', status: 'playing', mode: 'pvp', roomId: 'room_host', acorns: 8 },
+      { userId: 'idle', status: 'lobby', mode: null, roomId: null },
+    ], { myId: 'host', myAcorns: 10, mode: 'pvp', roomId: 'room_host' });
+    expect(hasPvpOpponent(afterInvite)).toBe(true);
+    expect(afterInvite.map((p) => p.userId)).toEqual(['host', 'guest']);
+    expect(hasPvpOpponent(matchPlayersFromPresence([
+      { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'room_host' },
+      { userId: 'guest', status: 'lobby', mode: null, roomId: null },
+    ], { myId: 'host', mode: 'pvp', roomId: 'room_host' }))).toBe(false);
     expect(PVP_WAIT_HINT).toContain('상대');
     expect(PVP_WAIT_HINT).toContain('대기');
   });

@@ -143,8 +143,10 @@ export function canShareInvite({
 }
 
 export function isIdleLobbyUser(user) {
-  const status = user?.status || PRESENCE_STATUS.LOBBY;
-  return status === PRESENCE_STATUS.LOBBY;
+  if (!user) return false;
+  if (user.status === PRESENCE_STATUS.SPECTATING) return false;
+  if (user.status === PRESENCE_STATUS.PLAYING && user.mode) return false;
+  return true;
 }
 
 export function idleLobbyInvitees(users, myId) {

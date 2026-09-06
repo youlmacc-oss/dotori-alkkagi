@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LOBBY_CHANNEL,
   createRealtimeClient,
+  isLoopTestSearch,
   isMockRealtimeClient,
   lobbyChannelConfig,
   readSupabaseConfig,
@@ -26,6 +27,12 @@ describe('동시접속 Realtime 클라이언트', () => {
     expect(cfg.url).toContain('supabase.co');
     expect(LOBBY_CHANNEL).toBe('dotori-lobby');
     expect(lobbyChannelConfig('user_1').config.presence.key).toBe('user_1');
+  });
+
+  it('loop=1이면 화면 검증이 실 로비에 붙지 않는다', () => {
+    expect(isLoopTestSearch('?loop=1')).toBe(true);
+    expect(isLoopTestSearch('?room=room_1&loop=1')).toBe(true);
+    expect(isLoopTestSearch('?room=room_1')).toBe(false);
   });
 
   it('Vite 환경키는 import.meta.env에서 직접 꺼낸다', () => {

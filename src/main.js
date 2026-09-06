@@ -63,6 +63,7 @@ import {
   canStartMatch,
   firstPlayerId,
   hasPvpOpponent,
+  matchPlayersFromPresence,
 } from './network/MatchStart.js';
 import {
   FIRST_HINT,
@@ -71,6 +72,7 @@ import {
   READY_NO,
   READY_YES,
   answerReady,
+  rearrangeCountHint,
   createMatchReady,
   isPeerRearranging,
   skipReadyAsk,
@@ -493,15 +495,20 @@ function applyAcornResult(payload) {
   syncAcornHud();
 }
 
+function livePresencePool() {
+  return applyLivePresence(
+    [...lobbyUserList, ...Array.from(realtimeManager.onlineUsers.values())],
+    selfPresence(),
+  );
+}
+
 function matchPlayers() {
-  const mine = { userId: realtimeManager.userId, acorns: myAcorns() };
-  const roomId = currentMatchRoomId();
-  const others = lobbyUserList
-    .filter((u) => (u.userId ?? u.id) !== mine.userId)
-    .filter((u) => u.status === 'playing' && u.mode === engine.gameMode)
-    .filter((u) => !roomId || u.roomId === roomId)
-    .map((u) => ({ userId: u.userId ?? u.id, acorns: Number(u.acorns ?? 10) }));
-  return [mine, ...others];
+  return matchPlayersFromPresence(livePresencePool(), {
+    myId: realtimeManager.userId,
+    myAcorns: myAcorns(),
+    mode: engine.gameMode,
+    roomId: currentMatchRoomId(),
+  });
 }
 
 function canStartNow() {
@@ -603,7 +610,10 @@ function syncStartGate() {
   }
   let hintText = '';
   let hintShow = false;
-  if (view.peerRearranging) {
+  if (view.rearranging) {
+    hintText = rearrangeCountHint(view.rearrangeCount);
+    hintShow = Boolean(hintText);
+  } else if (view.peerRearranging) {
     hintText = PEER_REARRANGE_HINT;
     hintShow = true;
   } else if (pvp && !ready) {
@@ -687,7 +697,6 @@ function refreshLobbyPresence({ reconnect = false } = {}) {
   if (realtimeManager.isConnected && !realtimeManager.channelNeedsReconnect()) {
     realtimeManager.resyncPresence({ force: true });
     publishPresence();
-    if (lobbyVisible) renderLobby();
     return;
   }
   if (reconnect) bootRealtime();
@@ -880,7 +889,7 @@ function playingMates() {
   const roomId = currentMatchRoomId();
   const mine = realtimeManager.userId;
   return new Set(
-    lobbyUserList
+    livePresencePool()
       .filter((u) => (u.userId ?? u.id) !== mine)
       .filter((u) => u.roomId === roomId && u.status === 'playing')
       .map((u) => u.userId ?? u.id),
@@ -1053,8 +1062,15 @@ function leaveWatchedRoom() {
   showLobby();
 }
 
-function joinPvpRoom(room) {
-  if (!canJoinPvpRoom(room, realtimeManager.userId)) return;
+function resolveJoinablePvp(room) {
+  const id = room?.id;
+  return lobbyRooms().find((r) => r.id === id)
+    || resolveInviteRoom(lobbyRoomsUsers(), id)
+    || findInviteRoom(roomsFromPresence(lobbyRoomsUsers()), id)
+    || room;
+}
+
+function enterJoinedPvp(room) {
   joiningRoom = true;
   activeRoomId = room.id;
   try {
@@ -1062,6 +1078,20 @@ function joinPvpRoom(room) {
   } finally {
     joiningRoom = false;
   }
+  return inMatchRoom && activeRoomId === room.id;
+}
+
+function joinPvpRoom(room) {
+  let live = resolveJoinablePvp(room);
+  if (!canJoinPvpRoom(live, realtimeManager.userId)) {
+    refreshLobbyPresence({ reconnect: true });
+    live = resolveJoinablePvp(room);
+  }
+  if (!canJoinPvpRoom(live, realtimeManager.userId)) {
+    setTicker(INVITE_ROOM_GONE_HINT);
+    return false;
+  }
+  return enterJoinedPvp(live);
 }
 
 function inviteHostState() {
@@ -1126,13 +1156,20 @@ function currentInviteUrl() {
   return inviteUrlFor(currentMatchRoomId(), window.location);
 }
 
-function renderLobbyInviteList() {
+function renderLobbyInviteList({ refresh = false } = {}) {
   const list = document.getElementById('invite-lobby-list');
   const hint = document.getElementById('invite-lobby-hint');
   if (hint) hint.textContent = LOBBY_INVITE_HINT;
   if (!list) return;
   list.innerHTML = '';
-  const guests = idleLobbyInvitees(lobbyUserList, realtimeManager.userId);
+  if (refresh) realtimeManager.resyncPresence({ force: true });
+  const guests = idleLobbyInvitees(
+    applyLivePresence(
+      [...lobbyUserList, ...Array.from(realtimeManager.onlineUsers.values())],
+      selfPresence(),
+    ),
+    realtimeManager.userId,
+  );
   if (!guests.length) {
     const empty = document.createElement('p');
     empty.className = 'invite-lobby-empty';
@@ -1152,7 +1189,8 @@ function renderLobbyInviteList() {
 
 function openInviteShareSheet() {
   if (!hostWaitingForInvite() || !inviteShareSheet) return;
-  renderLobbyInviteList();
+  refreshLobbyPresence({ reconnect: true });
+  renderLobbyInviteList({ refresh: true });
   inviteShareSheet.hidden = false;
 }
 
@@ -1248,8 +1286,7 @@ function joinRoom(roomId, extras = {}) {
   }
   const verdict = evaluateInviteJoin(room, realtimeManager.userId);
   if (!verdict.ok) return false;
-  joinPvpRoom(verdict.room);
-  return true;
+  return joinPvpRoom(verdict.room);
 }
 
 async function enterInviteRoom() {
@@ -1379,6 +1416,7 @@ function updateLobbyUserList(users) {
   const same = key === lastLobbyViewKey && lastLobbyViewKey !== '';
   lobbyUserList = next;
   lastLobbyViewKey = key;
+  if (inviteShareSheet && !inviteShareSheet.hidden) renderLobbyInviteList({ refresh: false });
   if (same) return;
   noteRoomMates(true);
   syncPvpWait();
@@ -1431,7 +1469,12 @@ function renderLobby() {
     watch.className = 'spectate-btn';
     if (canJoinPvpFromLobby(room, realtimeManager.userId)) {
       watch.textContent = '참가하기';
-      watch.addEventListener('click', () => joinPvpRoom(room));
+      const enter = () => joinPvpRoom(room);
+      watch.addEventListener('click', (event) => {
+        event.stopPropagation();
+        enter();
+      });
+      row.addEventListener('click', enter);
     } else {
       watch.textContent = '관람하기';
       watch.addEventListener('click', () => enterSpectateRoom(room));
@@ -1872,8 +1915,8 @@ window.addEventListener('focus', onLobbyResume);
 window.addEventListener('pageshow', onLobbyResume);
 if (!window.__dotoriLobbyRefresh) {
   window.__dotoriLobbyRefresh = setInterval(() => {
-    refreshLobbyPresence({ reconnect: true });
-  }, 4000);
+    if (lobbyVisible) refreshLobbyPresence({ reconnect: true });
+  }, 2000);
 }
 
 function seedVirtualLobby() {

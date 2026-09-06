@@ -168,12 +168,12 @@ export function canJoinPvpRoom(room, userId) {
 }
 
 export function canJoinPvpFromLobby(room, userId) {
-  return false && canJoinPvpRoom(room, userId);
+  return canJoinPvpRoom(room, userId);
 }
 
 export const PVP_WAIT_GUIDE = '1:1 초대 대전 중입니다';
 export const PVP_WAIT_ROOM_HINT = '초대 대전중';
-export const LOBBY_MODE_HINT = '1인 연습 · AI 대국 · 1:1은 초대로만 입장';
+export const LOBBY_MODE_HINT = '1인 연습 · AI 대국 · 1:1은 참가 또는 초대';
 
 export function waitingPvpRooms(rooms) {
   return (Array.isArray(rooms) ? rooms : []).filter(isPvpWaiting);
@@ -221,6 +221,38 @@ export function pickLatestPresence(metas) {
     const bestAt = Number(best.lastSeen || best.joinedAt) || 0;
     return nextAt >= bestAt ? row : best;
   });
+}
+
+/** 힌트는 없을 때이거나 더 새로울 때만 덮는다. 오래된 대기 힌트가 입장 상태를 지우지 않는다. */
+export function preferNewerPresence(current, incoming) {
+  if (!incoming) return current || null;
+  if (!current) return { ...incoming };
+  const nextAt = Number(incoming.lastSeen || incoming.joinedAt) || 0;
+  const curAt = Number(current.lastSeen || current.joinedAt) || 0;
+  const newer = nextAt > curAt ? incoming : current;
+  const older = newer === incoming ? current : incoming;
+  return {
+    ...older,
+    ...newer,
+    userId: current.userId || incoming.userId,
+    id: current.id || incoming.id,
+    presenceKey: current.presenceKey || incoming.presenceKey || current.userId || incoming.userId,
+  };
+}
+
+export function mergePresenceWithHints(users, hints) {
+  const next = (Array.isArray(users) ? users : []).map((user) => ({ ...user }));
+  for (const hint of hints || []) {
+    const id = String(hint?.userId ?? hint?.id ?? hint?.presenceKey ?? '').trim();
+    if (!id) continue;
+    const idx = next.findIndex((user) => (
+      (user.userId ?? user.id) === id || user.presenceKey === (hint.presenceKey || id)
+    ));
+    const row = { ...hint, userId: id, id, presenceKey: hint.presenceKey || id };
+    if (idx < 0) next.push(row);
+    else next[idx] = preferNewerPresence(next[idx], row);
+  }
+  return next;
 }
 
 export function usersFromPresenceState(state = {}) {

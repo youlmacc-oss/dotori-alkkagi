@@ -20,6 +20,10 @@ const devices = [
 const server = await createServer({
   root,
   optimizeDeps: { force: true },
+  define: {
+    'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(''),
+    'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(''),
+  },
   server: {
     port: 4179,
     strictPort: true,
@@ -36,7 +40,7 @@ await server.listen();
 const browser = await chromium.launch({ headless: true });
 
 async function measure(page) {
-  await page.goto('http://127.0.0.1:4179/', { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.goto('http://127.0.0.1:4179/?loop=1', { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForSelector('#board', { state: 'attached', timeout: 30000 });
   await page.waitForTimeout(1400);
     return page.evaluate(() => {

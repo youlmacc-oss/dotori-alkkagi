@@ -10,6 +10,16 @@ export const SUPABASE_URL_ENV = 'VITE_SUPABASE_URL';
 export const SUPABASE_ANON_ENV = 'VITE_SUPABASE_ANON_KEY';
 export { LOBBY_CHANNEL, lobbyChannelConfig };
 
+export function isLoopTestSearch(search = '') {
+  try {
+    const raw = String(search ?? '');
+    const query = raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : raw;
+    return new URLSearchParams(query).get('loop') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function readViteSupabaseEnv() {
   return {
     [SUPABASE_URL_ENV]: import.meta.env.VITE_SUPABASE_URL,
@@ -31,6 +41,8 @@ export function isMockRealtimeClient(client) {
 }
 
 export function createRealtimeClient(env) {
+  const search = typeof location !== 'undefined' ? location.search : '';
+  if (isLoopTestSearch(search)) return new MockSupabaseClient();
   const { url, anonKey, live } = readSupabaseConfig(env);
   if (!live) return new MockSupabaseClient();
   return createClient(url, anonKey, {

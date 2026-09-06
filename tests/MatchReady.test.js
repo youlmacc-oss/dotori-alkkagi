@@ -11,6 +11,8 @@ import {
   answerReady,
   createMatchReady,
   isPeerRearranging,
+  rearrangeCountDown,
+  rearrangeCountHint,
   skipReadyAsk,
   stepMatchReady,
 } from '../src/network/MatchReady.js';
@@ -36,6 +38,12 @@ describe('대전방 재배치·시작 타이밍', () => {
     expect(stepMatchReady(yes, 1000).rearranging).toBe(true);
     expect(stepMatchReady(yes, 1000 + REARRANGE_MS - 1).rearranging).toBe(true);
     expect(stepMatchReady(yes, 1000 + REARRANGE_MS).rearranging).toBe(false);
+    expect(stepMatchReady(yes, 1000).rearrangeCount).toBe(10);
+    expect(stepMatchReady(yes, 1000).startVisible).toBe(false);
+    expect(stepMatchReady(yes, 1000 + REARRANGE_MS - 1).rearrangeCount).toBe(1);
+    expect(rearrangeCountDown(REARRANGE_MS)).toBe(10);
+    expect(rearrangeCountHint(10)).toBe('10');
+    expect(rearrangeCountHint(0)).toBe('');
     const no = answerReady(createMatchReady(0), false, 500);
     expect(stepMatchReady(no, 500).rearranging).toBe(false);
     const late = answerReady(yes, false, 2000);

@@ -13,6 +13,8 @@ import {
   presenceViewKey,
   usersFromPresenceState,
   pickLatestPresence,
+  preferNewerPresence,
+  mergePresenceWithHints,
   dedupePresenceUsers,
   roomsFromPresence,
   canJoinPvpFromLobby,
@@ -66,7 +68,7 @@ describe('대기실 게임방', () => {
     expect(PVP_WAIT_GUIDE).toContain('초대');
     expect(PVP_WAIT_ROOM_HINT).toContain('초대 대전중');
     expect(canJoinPvpRoom(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(true);
-    expect(canJoinPvpFromLobby(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(false);
+    expect(canJoinPvpFromLobby(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(true);
     expect(canJoinPvpRoom(rooms.find((r) => r.mode === 'pvp'), 'c')).toBe(false);
     expect(presenceStatusLabel(user('c', { mode: 'pvp', nickname: '금동이' }), rooms)).toBe('상대 대기');
   });
@@ -213,6 +215,21 @@ describe('대기실 게임방', () => {
       { nickname: '도토리1', lastSeen: 1 },
       { nickname: '도토리1', lastSeen: 9 },
     ]).lastSeen).toBe(9);
+    const liveJoin = preferNewerPresence(
+      { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 200 },
+      { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 100 },
+    );
+    expect(liveJoin.status).toBe('playing');
+    expect(liveJoin.roomId).toBe('room_h');
+    const hintedJoin = preferNewerPresence(
+      { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 100 },
+      { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 200 },
+    );
+    expect(hintedJoin.status).toBe('playing');
+    expect(mergePresenceWithHints(
+      [{ userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 200 }],
+      [{ userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 100 }],
+    )[0].status).toBe('playing');
     expect(dedupePresenceUsers([
       { userId: 'host#0', presenceKey: 'host', nickname: '도토리1' },
       { userId: 'host', presenceKey: 'host', nickname: '도토리1', lastSeen: 5 },

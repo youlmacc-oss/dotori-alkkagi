@@ -1,7 +1,9 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { PHASE, GAME_MODE, GameEngine, STONE_COLOR } from '../src/physics/GameEngine.js';
 import { RealtimeManager, MockSupabaseClient, bindPresenceUnload } from '../src/network/RealtimeManager.js';
-import { roomsFromPresence } from '../src/network/LobbyRooms.js';
+import { canJoinPvpFromLobby, roomsFromPresence } from '../src/network/LobbyRooms.js';
+import { idleLobbyInvitees } from '../src/network/PvpInvite.js';
+import { hasPvpOpponent, matchPlayersFromPresence } from '../src/network/MatchStart.js';
 
 describe('관전 모드 (Spectator Mode)', () => {
   let engine;
@@ -364,10 +366,77 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     expect(await guest.connect()).toBe('SUBSCRIBED');
     await host.updatePresence({ status: 'playing', mode: 'solo', roomId: 'room_host_a' });
     await guest.updatePresence({ status: 'playing', mode: 'ai', roomId: 'room_guest_b' });
-    await new Promise((resolve) => setTimeout(resolve, 40));
-    const rooms = roomsFromPresence(seenByB.at(-1));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const rooms = roomsFromPresence(Array.from(guest.onlineUsers.values()));
     expect(rooms).toHaveLength(2);
     expect(rooms.map((r) => r.mode).sort()).toEqual(['ai', 'solo']);
+  });
+
+  test('1:1 개설이 다른 대기실에 바로 보이고 참가할 수 있다', async () => {
+    const client = new MockSupabaseClient();
+    const seen = [];
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'join-live',
+      userId: 'host_pvp',
+      userNickname: '호치',
+    });
+    const guest = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'join-live',
+      userId: 'guest_pvp',
+      userNickname: '달이',
+      onPresenceUpdate: (users) => { seen.push([...users]); },
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    expect(await guest.connect()).toBe('SUBSCRIBED');
+    await host.updatePresence({ status: 'playing', mode: 'pvp', roomId: 'room_host_pvp' });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const live = Array.from(guest.onlineUsers.values());
+    const rooms = roomsFromPresence(live.length ? live : seen.at(-1));
+    expect(rooms.some((r) => r.id === 'room_host_pvp' && r.mode === 'pvp')).toBe(true);
+    expect(canJoinPvpFromLobby(rooms.find((r) => r.id === 'room_host_pvp'), 'guest_pvp')).toBe(true);
+    const invitees = idleLobbyInvitees(Array.from(host.onlineUsers.values()), 'host_pvp');
+    expect(invitees.some((u) => (u.userId ?? u.id) === 'guest_pvp')).toBe(true);
+  });
+
+  test('초대 수락 후 오래된 대기 힌트가 호스트의 상대 입장을 덮지 않는다', async () => {
+    const client = new MockSupabaseClient();
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'invite-join',
+      userId: 'host_inv',
+      userNickname: '호치',
+    });
+    const guest = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'invite-join',
+      userId: 'guest_inv',
+      userNickname: '달이',
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    expect(await guest.connect()).toBe('SUBSCRIBED');
+    await host.updatePresence({ status: 'playing', mode: 'pvp', roomId: 'room_host_inv' });
+    await guest.updatePresence({ status: 'lobby', mode: null, roomId: null });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await guest.updatePresence({ status: 'playing', mode: 'pvp', roomId: 'room_host_inv' });
+    host._peerHints.set('guest_inv', {
+      userId: 'guest_inv',
+      status: 'lobby',
+      mode: null,
+      roomId: null,
+      lastSeen: 1,
+    });
+    host.resyncPresence({ force: true });
+    const live = Array.from(host.onlineUsers.values());
+    const guestRow = live.find((u) => (u.userId ?? u.id) === 'guest_inv');
+    expect(guestRow?.status).toBe('playing');
+    expect(guestRow?.roomId).toBe('room_host_inv');
+    expect(hasPvpOpponent(matchPlayersFromPresence(live, {
+      myId: 'host_inv',
+      mode: 'pvp',
+      roomId: 'room_host_inv',
+    }))).toBe(true);
   });
 
   test('한 클라이언트가 나가면 다른 목록에서 바로 빠진다', async () => {
