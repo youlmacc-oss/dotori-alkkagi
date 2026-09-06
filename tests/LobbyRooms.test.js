@@ -18,6 +18,7 @@ import {
   usersFromPresenceState,
   pickLatestPresence,
   preferNewerPresence,
+  shouldReplacePresenceHint,
   mergePresenceWithHints,
   dedupePresenceUsers,
   roomsFromPresence,
@@ -264,6 +265,17 @@ describe('대기실 게임방', () => {
       { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 80 },
       { userId: 'g', status: 'playing', mode: 'ai', roomId: 'room_g' },
     ])[0]).toMatchObject({ status: 'playing', mode: 'ai', roomId: 'room_g' });
+    expect(shouldReplacePresenceHint(
+      { userId: 'g', status: 'lobby', lastSeen: 80 },
+      { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_g', lastSeen: 90 },
+    )).toBe(false);
+    expect(shouldReplacePresenceHint(
+      { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_g', lastSeen: 120 },
+      { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_g', lastSeen: 90 },
+    )).toBe(true);
+    expect(presenceFromMatch({
+      userId: 'h', mode: 'pvp', phase: 'idle', inviteTargetId: 'guest', inviteAt: 9,
+    })).toMatchObject({ inviteTargetId: 'guest', status: 'playing' });
     expect(dedupePresenceUsers([
       { userId: 'host#0', presenceKey: 'host', nickname: '도토리1' },
       { userId: 'host', presenceKey: 'host', nickname: '도토리1', lastSeen: 5 },

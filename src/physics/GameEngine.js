@@ -1384,6 +1384,11 @@ export class GameEngine {
         running: !this._paused && (this.phase === PHASE.IDLE || this.phase === PHASE.AIMING),
       },
       gameMode: this.gameMode,
+      myColor: this.gameMode === GAME_MODE.SOLO
+        ? this.currentTurn
+        : this.gameMode === GAME_MODE.PVP
+          ? (this.isHost !== false ? STONE_COLOR.BLACK : STONE_COLOR.WHITE)
+          : STONE_COLOR.BLACK,
       aiDifficulty: this.aiDifficulty,
       inputLocked: Boolean(this.inputLocked),
       paused: Boolean(this._paused),
@@ -1503,10 +1508,16 @@ export class GameEngine {
   }
 
   isHumanInputBlocked() {
-    return this.inputLocked
+    const myColor = this.gameMode === GAME_MODE.PVP
+      ? (this.isHost !== false ? STONE_COLOR.BLACK : STONE_COLOR.WHITE)
+      : null;
+    return Boolean(
+      this.inputLocked
       || this.phase === PHASE.SPECTATING
       || this.phase === PHASE.GAME_OVER
-      || (this.gameMode === GAME_MODE.AI && this.currentTurn !== STONE_COLOR.BLACK);
+      || (this.gameMode === GAME_MODE.AI && this.currentTurn !== STONE_COLOR.BLACK)
+      || (myColor != null && this.currentTurn !== myColor),
+    );
   }
 
   /**
@@ -1562,32 +1573,63 @@ export class GameEngine {
    * 관전 중인 게임의 실시간 상태를 업데이트한다.
    * @param {object} gameState - 실시간 게임 상태
    */
-  updateSpectatorState(gameState) {
-    if (this.phase !== PHASE.SPECTATING) return;
+  applyRemoteMatchState(gameState, { asSpectator = false } = {}) {
+    if (!gameState) return false;
+    const localPhase = this.phase;
+    const remotePhase = gameState.phase;
+    if (
+      localPhase === PHASE.AIMING
+      && (remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE)
+    ) {
+      return false;
+    }
+    if (localPhase === PHASE.RESOLVING && remotePhase === PHASE.RESOLVING) {
+      return false;
+    }
+    if (asSpectator && this.phase !== PHASE.SPECTATING) return false;
+    if (!asSpectator && this.phase === PHASE.SPECTATING) return false;
 
-    // 돌 위치 및 상태 동기화
-    if (gameState.stones) {
+    if (Array.isArray(gameState.stones)) {
       gameState.stones.forEach((stoneData, index) => {
-        if (this.stones[index]) {
-          Body.setPosition(this.stones[index].body, stoneData.position);
-          Body.setVelocity(this.stones[index].body, stoneData.velocity || { x: 0, y: 0 });
-          this.stones[index].fallen = stoneData.fallen || false;
+        const stone = (stoneData?.id != null && this.stones.find((s) => s.id === stoneData.id))
+          || this.stones[index];
+        if (!stone?.body) return;
+        const pos = stoneData.position || { x: stoneData.x, y: stoneData.y };
+        if (Number.isFinite(pos?.x) && Number.isFinite(pos?.y)) {
+          Body.setPosition(stone.body, { x: pos.x, y: pos.y });
+        }
+        const vel = stoneData.velocity || { x: 0, y: 0 };
+        Body.setVelocity(stone.body, { x: vel.x || 0, y: vel.y || 0 });
+        stone.fallen = Boolean(stoneData.fallen);
+        if (stone.fallen) {
+          stone.body.collisionFilter.mask = 0;
         }
       });
     }
 
-    // 게임 페이즈 및 턴 정보 동기화
-    if (gameState.phase && gameState.phase !== PHASE.SPECTATING) {
-      this.phase = PHASE.SPECTATING; // 관전자는 항상 SPECTATING 유지
+    if (asSpectator) {
+      this.phase = PHASE.SPECTATING;
+    } else if (gameState.winner) {
+      this.phase = PHASE.GAME_OVER;
+    } else if (remotePhase && remotePhase !== PHASE.SPECTATING) {
+      this.phase = remotePhase;
+      this.aim = null;
     }
-    if (gameState.currentTurn) {
-      this.currentTurn = gameState.currentTurn;
-    }
+    if (gameState.currentTurn) this.currentTurn = gameState.currentTurn;
     if (gameState.turnRemainingMs !== undefined) {
       this.turnRemainingMs = gameState.turnRemainingMs;
     }
+    if (gameState.winner) this.winner = gameState.winner;
+    if (asSpectator) {
+      this.emit('spectatorUpdate', { gameState, snapshot: this.getSnapshot() });
+    } else if (gameState.winner && localPhase !== PHASE.GAME_OVER) {
+      this.emit('gameOver', { winner: gameState.winner, reason: 'remote' });
+    }
+    return true;
+  }
 
-    this.emit('spectatorUpdate', { gameState, snapshot: this.getSnapshot() });
+  updateSpectatorState(gameState) {
+    return this.applyRemoteMatchState(gameState, { asSpectator: true });
   }
 
   beginAiAim(shot) {

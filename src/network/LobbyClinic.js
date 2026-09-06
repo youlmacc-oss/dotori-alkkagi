@@ -41,10 +41,14 @@ import {
   evaluateInviteJoin,
   evaluateLobbyInvite,
   idleLobbyInvitees,
+  shouldOpenPresenceInvite,
+  shouldRepublishOpenRoom,
   PVP_WAIT_EXPIRE_MS,
 } from './PvpInvite.js';
 import { LOBBY_STATE_EVENT } from './RealtimeManager.js';
+import { shouldApplyMatchSync, shouldFollowRemoteStart } from './MatchSync.js';
 import { BOOK_PLAY_LABEL, BOOK_SKIP_LABEL } from '../ui/GuideBook.js';
+import { seatYawFor } from '../ui/ThreeRenderer.js';
 import {
   FIRST_HINT,
   READY_ASK,
@@ -155,7 +159,31 @@ export function pvpInviteAcceptClinicOk() {
       peerStarted: false,
       mode: 'pvp',
     })
-    && !shouldHoldPvpStartGate({ started: true, hasOpponent: false });
+    && !shouldHoldPvpStartGate({ started: true, hasOpponent: false })
+    && shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp' })
+    && shouldOpenPresenceInvite({
+      userId: 'host',
+      status: 'playing',
+      mode: 'pvp',
+      roomId: 'room_host',
+      inviteTargetId: 'guest',
+      inviteAt: 10,
+    }, 'guest')
+    && !shouldOpenPresenceInvite({
+      userId: 'host',
+      status: 'playing',
+      mode: 'pvp',
+      roomId: 'room_host',
+      inviteTargetId: 'guest',
+      inviteAt: 10,
+    }, 'guest', 10)
+    && shouldFollowRemoteStart({
+      awaitingStart: true, started: false, remoteStarted: true, mode: 'pvp',
+    })
+    && shouldApplyMatchSync({
+      senderId: 'host', roomId: 'room_host', timestamp: 2,
+    }, { myId: 'guest', roomId: 'room_host', inPvp: true })
+    && seatYawFor(GAME_MODE.PVP, STONE_COLOR.BLACK, STONE_COLOR.WHITE) === Math.PI;
 }
 
 export function pvpPresenceClinicOk() {
@@ -346,7 +374,7 @@ export function runLobbyClinic(input = {}) {
       'pvpAccept',
       '1:1 초대 수락',
       pvpInviteAcceptClinicOk(),
-      pvpInviteAcceptClinicOk() ? '수락하면 호스트 방에 붙고 선공 시작을 따라간다' : '초대 수락·시작 동기 오류',
+      pvpInviteAcceptClinicOk() ? '수락하면 호스트 방에 붙고 초대는 새로고침 없이 뜬다' : '초대 수락·시작 동기 오류',
     ),
     item(
       'pvpPresence',

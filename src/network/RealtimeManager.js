@@ -3,7 +3,7 @@
  * 관전 데이터 브로드캐스트와 Presence 관리를 담당한다.
  */
 
-import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, isSparsePresenceSnapshot, mergePresenceWithHints, preferNewerPresence, presenceViewKey, retainKnownPeers, usersFromPresenceState } from './LobbyRooms.js';
+import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, isSparsePresenceSnapshot, mergePresenceWithHints, preferNewerPresence, presenceViewKey, retainKnownPeers, shouldReplacePresenceHint, usersFromPresenceState } from './LobbyRooms.js';
 import { PVP_INVITE_EVENT } from './PvpInvite.js';
 import {
   defaultNickname,
@@ -402,19 +402,26 @@ export class RealtimeManager {
     if (!this.isConnected || !this.channel || !gameState) return false;
 
     const spectatorUpdate = {
-      matchId: gameState.matchId || `match_${Date.now()}`,
-      timestamp: Date.now(),
+      matchId: gameState.matchId || gameState.roomId || `match_${Date.now()}`,
+      roomId: gameState.roomId || gameState.matchId || '',
+      senderId: gameState.senderId || '',
+      timestamp: Number(gameState.timestamp) > 0 ? Number(gameState.timestamp) : Date.now(),
+      started: gameState.started === true,
       phase: gameState.phase,
       currentTurn: gameState.currentTurn,
-      turnRemainingMs: gameState.turnRemainingMs,
-      stones: gameState.stones?.map(stone => ({
+      turnRemainingMs: gameState.turnRemainingMs ?? gameState.timer?.remainingMs,
+      stones: gameState.stones?.map((stone) => ({
         id: stone.id,
-        position: stone.body ? { x: stone.body.position.x, y: stone.body.position.y } : stone.position,
-        velocity: stone.body ? stone.body.velocity : { x: 0, y: 0 },
+        position: stone.body
+          ? { x: stone.body.position.x, y: stone.body.position.y }
+          : (stone.position || { x: stone.x, y: stone.y }),
+        velocity: stone.body
+          ? { x: stone.body.velocity.x, y: stone.body.velocity.y }
+          : (stone.velocity || { x: 0, y: 0 }),
         fallen: stone.fallen,
-        color: stone.color
+        color: stone.color,
       })) || [],
-      winner: gameState.winner
+      winner: gameState.winner,
     };
 
     try {
@@ -519,6 +526,8 @@ export class RealtimeManager {
       acorns: parseAcorn(this.presence.acorns),
       rearranging: Boolean(this.presence.rearranging),
       started: Boolean(this.presence.started),
+      inviteTargetId: this.presence.inviteTargetId ? String(this.presence.inviteTargetId) : null,
+      inviteAt: Number(this.presence.inviteAt) > 0 ? this.presence.inviteAt : null,
       pvpOpenedAt: Number(this.presence.pvpOpenedAt) > 0 ? this.presence.pvpOpenedAt : null,
       joinedAt: this.presence.joinedAt ?? Date.now(),
       lastSeen: Date.now(),
@@ -583,9 +592,7 @@ export class RealtimeManager {
         const key = String(user.presenceKey || user.userId || '');
         const hint = key ? this._peerHints.get(key) : null;
         if (!hint) continue;
-        const hintAt = Number(hint.lastSeen || hint.joinedAt) || 0;
-        const liveAt = Number(user.lastSeen || user.joinedAt) || 0;
-        if (liveAt >= hintAt) this._peerHints.delete(key);
+        if (shouldReplacePresenceHint(user, hint)) this._peerHints.delete(key);
       }
     }
     return this._applyVisiblePresence(activeLobbyUsers(users), { force });

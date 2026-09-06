@@ -44,6 +44,8 @@ export function presenceViewKey(users) {
       user?.seat ?? '',
       user?.rearranging ? '1' : '0',
       user?.started ? '1' : '0',
+      user?.inviteTargetId ?? '',
+      user?.inviteAt ?? '',
       user?.pvpOpenedAt ?? '',
     ].join('\t'))
     .sort()
@@ -89,6 +91,8 @@ export function presenceFromMatch(input = {}) {
     acorns: Number.isFinite(Number(input.acorns)) ? Math.floor(Number(input.acorns)) : 10,
     rearranging: Boolean(input.rearranging),
     started: Boolean(playing && input.started),
+    inviteTargetId: playing && input.inviteTargetId ? String(input.inviteTargetId) : null,
+    inviteAt: playing && Number(input.inviteAt) > 0 ? Math.floor(Number(input.inviteAt)) : null,
     pvpOpenedAt: Number(input.pvpOpenedAt) > 0 ? Math.floor(Number(input.pvpOpenedAt)) : null,
   };
 }
@@ -101,6 +105,8 @@ export function idleLobbyPresence(input = {}) {
     phase: 'idle',
     rearranging: false,
     started: false,
+    inviteTargetId: null,
+    inviteAt: null,
     pvpOpenedAt: null,
   });
 }
@@ -263,6 +269,15 @@ export function preferNewerPresence(current, incoming) {
     id: current.id || incoming.id,
     presenceKey: current.presenceKey || incoming.presenceKey || current.userId || incoming.userId,
   };
+}
+
+/** 방 개설 힌트는 더 오래된 대기 스냅샷에 지우지 않는다. */
+export function shouldReplacePresenceHint(live, hint) {
+  if (!hint) return false;
+  const liveAt = presenceTime(live);
+  const hintAt = presenceTime(hint);
+  if (isMatchRoomOccupant(hint) && !isMatchRoomOccupant(live)) return liveAt > hintAt;
+  return liveAt >= hintAt;
 }
 
 export function mergePresenceWithHints(users, hints) {

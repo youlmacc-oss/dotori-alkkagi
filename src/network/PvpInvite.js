@@ -2,7 +2,7 @@
  * 대기실 1:1 시선 유도 · 가이드선 선택 · 초대 링크 입장.
  */
 
-import { PRESENCE_STATUS, canJoinPvpRoom, roomsFromPresence } from './LobbyRooms.js';
+import { PRESENCE_STATUS, canJoinPvpRoom, isPlayableLobbyMode, roomsFromPresence } from './LobbyRooms.js';
 import {
   NICKNAME_MAX,
   NICKNAME_STORAGE_KEY,
@@ -193,6 +193,30 @@ export function evaluateLobbyInvite(payload, myId) {
     return { ok: false, invite, hint: '' };
   }
   return { ok: true, invite, hint: '' };
+}
+
+/** 방을 연 동안 Presence를 자주 올려 대기실이 새로고침 없이 방을 보게 한다. */
+export function shouldRepublishOpenRoom({ inRoom, mode } = {}) {
+  return Boolean(inRoom && isPlayableLobbyMode(mode));
+}
+
+export function presenceInvitePayload(user) {
+  return buildLobbyInvite({
+    roomId: user?.roomId,
+    hostId: user?.userId ?? user?.id,
+    hostName: user?.nickname,
+    targetId: user?.inviteTargetId,
+  });
+}
+
+export function shouldOpenPresenceInvite(user, myId, seenAt = 0) {
+  if (user?.status !== PRESENCE_STATUS.PLAYING || user?.mode !== 'pvp' || !user?.roomId) {
+    return false;
+  }
+  const target = String(user?.inviteTargetId || '').trim();
+  if (!target || target !== String(myId || '')) return false;
+  const at = Number(user.inviteAt) || 0;
+  return !(at && Number(seenAt) > 0 && at <= Number(seenAt));
 }
 
 export function lobbyInviteAsk(hostName) {

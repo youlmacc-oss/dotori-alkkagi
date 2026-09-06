@@ -44,8 +44,10 @@ export const WARM_TONE_HEX = '#e89040';
 export const BOARD_COLOR_DEFAULT = KAYA_HEX;
 export const SEAT_YAW_MS = 900;
 
-export function seatYawFor(mode, turn) {
-  return mode === GAME_MODE.SOLO && turn === STONE_COLOR.WHITE ? Math.PI : 0;
+export function seatYawFor(mode, turn, myColor) {
+  if (mode === GAME_MODE.SOLO) return turn === STONE_COLOR.WHITE ? Math.PI : 0;
+  if (mode === GAME_MODE.PVP && myColor === STONE_COLOR.WHITE) return Math.PI;
+  return 0;
 }
 
 /** 좌석 카메라는 고정 축을 돌고, 올림은 축을 옆으로 밀지 않는다. */
@@ -698,7 +700,7 @@ export class ThreeRenderer {
     if (this.killCam) return;
     const rotating = snapshot?.phase !== 'resolving' && snapshot?.phase !== 'gameOver';
     const target = rotating
-      ? seatYawFor(snapshot?.gameMode, snapshot?.currentTurn)
+      ? seatYawFor(snapshot?.gameMode, snapshot?.currentTurn, snapshot?.myColor)
       : this.boardYawTarget;
     if (target !== this.boardYawTarget) {
       this.yawFrom = this.boardYaw;

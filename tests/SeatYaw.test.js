@@ -8,6 +8,12 @@ describe('1인 좌석 회전', () => {
     expect(seatYawFor(GAME_MODE.SOLO, STONE_COLOR.BLACK)).toBe(0);
   });
 
+  it('1:1은 내 돌이 앞에 오도록 백만 반대 자리에 앉는다', () => {
+    expect(seatYawFor(GAME_MODE.PVP, STONE_COLOR.BLACK, STONE_COLOR.WHITE)).toBeCloseTo(Math.PI);
+    expect(seatYawFor(GAME_MODE.PVP, STONE_COLOR.WHITE, STONE_COLOR.BLACK)).toBe(0);
+    expect(seatYawFor(GAME_MODE.AI, STONE_COLOR.WHITE, STONE_COLOR.WHITE)).toBe(0);
+  });
+
   it('축은 그대로 두고 카메라만 반대편으로 돈다', () => {
     const lookBase = { x: 0, y: 15, z: 10 };
     const a = playSeatPose({

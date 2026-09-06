@@ -22,6 +22,9 @@ import {
   buildLobbyInvite,
   evaluateLobbyInvite,
   lobbyInviteAsk,
+  presenceInvitePayload,
+  shouldOpenPresenceInvite,
+  shouldRepublishOpenRoom,
   LOBBY_INVITE_SENT,
   LOBBY_INVITE_BTN,
   parseGuideChoice,
@@ -146,6 +149,26 @@ describe('대기실 1:1 안내', () => {
     expect(lobbyInviteAsk('도토리1')).toContain('도토리1');
     expect(LOBBY_INVITE_SENT).toContain('초대');
     expect(LOBBY_INVITE_BTN).toContain('초대');
+    expect(shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp' })).toBe(true);
+    expect(shouldRepublishOpenRoom({ inRoom: true, mode: 'solo' })).toBe(true);
+    expect(shouldRepublishOpenRoom({ inRoom: false, mode: 'pvp' })).toBe(false);
+    const liveInvite = {
+      userId: 'host',
+      nickname: '호치',
+      status: 'playing',
+      mode: 'pvp',
+      roomId: 'room_host',
+      inviteTargetId: 'guest',
+      inviteAt: 20,
+    };
+    expect(shouldOpenPresenceInvite(liveInvite, 'guest')).toBe(true);
+    expect(shouldOpenPresenceInvite(liveInvite, 'guest', 20)).toBe(false);
+    expect(shouldOpenPresenceInvite(liveInvite, 'other')).toBe(false);
+    expect(presenceInvitePayload(liveInvite)).toMatchObject({
+      roomId: 'room_host',
+      hostId: 'host',
+      targetId: 'guest',
+    });
   });
 
   it('1:1 개설 후 10분이면 대기실로 보낸다', () => {
