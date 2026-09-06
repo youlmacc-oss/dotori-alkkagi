@@ -310,12 +310,29 @@ export function shouldApplyInviteDecline(payload, { myId, sentTargetId } = {}) {
     && (!sentTargetId || String(payload.targetId) === String(sentTargetId));
 }
 
-export function shouldApplyInviteAccept(payload, { myId, sentTargetId, roomId } = {}) {
+export function shouldApplyInviteAccept(payload, { myId, sentTargetId, roomId, inRoom } = {}) {
   if (payload?.action !== INVITE_ACTION_ACCEPT || !myId) return false;
   if (String(payload.hostId) !== String(myId)) return false;
+  if (inRoom === false) return false;
   if (sentTargetId && String(payload.targetId) !== String(sentTargetId)) return false;
   if (roomId && payload.roomId && String(payload.roomId) !== String(roomId)) return false;
   return Boolean(payload.targetId && payload.roomId);
+}
+
+export function shouldKeepHostInviteSheet({
+  room,
+  myId,
+  inRoom,
+  mode,
+  hasOpponent,
+} = {}) {
+  return mode === 'pvp'
+    && Boolean(inRoom)
+    && Boolean(room?.roomId)
+    && room.hostId === myId
+    && room.started !== true
+    && !room.guestId
+    && hasOpponent !== true;
 }
 
 export function shouldDismissInviteModal(openInvite, payload, myId) {

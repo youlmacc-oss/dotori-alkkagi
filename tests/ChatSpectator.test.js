@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { PHASE, GAME_MODE, GameEngine, STONE_COLOR } from '../src/physics/GameEngine.js';
-import { RealtimeManager, MockSupabaseClient, bindPresenceUnload, channelSendOk } from '../src/network/RealtimeManager.js';
+import { RealtimeManager, MockSupabaseClient, bindPresenceUnload, channelSendOk, channelSendLaunched } from '../src/network/RealtimeManager.js';
 import { canJoinPvpFromLobby, roomsFromPresence } from '../src/network/LobbyRooms.js';
 import { idleLobbyInvitees, shouldKeepInviteShare, shouldOpenPresenceInvite } from '../src/network/PvpInvite.js';
 import { applyRoomGuest, createRoomState, mergeRoomState, shouldKeepInviteShareFromRoom } from '../src/network/RoomState.js';
@@ -503,6 +503,9 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     expect(channelSendOk('ok')).toBe(true);
     expect(channelSendOk('error')).toBe(false);
     expect(channelSendOk('timed out')).toBe(false);
+    expect(channelSendLaunched('ok')).toBe(true);
+    expect(channelSendLaunched('pending')).toBe(true);
+    expect(channelSendLaunched('timed out')).toBe(false);
     const client = new MockSupabaseClient();
     const host = new RealtimeManager({
       supabaseClient: client,

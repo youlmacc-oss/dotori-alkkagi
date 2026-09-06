@@ -39,6 +39,13 @@ export function channelSendOk(result) {
   return result === 'ok';
 }
 
+/** send ack를 10초 기다리면 초대/입장이 밀린다. 이 안에 응답이 없으면 이미 나갔다고 본다. */
+export const BROADCAST_WAIT_MS = 400;
+
+export function channelSendLaunched(result) {
+  return result === 'ok' || result === 'pending';
+}
+
 export function lobbyChannelConfig(userId) {
   return {
     config: {
@@ -339,12 +346,15 @@ export class RealtimeManager {
     if (!this.channel) return false;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       try {
-        const result = await this.channel.send({
-          type: 'broadcast',
-          event,
-          payload,
-        });
-        if (channelSendOk(result)) return true;
+        const result = await Promise.race([
+          this.channel.send({
+            type: 'broadcast',
+            event,
+            payload,
+          }),
+          new Promise((resolve) => setTimeout(() => resolve('pending'), BROADCAST_WAIT_MS)),
+        ]);
+        if (channelSendLaunched(result)) return true;
       } catch {
         /* retry */
       }
@@ -522,8 +532,12 @@ export class RealtimeManager {
       lastSeen: Date.now(),
     };
 
-    await this.channel.track(presenceData);
-    await this._broadcastLobbyState(presenceData);
+    const tracking = this.channel.track(presenceData);
+    void this._broadcastLobbyState(presenceData);
+    await Promise.race([
+      tracking,
+      new Promise((resolve) => setTimeout(resolve, BROADCAST_WAIT_MS)),
+    ]);
   }
 
   async _broadcastLobbyState(user, left = false) {

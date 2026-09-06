@@ -94,7 +94,6 @@ import {
   pvpSeatColor,
   roomHasOpponent,
   shouldApplyRoomState,
-  shouldKeepInviteShareFromRoom,
   shouldKeepPvpRematch,
   shouldReturnToPvpWait,
 } from './network/RoomState.js';
@@ -159,6 +158,7 @@ import {
   shouldApplyInviteAccept,
   shouldApplyInviteDecline,
   shouldDismissInviteModal,
+  shouldKeepHostInviteSheet,
   presenceInvitePayload,
   shouldOpenPresenceInvite,
   sentInviteFields,
@@ -316,6 +316,7 @@ const realtimeManager = new RealtimeManager({
       myId: realtimeManager.userId,
       sentTargetId: sentLobbyInvite?.inviteTargetId,
       roomId: currentMatchRoomId(),
+      inRoom: inMatchRoom && engine.phase !== PHASE.SPECTATING,
     })) {
       applyHostAcceptedInvite(payload);
       return;
@@ -1017,6 +1018,7 @@ function hideLobby({ force = false } = {}) {
   }
   closeLobbyBook();
   closeInviteOnlyNotice();
+  closeLobbyInviteModal();
   closePvpGuidePick();
   lobbyVisible = false;
   lobbyUsers.hidden = true;
@@ -1682,10 +1684,12 @@ function inviteHostState(users = lobbyRoomsUsers()) {
 }
 
 function hostWaitingForInvite() {
-  return shouldKeepInviteShareFromRoom(matchRoom, {
+  return shouldKeepHostInviteSheet({
+    room: matchRoom,
     myId: realtimeManager.userId,
     inRoom: inMatchRoom && engine.phase !== PHASE.SPECTATING,
     mode: engine.gameMode,
+    hasOpponent: roomHasOpponent(matchRoom) || hasPvpOpponent(matchPlayers()),
   });
 }
 
@@ -1838,7 +1842,7 @@ async function sendLobbyInvite(target) {
   });
   const prevTarget = sentLobbyInvite?.inviteTargetId;
   if (prevTarget && prevTarget !== payload.targetId) {
-    await realtimeManager.broadcastPvpInvite(buildInviteReply({
+    void realtimeManager.broadcastPvpInvite(buildInviteReply({
       roomId: payload.roomId,
       hostId: payload.hostId,
       targetId: prevTarget,
@@ -1850,10 +1854,10 @@ async function sendLobbyInvite(target) {
     hostId: payload.hostId,
     hostName: payload.hostName,
   }), payload.targetId);
-  await publishPresence();
-  await publishRoomState();
   let ok = await realtimeManager.broadcastPvpInvite(payload);
   if (!ok) ok = await realtimeManager.broadcastPvpInvite(payload);
+  void publishPresence();
+  void publishRoomState();
   if (ok) setTicker(LOBBY_INVITE_SENT);
 }
 
@@ -1862,10 +1866,10 @@ async function announceInviteAccept(invite) {
   const reply = buildInviteReply(invite, INVITE_ACTION_ACCEPT, {
     guestName: realtimeManager.userNickname,
   });
-  await publishPresence();
-  await publishRoomState();
   let ok = await realtimeManager.broadcastPvpInvite(reply);
   if (!ok) ok = await realtimeManager.broadcastPvpInvite(reply);
+  void publishPresence();
+  void publishRoomState();
   return ok;
 }
 
@@ -1876,8 +1880,8 @@ async function acceptLobbyInvite() {
     join: (roomId) => joinRoom(roomId, { invite }),
     refresh: () => refreshLobbyPresence({ reconnect: false, publish: true }),
   });
-  if (result.ok) await announceInviteAccept(invite);
   closeLobbyInviteModal();
+  if (result.ok) void announceInviteAccept(invite);
   if (!result.ok) setTicker(INVITE_ROOM_GONE_HINT);
 }
 

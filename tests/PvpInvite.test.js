@@ -32,6 +32,7 @@ import {
   roomFromInvite,
   shouldApplyInviteAccept,
   shouldApplyInviteDecline,
+  shouldKeepHostInviteSheet,
   shouldDismissInviteModal,
   attemptInviteJoin,
   lobbyInviteAsk,
@@ -140,10 +141,21 @@ describe('대기실 1:1 안내', () => {
     }, { myId: 'host', sentTargetId: 'guest' })).toBe(true);
     expect(shouldApplyInviteAccept({
       action: INVITE_ACTION_ACCEPT, hostId: 'host', targetId: 'guest', roomId: 'room_host_1',
-    }, { myId: 'host', sentTargetId: 'guest', roomId: 'room_host_1' })).toBe(true);
+    }, { myId: 'host', roomId: 'room_host_1', inRoom: true })).toBe(true);
+    expect(shouldApplyInviteAccept({
+      action: INVITE_ACTION_ACCEPT, hostId: 'host', targetId: 'guest', roomId: 'room_host_1',
+    }, { myId: 'host', inRoom: false })).toBe(false);
     expect(shouldApplyInviteAccept({
       action: INVITE_ACTION_ACCEPT, hostId: 'host', targetId: 'other', roomId: 'room_host_1',
     }, { myId: 'host', sentTargetId: 'guest' })).toBe(false);
+    expect(shouldKeepHostInviteSheet({
+      room: { roomId: 'room_host_1', hostId: 'host', guestId: null },
+      myId: 'host', inRoom: true, mode: 'pvp', hasOpponent: false,
+    })).toBe(true);
+    expect(shouldKeepHostInviteSheet({
+      room: { roomId: 'room_host_1', hostId: 'host', guestId: null },
+      myId: 'host', inRoom: true, mode: 'pvp', hasOpponent: true,
+    })).toBe(false);
     expect(evaluateLobbyInvite({
       roomId: 'room_host_1', hostId: 'host', targetId: 'guest', action: INVITE_ACTION_ACCEPT,
     }, 'guest').ok).toBe(false);

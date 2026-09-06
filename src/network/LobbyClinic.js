@@ -55,6 +55,7 @@ import {
   shouldApplyInviteAccept,
   shouldApplyInviteDecline,
   shouldDismissInviteModal,
+  shouldKeepHostInviteSheet,
   shouldOpenPresenceInvite,
   sentInviteFields,
   shouldRepublishOpenRoom,
@@ -81,7 +82,7 @@ import {
   shouldReturnToPvpWait,
 } from './RoomState.js';
 import { shouldBlockSettingsToLobby } from '../ui/PlayPrefs.js';
-import { LOBBY_STATE_EVENT, channelSendOk } from './RealtimeManager.js';
+import { LOBBY_STATE_EVENT, channelSendOk, channelSendLaunched } from './RealtimeManager.js';
 import { BOOK_PLAY_LABEL, BOOK_SKIP_LABEL } from '../ui/GuideBook.js';
 import { seatYawFor } from '../ui/ThreeRenderer.js';
 import {
@@ -275,8 +276,16 @@ export function pvpInviteAcceptClinicOk() {
     )
     && shouldApplyInviteAccept(
       { action: 'accept', hostId: 'host', targetId: 'guest', roomId: 'room_host' },
-      { myId: 'host', sentTargetId: 'guest', roomId: 'room_host' },
+      { myId: 'host', roomId: 'room_host', inRoom: true },
     )
+    && !shouldKeepHostInviteSheet({
+      room: { roomId: 'room_host', hostId: 'host', guestId: null },
+      myId: 'host', inRoom: true, mode: 'pvp', hasOpponent: true,
+    })
+    && shouldKeepHostInviteSheet({
+      room: { roomId: 'room_host', hostId: 'host', guestId: null },
+      myId: 'host', inRoom: true, mode: 'pvp', hasOpponent: false,
+    })
     && evaluateInviteJoin(roomFromInvite({
       roomId: 'room_host', hostId: 'host', hostName: '호치',
     }), 'guest').ok === true
@@ -290,6 +299,8 @@ export function pvpInviteAcceptClinicOk() {
       'guest',
     )
     && channelSendOk('ok')
+    && channelSendLaunched('ok')
+    && channelSendLaunched('pending')
     && !channelSendOk('error')
     && !channelSendOk('timed out');
 }
