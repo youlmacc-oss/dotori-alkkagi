@@ -439,6 +439,29 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     }))).toBe(true);
   });
 
+  test('빈 Presence 동기화가 다른 접속자를 지우지 않는다', async () => {
+    const client = new MockSupabaseClient();
+    const guest = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'sparse-hold',
+      userId: 'hold_b',
+      userNickname: '달이',
+    });
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'sparse-hold',
+      userId: 'hold_a',
+      userNickname: '호치',
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    expect(await guest.connect()).toBe('SUBSCRIBED');
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(Array.from(guest.onlineUsers.keys()).sort()).toEqual(['hold_a', 'hold_b']);
+    client.channel('sparse-hold')._presenceState.delete('hold_a');
+    guest.resyncPresence({ force: true });
+    expect(Array.from(guest.onlineUsers.keys()).sort()).toEqual(['hold_a', 'hold_b']);
+  });
+
   test('한 클라이언트가 나가면 다른 목록에서 바로 빠진다', async () => {
     const client = new MockSupabaseClient();
     const seen = [];

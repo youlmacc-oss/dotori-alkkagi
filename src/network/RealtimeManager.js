@@ -3,7 +3,7 @@
  * 관전 데이터 브로드캐스트와 Presence 관리를 담당한다.
  */
 
-import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, mergePresenceWithHints, preferNewerPresence, presenceViewKey, usersFromPresenceState } from './LobbyRooms.js';
+import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, isSparsePresenceSnapshot, mergePresenceWithHints, preferNewerPresence, presenceViewKey, retainKnownPeers, usersFromPresenceState } from './LobbyRooms.js';
 import { PVP_INVITE_EVENT } from './PvpInvite.js';
 import {
   defaultNickname,
@@ -87,6 +87,7 @@ export class RealtimeManager {
     this._connecting = false;
     this._unloading = false;
     this._peerHints = new Map();
+    this._leftKeys = new Set();
   }
 
   rememberLocalPresence(users) {
@@ -98,6 +99,10 @@ export class RealtimeManager {
 
   _presenceUsers() {
     return Array.from(this.onlineUsers.values());
+  }
+
+  leftPresenceKeys() {
+    return Array.from(this._leftKeys);
   }
 
   canAdmitSelf() {
@@ -137,13 +142,15 @@ export class RealtimeManager {
     return state === 'closed' || state === 'errored' || state === 'leaving';
   }
 
-  async _teardownChannel() {
+  async _teardownChannel({ untrack = false } = {}) {
     const ch = this.channel;
     this.channel = null;
     this.isConnected = false;
     if (!ch) return;
     const key = this.presenceKey || this.userId;
-    try { await ch.untrack?.(key); } catch { /* ignore */ }
+    if (untrack) {
+      try { await ch.untrack?.(key); } catch { /* ignore */ }
+    }
     try { await ch.unsubscribe(); } catch { /* ignore */ }
     try { await this.supabaseClient?.removeChannel?.(ch); } catch { /* ignore */ }
   }
@@ -164,7 +171,7 @@ export class RealtimeManager {
       this._lobbyFull = false;
       this._lobbySwept = false;
       if (this.channel || this.isConnected) {
-        await this._teardownChannel();
+        await this._teardownChannel({ untrack: false });
       }
       this.channel = this.supabaseClient
         .channel(this.channelName, lobbyChannelConfig(this.presenceKey || this.userId))
@@ -231,7 +238,7 @@ export class RealtimeManager {
       }
 
       if (this._lobbyFull) {
-        await this._teardownChannel();
+        await this._teardownChannel({ untrack: true });
         this.emit('lobbyFull');
         this.onLobbyFull();
         return 'FULL';
@@ -240,7 +247,7 @@ export class RealtimeManager {
       return 'SUBSCRIBED';
     } catch (error) {
       console.error('Realtime 연결 실패:', error);
-      await this._teardownChannel();
+      await this._teardownChannel({ untrack: true });
       throw error;
     } finally {
       this._connecting = false;
@@ -255,9 +262,10 @@ export class RealtimeManager {
     this._clearStaleTimer();
     const key = this.presenceKey || this.userId;
     await this._broadcastLobbyState({ userId: key, presenceKey: key }, true);
-    await this._teardownChannel();
+    await this._teardownChannel({ untrack: true });
     this.onlineUsers.clear();
     this._peerHints.clear();
+    this._leftKeys.clear();
     this._presenceViewKey = '';
     this.emit('disconnected');
   }
@@ -331,7 +339,11 @@ export class RealtimeManager {
   }
 
   _applyVisiblePresence(raw, { force = false } = {}) {
-    const users = dedupePresenceUsers(this._visibleUsers(raw));
+    const users = retainKnownPeers(
+      Array.from(this.onlineUsers.values()),
+      dedupePresenceUsers(this._visibleUsers(raw)),
+      { selfId: this.userId, leftIds: Array.from(this._leftKeys) },
+    );
     const key = presenceViewKey(users);
     const same = key === this._presenceViewKey && this._presenceViewKey !== '';
     this._presenceViewKey = key;
@@ -565,13 +577,15 @@ export class RealtimeManager {
   resyncPresence({ force = false } = {}) {
     const state = this.channel?.presenceState?.() || {};
     const users = usersFromPresenceState(state);
-    for (const user of users) {
-      const key = String(user.presenceKey || user.userId || '');
-      const hint = key ? this._peerHints.get(key) : null;
-      if (!hint) continue;
-      const hintAt = Number(hint.lastSeen || hint.joinedAt) || 0;
-      const liveAt = Number(user.lastSeen || user.joinedAt) || 0;
-      if (liveAt >= hintAt) this._peerHints.delete(key);
+    if (!isSparsePresenceSnapshot(users, this.userId)) {
+      for (const user of users) {
+        const key = String(user.presenceKey || user.userId || '');
+        const hint = key ? this._peerHints.get(key) : null;
+        if (!hint) continue;
+        const hintAt = Number(hint.lastSeen || hint.joinedAt) || 0;
+        const liveAt = Number(user.lastSeen || user.joinedAt) || 0;
+        if (liveAt >= hintAt) this._peerHints.delete(key);
+      }
     }
     return this._applyVisiblePresence(activeLobbyUsers(users), { force });
   }
@@ -584,6 +598,7 @@ export class RealtimeManager {
    * 사용자 입장을 처리한다.
    */
   _handlePresenceJoin(key, newPresences) {
+    this._leftKeys.delete(key);
     const presence = newPresences?.[newPresences.length - 1];
     if (presence) {
       const row = { ...presence, userId: key, id: key, presenceKey: key };
@@ -614,6 +629,8 @@ export class RealtimeManager {
       ? leftPresences
       : [{ userId: key, id: key }];
     rows.forEach((presence) => {
+      this._leftKeys.add(key);
+      if (presence.userId) this._leftKeys.add(presence.userId);
       this.onlineUsers.delete(key);
       this.onlineUsers.delete(presence.userId);
       this.onlineUsers.delete(presence.id);

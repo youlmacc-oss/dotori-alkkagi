@@ -95,11 +95,11 @@ export function clampPowerScale(value) {
   return Number(clamped.toFixed(1));
 }
 
-/** 발사 물리와 분리한 조준선 화면 길이. 노트북도 짧게, 휴대폰은 더 짧게. */
+/** 발사 물리와 분리한 조준선 화면 길이. 직전 배율로 복귀. */
 export const AIM_GUIDE_VISUAL = Object.freeze({
-  DESKTOP: 0.30,
-  PHONE_MIN: 0.18,
-  PHONE_MAX: 0.24,
+  DESKTOP: 0.52,
+  PHONE_MIN: 0.34,
+  PHONE_MAX: 0.46,
   REF_WIDTH: 720,
   PHONE_MAX_WIDTH: 480,
   PHONE_TALL_MAX_WIDTH: 600,

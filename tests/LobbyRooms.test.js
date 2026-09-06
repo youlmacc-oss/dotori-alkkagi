@@ -4,6 +4,8 @@ import {
   canAdmitUser,
   isPlayableLobbyMode,
   applyLivePresence,
+  isSparsePresenceSnapshot,
+  retainKnownPeers,
   mergeSelfPresence,
   presenceFromMatch,
   openRoomCount,
@@ -265,6 +267,22 @@ describe('대기실 게임방', () => {
     ], self);
     expect(afterLeave.map((u) => u.userId)).toEqual(['me']);
     expect(roomsFromPresence(afterLeave)).toHaveLength(0);
+    expect(isSparsePresenceSnapshot([{ userId: 'me', status: 'lobby' }], 'me')).toBe(true);
+    expect(isSparsePresenceSnapshot([
+      { userId: 'me', status: 'lobby' },
+      { userId: 'a', status: 'lobby' },
+    ], 'me')).toBe(false);
+    const held = retainKnownPeers(
+      [user('a', { status: 'lobby', mode: null, roomId: null, nickname: '달이' }), self],
+      [self],
+      { selfId: 'me' },
+    );
+    expect(held.map((u) => u.userId).sort()).toEqual(['a', 'me']);
+    expect(retainKnownPeers(
+      [user('a', { status: 'lobby', mode: null, roomId: null }), self],
+      [self],
+      { selfId: 'me', leftIds: ['a'] },
+    ).map((u) => u.userId)).toEqual(['me']);
   });
 
   it('한 명이 나가면 그 방만 사라지고 나머지는 유지된다', () => {

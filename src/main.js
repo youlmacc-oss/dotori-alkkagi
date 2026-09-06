@@ -27,6 +27,7 @@ import {
   idleLobbyPresence,
   mergeSelfPresence,
   applyLivePresence,
+  retainKnownPeers,
   presenceFromMatch,
   presenceViewKey,
   roomTitle,
@@ -223,7 +224,13 @@ const realtimeManager = new RealtimeManager({
       pvpOpenedAt: u.pvpOpenedAt,
       isOwner: u.userId === realtimeManager.userId,
     }));
-    updateLobbyUserList(applyLivePresence(mapped, selfPresence()));
+    updateLobbyUserList(applyLivePresence(
+      retainKnownPeers(lobbyUserList, mapped, {
+        selfId: realtimeManager.userId,
+        leftIds: realtimeManager.leftPresenceKeys(),
+      }),
+      selfPresence(),
+    ));
     syncNickField();
   },
   onLobbyFull: () => {
@@ -693,20 +700,20 @@ function confirmPvpGuide(enabled) {
   settingsModal?.setGameMode(GAME_MODE.PVP, { startMatch: true });
 }
 
-function refreshLobbyPresence({ reconnect = false } = {}) {
+function refreshLobbyPresence({ reconnect = false, publish = false } = {}) {
   if (realtimeManager.isConnected && !realtimeManager.channelNeedsReconnect()) {
     realtimeManager.resyncPresence({ force: true });
-    publishPresence();
+    if (publish) publishPresence();
     return;
   }
-  if (reconnect) bootRealtime();
+  if (reconnect && !realtimeManager._connecting) bootRealtime();
 }
 
 function showLobby() {
   lobbyVisible = true;
   lobbyUsers.hidden = false;
   syncNickField();
-  refreshLobbyPresence({ reconnect: true });
+  refreshLobbyPresence({ reconnect: true, publish: true });
   renderLobby();
   syncSceneMode();
   if (shouldAutoOpenGuideBook() && !pendingInviteRoom) openLobbyBookSheet('guide');
@@ -1885,7 +1892,9 @@ window.addEventListener('online', () => {
 });
 
 function bootRealtime(attempt = 0) {
-  nightClaim = takeNightUserId({ makeId: newNightUserId, tabToken: nightClaim.tabToken });
+  if (!nightClaim?.userId) {
+    nightClaim = takeNightUserId({ makeId: newNightUserId, tabToken: nightClaim?.tabToken });
+  }
   realtimeManager.userId = nightClaim.userId;
   realtimeManager.presenceKey = nightClaim.userId;
   return realtimeManager.connect().then(() => {
@@ -1905,7 +1914,7 @@ bootRealtime();
 bindPresenceUnload(realtimeManager);
 
 function onLobbyResume() {
-  refreshLobbyPresence({ reconnect: true });
+  refreshLobbyPresence({ reconnect: true, publish: true });
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -1915,7 +1924,7 @@ window.addEventListener('focus', onLobbyResume);
 window.addEventListener('pageshow', onLobbyResume);
 if (!window.__dotoriLobbyRefresh) {
   window.__dotoriLobbyRefresh = setInterval(() => {
-    if (lobbyVisible) refreshLobbyPresence({ reconnect: true });
+    if (lobbyVisible) refreshLobbyPresence({ reconnect: false });
   }, 2000);
 }
 

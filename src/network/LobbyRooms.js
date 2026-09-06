@@ -338,6 +338,29 @@ export function mergeSelfPresence(users, self, cap = LOBBY_CAP) {
   return dedupePresenceUsers(list).slice(0, cap);
 }
 
+/** 빈 스냅샷·나만 남은 동기화는 아직 퇴장으로 보지 않는다. */
+export function isSparsePresenceSnapshot(users, selfId) {
+  const list = (Array.isArray(users) ? users : []).filter((user) => user?.userId ?? user?.id);
+  if (!list.length) return true;
+  if (!selfId) return false;
+  return list.length === 1 && String(list[0].userId ?? list[0].id) === String(selfId);
+}
+
+export function retainKnownPeers(prev, live, { selfId, leftIds } = {}) {
+  const next = dedupePresenceUsers(Array.isArray(live) ? live : []);
+  if (!isSparsePresenceSnapshot(next, selfId)) return next;
+  const left = new Set((leftIds || []).map((id) => String(id)));
+  const seen = new Set(next.map((user) => String(user.userId ?? user.id)));
+  const kept = [];
+  for (const user of prev || []) {
+    const id = String(user?.userId ?? user?.id ?? '');
+    if (!id || id === String(selfId || '') || left.has(id) || seen.has(id)) continue;
+    kept.push(user);
+    seen.add(id);
+  }
+  return dedupePresenceUsers([...next, ...kept]);
+}
+
 /** Presence 스냅샷이 권위. 떠난 사람은 이전 목록에 남지 않는다. */
 export function applyLivePresence(live, self, cap = LOBBY_CAP) {
   const list = dedupePresenceUsers(Array.isArray(live) ? live : []);
