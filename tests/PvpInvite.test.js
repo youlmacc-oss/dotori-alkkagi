@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   canShareInvite,
+  inviteShareMessage,
+  kakaoTalkHref,
+  KAKAO_SHARE_HINT,
   INVITE_COPIED_HINT,
   INVITE_NICK_FALLBACK,
   INVITE_NICK_STORAGE_KEY,
@@ -10,8 +13,17 @@ import {
   clearInviteQuery,
   evaluateInviteJoin,
   findInviteRoom,
+  inviteMissFallback,
   guestInviteNickname,
   inviteUrlFor,
+  idleLobbyInvitees,
+  isIdleLobbyUser,
+  canInviteLobbyUser,
+  buildLobbyInvite,
+  evaluateLobbyInvite,
+  lobbyInviteAsk,
+  LOBBY_INVITE_SENT,
+  LOBBY_INVITE_BTN,
   parseGuideChoice,
   persistInviteNickname,
   PVP_WAIT_EXPIRE_HINT,
@@ -22,7 +34,11 @@ import {
   PVP_ROOM_HINT,
   readInvitePrefill,
   readInviteRoomId,
+  readStoredInviteRoom,
+  resolveInviteRoom,
+  writeStoredInviteRoom,
   shareOrCopyInvite,
+  shareViaKakaoTalk,
   shouldInvitePvp,
 } from '../src/network/PvpInvite.js';
 
@@ -68,6 +84,8 @@ describe('대기실 1:1 안내', () => {
       history: { replaceState: (...args) => hist.push(args) },
     });
     expect(hist[0][2]).toBe('/play');
+    expect(writeStoredInviteRoom('room_host_1', local)).toBe('room_host_1');
+    expect(readStoredInviteRoom(local)).toBe('room_host_1');
   });
 
   it('대기 중인 1:1만 초대 입장하고 가득 찬 방은 거절한다', () => {
@@ -83,10 +101,16 @@ describe('대기실 1:1 안내', () => {
       status: 'playing',
       players: [{ userId: 'host' }, { userId: 'guest' }],
     };
+    expect(resolveInviteRoom([
+      { userId: 'host', nickname: '도토리1', status: 'playing', mode: 'pvp', roomId: 'room_host_1' },
+    ], 'room_host_1')?.hostId).toBe('host');
     expect(findInviteRoom([waiting], 'room_host_1')).toEqual(waiting);
     expect(evaluateInviteJoin(waiting, 'guest').ok).toBe(true);
     expect(evaluateInviteJoin(full, 'late').ok).toBe(false);
     expect(evaluateInviteJoin(null, 'guest').hint).toBe(INVITE_ROOM_GONE_HINT);
+    expect(INVITE_ROOM_GONE_HINT).toContain('종료');
+    expect(inviteMissFallback(false)).toEqual({ toLobby: true, hint: INVITE_ROOM_GONE_HINT });
+    expect(inviteMissFallback(true)).toEqual({ toLobby: false, hint: '' });
     expect(evaluateInviteJoin({ ...waiting, mode: 'solo' }, 'guest').ok).toBe(false);
     expect(evaluateInviteJoin({ ...waiting, mode: 'ai' }, 'guest').ok).toBe(false);
     expect(canShareInvite({
@@ -98,6 +122,30 @@ describe('대기실 1:1 안내', () => {
     expect(canShareInvite({
       mode: 'pvp', inRoom: true, started: false, isHost: true, hasOpponent: true,
     })).toBe(false);
+  });
+
+  it('방장은 대기방 사람에게 1:1 초대를 보낸다', () => {
+    const waiting = { userId: 'guest', nickname: '달이', status: 'lobby' };
+    const playing = { userId: 'busy', nickname: '호치', status: 'playing', mode: 'ai' };
+    expect(isIdleLobbyUser(waiting)).toBe(true);
+    expect(isIdleLobbyUser(playing)).toBe(false);
+    expect(idleLobbyInvitees([waiting, playing, { userId: 'host', status: 'lobby' }], 'host'))
+      .toEqual([waiting]);
+    expect(canInviteLobbyUser({
+      mode: 'pvp', inRoom: true, started: false, isHost: true, hasOpponent: false, target: waiting,
+    })).toBe(true);
+    expect(canInviteLobbyUser({
+      mode: 'pvp', inRoom: true, started: false, isHost: true, hasOpponent: false, target: playing,
+    })).toBe(false);
+    const payload = buildLobbyInvite({
+      roomId: 'room_host', hostId: 'host', hostName: '도토리1', targetId: 'guest',
+    });
+    expect(evaluateLobbyInvite(payload, 'guest').ok).toBe(true);
+    expect(evaluateLobbyInvite(payload, 'other').ok).toBe(false);
+    expect(evaluateLobbyInvite({ roomId: '', hostId: 'host', targetId: 'guest' }, 'guest').ok).toBe(false);
+    expect(lobbyInviteAsk('도토리1')).toContain('도토리1');
+    expect(LOBBY_INVITE_SENT).toContain('초대');
+    expect(LOBBY_INVITE_BTN).toContain('초대');
   });
 
   it('1:1 개설 후 10분이면 대기실로 보낸다', () => {
@@ -131,10 +179,23 @@ describe('대기실 1:1 안내', () => {
       share: async (payload) => { shared.push(payload); },
     })).resolves.toEqual({ ok: true, method: 'share', hint: '' });
     expect(shared[0].title).toBe(INVITE_SHARE_TITLE);
+    expect(shared[0].text).toContain('https://x.test/?room=a');
     await expect(shareOrCopyInvite('https://x.test/?room=a', {
       share: null,
       clipboard: { writeText: async (text) => { copied.push(text); } },
     })).resolves.toEqual({ ok: true, method: 'copy', hint: INVITE_COPIED_HINT });
     expect(copied).toEqual(['https://x.test/?room=a']);
+    expect(inviteShareMessage('https://x.test/?room=a')).toContain('https://x.test/?room=a');
+    expect(kakaoTalkHref('https://x.test/?room=a', 'Mozilla/5.0 (Linux; Android 14)')).toContain('com.kakao.talk');
+    expect(kakaoTalkHref('https://x.test/?room=a', 'Mozilla/5.0 (Windows NT 10.0)')).toBe('kakaotalk://');
+    const opened = [];
+    const kakaoCopied = [];
+    await expect(shareViaKakaoTalk('https://x.test/?room=a', {
+      ua: 'Mozilla/5.0 (Windows NT 10.0)',
+      clipboard: { writeText: async (text) => { kakaoCopied.push(text); } },
+      open: (href) => { opened.push(href); },
+    })).resolves.toEqual({ ok: true, method: 'kakao', hint: KAKAO_SHARE_HINT });
+    expect(opened).toEqual(['kakaotalk://']);
+    expect(kakaoCopied[0]).toContain('https://x.test/?room=a');
   });
 });

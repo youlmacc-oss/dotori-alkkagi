@@ -16,6 +16,22 @@ export function isPlayableLobbyMode(mode) {
   return PLAYABLE.has(mode);
 }
 
+export function presenceViewKey(users) {
+  return (Array.isArray(users) ? users : [])
+    .map((user) => [
+      user?.userId ?? user?.id ?? '',
+      user?.nickname ?? '',
+      user?.status ?? '',
+      user?.mode ?? '',
+      user?.roomId ?? '',
+      user?.seat ?? '',
+      user?.rearranging ? '1' : '0',
+      user?.pvpOpenedAt ?? '',
+    ].join('\t'))
+    .sort()
+    .join('\n');
+}
+
 export function canAdmitUser(users, userId, cap = LOBBY_CAP) {
   const list = Array.isArray(users) ? users : [];
   if (list.some((u) => (u.userId ?? u.id) === userId)) return true;
@@ -56,6 +72,23 @@ export function presenceFromMatch(input = {}) {
     rearranging: Boolean(input.rearranging),
     pvpOpenedAt: Number(input.pvpOpenedAt) > 0 ? Math.floor(Number(input.pvpOpenedAt)) : null,
   };
+}
+
+export function idleLobbyPresence(input = {}) {
+  return presenceFromMatch({
+    ...input,
+    inRoom: false,
+    mode: null,
+    phase: 'idle',
+    rearranging: false,
+    pvpOpenedAt: null,
+  });
+}
+
+export function filterOwnIdleRooms(rooms, myId, inMatch = false) {
+  const list = Array.isArray(rooms) ? rooms : [];
+  if (inMatch || !myId) return list;
+  return list.filter((room) => room.hostId !== myId);
 }
 
 export function openRoomCount(users) {
@@ -134,9 +167,13 @@ export function canJoinPvpRoom(room, userId) {
   return !seated && room.hostId !== userId;
 }
 
-export const PVP_WAIT_GUIDE = '1:1 대전방이 게이머를 기다리고 있습니다';
-export const PVP_WAIT_ROOM_HINT = '게이머를 기다리고 있습니다';
-export const LOBBY_MODE_HINT = '1인 연습 · AI 대국 · 1:1은 상대가 와야 시작';
+export function canJoinPvpFromLobby(room, userId) {
+  return false && canJoinPvpRoom(room, userId);
+}
+
+export const PVP_WAIT_GUIDE = '1:1 초대 대전 중입니다';
+export const PVP_WAIT_ROOM_HINT = '초대 대전중';
+export const LOBBY_MODE_HINT = '1인 연습 · AI 대국 · 1:1은 초대로만 입장';
 
 export function waitingPvpRooms(rooms) {
   return (Array.isArray(rooms) ? rooms : []).filter(isPvpWaiting);
@@ -170,6 +207,50 @@ export function userStatusLabel(status) {
   if (status === PRESENCE_STATUS.PLAYING) return '대국 중';
   if (status === PRESENCE_STATUS.SPECTATING) return '관전 중';
   return '대기중';
+}
+
+export function usersFromPresenceState(state = {}) {
+  const users = [];
+  for (const [key, metas] of Object.entries(state || {})) {
+    const list = Array.isArray(metas) ? metas : [];
+    list.forEach((presence, index) => {
+      if (!presence) return;
+      const slot = list.length > 1 ? `${key}#${index}` : key;
+      users.push({
+        ...presence,
+        userId: slot,
+        id: slot,
+        presenceKey: key,
+        status: presence.status || PRESENCE_STATUS.LOBBY,
+        mode: presence.mode ?? null,
+        roomId: presence.roomId ?? null,
+      });
+    });
+  }
+  return users;
+}
+
+export function mergePresenceList(prev, next) {
+  const prior = new Map();
+  for (const user of prev || []) {
+    const id = user?.userId ?? user?.id;
+    if (id) prior.set(id, user);
+  }
+  return (next || []).map((user) => {
+    const id = user?.userId ?? user?.id;
+    const old = id ? prior.get(id) : null;
+    if (!old) return user;
+    if (user.status === PRESENCE_STATUS.LOBBY) {
+      return { ...old, ...user, mode: user.mode ?? null, roomId: user.roomId ?? null };
+    }
+    return {
+      ...old,
+      ...user,
+      status: user.status || old.status,
+      mode: user.mode ?? old.mode,
+      roomId: user.roomId != null ? user.roomId : old.roomId,
+    };
+  });
 }
 
 export function mergeSelfPresence(users, self, cap = LOBBY_CAP) {

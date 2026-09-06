@@ -3,6 +3,9 @@
  */
 
 export const BOOK_SEEN_KEY = 'dotori-alkkagi-book-seen';
+export const BOOK_SKIP_KEY = 'dotori-alkkagi-book-skip';
+export const BOOK_SKIP_LABEL = '다음 접속시에는 이 창을 띄우지 않음';
+export const BOOK_PLAY_LABEL = '바로시작';
 
 export function hasSeenGuideBook(storage = globalThis.sessionStorage) {
   try {
@@ -20,6 +23,31 @@ export function markGuideBookSeen(storage = globalThis.sessionStorage) {
   }
 }
 
+export function hasSkipGuideOnConnect(storage = globalThis.localStorage) {
+  try {
+    return storage?.getItem?.(BOOK_SKIP_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setSkipGuideOnConnect(on, storage = globalThis.localStorage) {
+  const next = Boolean(on);
+  try {
+    if (next) storage?.setItem?.(BOOK_SKIP_KEY, '1');
+    else storage?.removeItem?.(BOOK_SKIP_KEY);
+  } catch {
+    /* private mode */
+  }
+  return next;
+}
+
+export function shouldAutoOpenGuideBook({ session, local } = {}) {
+  if (hasSkipGuideOnConnect(local ?? globalThis.localStorage)) return false;
+  if (hasSeenGuideBook(session ?? globalThis.sessionStorage)) return false;
+  return true;
+}
+
 export const GUIDE_PAGES = Object.freeze([
   Object.freeze({
     id: 'cover',
@@ -27,7 +55,7 @@ export const GUIDE_PAGES = Object.freeze([
     title: '도토리 알까기',
     visual: 'cover',
     lead: '원목 판 위에서 알을 당기고 튕깁니다.',
-    points: ['1인 연습', 'AI 대국', '1:1은 상대가 와야 시작'],
+    points: ['1인 연습', 'AI 대국', '1:1은 초대로만 입장 · 대기방 친구도 초대', '바로시작은 대기방 · 다음 접속 숨김 가능'],
   }),
   Object.freeze({
     id: 'pull',
@@ -43,7 +71,7 @@ export const GUIDE_PAGES = Object.freeze([
     title: '세 가지 대전',
     visual: 'modes',
     lead: '대기실에서 고른 모드가 곧 방입니다.',
-    points: ['1인: 흑·백 모두 나', 'AI: 위는 봇, 아래는 나', '1:1: 사람이 들어올 때까지 대기 · AI가 대신 두지 않음'],
+    points: ['1인: 흑·백 모두 나', 'AI: 위는 봇, 아래는 나', '1:1: 사람이 들어올 때까지 대기 · 혼자 열어도 AI가 대신 두지 않음', '호스트는 흑, 초대 입장은 백'],
   }),
   Object.freeze({
     id: 'ready',
@@ -75,7 +103,7 @@ export const GUIDE_PAGES = Object.freeze([
     title: '시작된 1:1은 나가면 패',
     visual: 'leave',
     lead: '시작 버튼 이후 대기방·기권은 상대 승리입니다.',
-    points: ['상대를 기다리는 중 나가기는 정산 없음', '이미 끝난 판에서 대기실은 그냥 복귀', '관람 중 나가기는 도토리에 손대지 않음'],
+    points: ['상대를 기다리는 중 나가기는 정산 없음', '이미 끝난 판에서 대기실은 그냥 복귀', '관람 중 나가기는 도토리에 손대지 않음', '대기실 ✕는 게임 종료'],
   }),
   Object.freeze({
     id: 'room',
@@ -83,7 +111,7 @@ export const GUIDE_PAGES = Object.freeze([
     title: '방 · 관람 · 위치',
     visual: 'room',
     lead: '정원 10명. 위치 번호는 항상 공개됩니다.',
-    points: ['참가하기는 비어 있는 1:1만', '초대 링크는 1:1 대기방에서만', '1:1은 10분 안에 시작하지 않으면 대기실로', '기본 닉은 접속 중 도토리 최후 번호 다음', '같은 닉은 저장 때 다른 이름으로 바꿉니다', '접속이 5분 끊기면 대기실에서 나갑니다', '대기실에서 닉네임을 바꿀 수 있고 대전·관람 중에는 잠깁니다'],
+    points: ['1:1은 초대로만 입장 · 대기실 참가 없음 · 관람은 가능', '방장이 대기방 친구를 초대할 수 있음', '내 자리는 내닉네임으로 표시', '기본 닉은 접속 중 도토리 최후 번호 다음 · 최대 5글자', '같은 닉은 저장 때 다른 이름으로 바꿉니다', '접속이 5분 끊기면 대기실에서 나갑니다', '대기실에서 닉네임을 바꿀 수 있고 대전·관람 중에는 잠깁니다'],
   }),
   Object.freeze({
     id: 'sound',
@@ -91,7 +119,15 @@ export const GUIDE_PAGES = Object.freeze([
     title: '소리·액션캠·재배치',
     visual: 'sound',
     lead: '⚙️에서 음량·판 색·감도·액션캠·시작 전 재배치를 맞춥니다.',
-    points: ['액션캠을 끄면 장외 클로즈업이 없습니다', '재배치를 끄면 시작 버튼이 바로 나옵니다', '첫 터치로 소리가 열립니다', '모바일은 세로로 잡는 것이 기준입니다'],
+    points: ['액션캠을 끄면 장외 클로즈업이 없습니다', '재배치를 끄면 시작 버튼이 바로 나옵니다', '첫 터치로 소리가 열립니다', '모바일은 세로로 잡는 것이 기준입니다', '다음 접속시 이 창을 숨길 수 있습니다'],
+  }),
+  Object.freeze({
+    id: 'invite',
+    kicker: '1:1 초대',
+    title: '대기방 친구도 초대',
+    visual: 'invite',
+    lead: '링크와 대기실에서 사람을 부릅니다. 혼자 열어도 1:1 방이 유지됩니다.',
+    points: ['방장이 친구 초대에서 대기 중인 사람을 고릅니다', '대기실 목록의 초대하기를 눌러도 됩니다', '카카오톡·다른 앱·링크 복사로도 보냅니다', '받은 쪽은 수락 또는 거절합니다', '대기실에서 참가하기는 없고 관람은 됩니다', '10분 안에 시작하지 않으면 대기실로 돌아갑니다'],
   }),
 ]);
 
@@ -131,6 +167,9 @@ export function renderGuideVisual(kind) {
   if (kind === 'sound') {
     return '<div class="book-visual is-sound" aria-hidden="true"><span>♪</span></div>';
   }
+  if (kind === 'invite') {
+    return '<div class="book-visual is-room" aria-hidden="true"><span>초대</span><span>수락</span></div>';
+  }
   return '<div class="book-visual is-cover" aria-hidden="true"><span class="book-stone is-black"></span><span class="book-stone is-white"></span></div>';
 }
 
@@ -160,7 +199,7 @@ export function renderClinicList(report) {
   return `
     <p class="book-kicker">연동 점검</p>
     <h3 class="book-heading">${report?.summary || '점검'}</h3>
-    <p class="clinic-lead">물리 · 액션캠 · 재배치 · 당김 · 정산 · 실시간</p>
+    <p class="clinic-lead">물리 · 1:1 대기 · 대기방 초대 · 바로시작 · 닉 · 실시간</p>
     <ul class="clinic-list">${rows}</ul>
   `;
 }

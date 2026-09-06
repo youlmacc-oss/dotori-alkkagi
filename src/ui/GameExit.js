@@ -33,11 +33,43 @@ export function applyGameExitScreen(root) {
   return screen ?? null;
 }
 
+export function shouldQuitFromLobbyClose(inMatch = false) {
+  return !inMatch;
+}
+
+export function kakaoInAppCloseHref(ua = '') {
+  const text = String(ua || '');
+  if (!/KAKAOTALK|KAKAOSTORY/i.test(text)) return '';
+  if (/iPad|iPhone|iPod/i.test(text)) return 'kakaoweb://closeBrowser';
+  return 'kakaotalk://inappbrowser/close';
+}
+
 export function requestWindowClose(win = globalThis) {
   try {
     win.close?.();
+    if (win.closed) return true;
+
+    const selfWin = typeof win.open === 'function' ? win.open('', '_self') : null;
+    selfWin?.close?.();
+    if (win.closed) return true;
+
+    try {
+      win.top?.close?.();
+    } catch {
+      /* ignore */
+    }
+    if (win.closed) return true;
+
+    const href = kakaoInAppCloseHref(win.navigator?.userAgent);
+    if (href) {
+      try {
+        win.location.assign?.(href);
+      } catch {
+        if (win.location) win.location.href = href;
+      }
+    }
   } catch {
-    return false;
+    return Boolean(win?.closed);
   }
   return Boolean(win.closed);
 }

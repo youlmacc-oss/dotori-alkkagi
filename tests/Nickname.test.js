@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   LOCATION_GUIDE,
+  MY_NICK_LABEL,
   NICKNAME_HINT,
   NICKNAME_LOCKED_HINT,
   NICKNAME_MAX,
@@ -19,6 +20,7 @@ import {
   parseDotoriNumber,
   playerSeat,
   sanitizeNickname,
+  shouldKeepAssignedNickname,
   sortBySeat,
   uniqueLobbyNickname,
 } from '../src/network/Nickname.js';
@@ -47,6 +49,23 @@ describe('대기실 닉네임', () => {
     expect(uniqueLobbyNickname('가나다라마', [{ userId: 'a', nickname: '가나다라마' }])).toMatchObject({
       ok: true, nickname: '도토리1', custom: false, renamed: true, hint: NICKNAME_TAKEN_HINT,
     });
+    expect(shouldKeepAssignedNickname({
+      assigned: true, nickname: '도토리1', others: [{ userId: 'b', nickname: '도토리2' }], myId: 'a',
+    })).toBe(true);
+    expect(shouldKeepAssignedNickname({
+      assigned: true,
+      nickname: '도토리1',
+      myId: 'a',
+      myJoinedAt: 1000,
+      others: [{ userId: 'b', nickname: '도토리1', joinedAt: 2000 }],
+    })).toBe(true);
+    expect(shouldKeepAssignedNickname({
+      assigned: true,
+      nickname: '도토리1',
+      myId: 'b',
+      myJoinedAt: 2000,
+      others: [{ userId: 'a', nickname: '도토리1', joinedAt: 1000 }],
+    })).toBe(false);
   });
 
   it('대기실에서는 바꾸고 대전·관람 중에는 잠근다', () => {
@@ -54,6 +73,7 @@ describe('대기실 닉네임', () => {
     expect(canChangeNickname({ inMatch: false, spectating: false })).toBe(true);
     expect(canChangeNickname({ inMatch: true })).toBe(false);
     expect(canChangeNickname({ spectating: true })).toBe(false);
+    expect(MY_NICK_LABEL).toBe('내닉네임');
     expect(NICKNAME_LOCKED_HINT).toContain('바꿀 수 없');
     expect(NICKNAME_LOCKED_HINT).toContain('대전');
   });

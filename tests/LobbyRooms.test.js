@@ -7,8 +7,14 @@ import {
   presenceFromMatch,
   openRoomCount,
   roomTitle,
+  filterOwnIdleRooms,
+  idleLobbyPresence,
+  presenceViewKey,
+  usersFromPresenceState,
   roomsFromPresence,
+  canJoinPvpFromLobby,
   canJoinPvpRoom,
+  mergePresenceList,
   lobbyGuideLine,
   lobbyPvpWaitGuide,
   presenceStatusLabel,
@@ -54,8 +60,10 @@ describe('대기실 게임방', () => {
     expect(rooms.find((r) => r.mode === 'pvp').status).toBe('waiting');
     expect(roomStatusLabel(rooms.find((r) => r.mode === 'pvp'))).toBe(PVP_WAIT_ROOM_HINT);
     expect(lobbyPvpWaitGuide(rooms)).toBe(PVP_WAIT_GUIDE);
-    expect(PVP_WAIT_GUIDE).toContain('게이머를 기다리');
+    expect(PVP_WAIT_GUIDE).toContain('초대');
+    expect(PVP_WAIT_ROOM_HINT).toContain('초대 대전중');
     expect(canJoinPvpRoom(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(true);
+    expect(canJoinPvpFromLobby(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(false);
     expect(canJoinPvpRoom(rooms.find((r) => r.mode === 'pvp'), 'c')).toBe(false);
     expect(presenceStatusLabel(user('c', { mode: 'pvp', nickname: '금동이' }), rooms)).toBe('상대 대기');
   });
@@ -171,6 +179,33 @@ describe('대기실 게임방', () => {
       userId: 'u1', nickname: '호치', mode: 'pvp', phase: 'idle',
     }));
     expect(roomTitle(roomsFromPresence(list)[0])).toBe('호치 · 1:1');
+    list = mergeSelfPresence(list, idleLobbyPresence({
+      userId: 'u1', nickname: '호치',
+    }));
+    expect(list[0].status).toBe('lobby');
+    expect(list[0].roomId).toBeNull();
+    expect(roomsFromPresence(list)).toHaveLength(0);
+    expect(filterOwnIdleRooms(roomsFromPresence([
+      presenceFromMatch({ userId: 'u1', nickname: '호치', mode: 'pvp', phase: 'idle' }),
+    ]), 'u1', false)).toHaveLength(0);
+    expect(filterOwnIdleRooms(roomsFromPresence([
+      presenceFromMatch({ userId: 'u1', nickname: '호치', mode: 'pvp', phase: 'idle' }),
+    ]), 'u1', true)).toHaveLength(1);
+    const playing = presenceFromMatch({ userId: 'u2', nickname: '달이', mode: 'pvp', phase: 'idle' });
+    expect(presenceViewKey([{ ...playing, lastSeen: 1 }]))
+      .toBe(presenceViewKey([{ ...playing, lastSeen: 99 }]));
+    expect(presenceViewKey([playing]))
+      .not.toBe(presenceViewKey([idleLobbyPresence({ userId: 'u2', nickname: '달이' })]));
+    expect(usersFromPresenceState({
+      pk_a: [{ userId: 'same', nickname: '호치', status: 'playing', mode: 'pvp' }],
+      pk_b: [{ userId: 'same', nickname: '랄2', status: 'lobby' }],
+    }).map((u) => u.nickname).sort()).toEqual(['랄2', '호치']);
+    const kept = mergePresenceList(
+      [presenceFromMatch({ userId: 'u2', nickname: '달이', mode: 'solo', phase: 'idle' })],
+      [{ userId: 'u2', nickname: '달이', status: 'playing' }],
+    );
+    expect(kept[0].mode).toBe('solo');
+    expect(roomsFromPresence(kept)).toHaveLength(1);
   });
 
   it('조준·진행·종료 중에도 방은 유지되고 관전만 접는다', () => {

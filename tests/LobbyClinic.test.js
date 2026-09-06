@@ -3,8 +3,13 @@ import {
   CLINIC_FAIL,
   CLINIC_WARN,
   actionCamClinicOk,
+  bookSkipClinicOk,
   isLiveRealtime,
+  lobbyInviteClinicOk,
+  nickClinicOk,
   pullClinicOk,
+  pvpExpireClinicOk,
+  pvpHoldClinicOk,
   readyClinicOk,
   runLobbyClinic,
 } from '../src/network/LobbyClinic.js';
@@ -13,8 +18,12 @@ import {
   GUIDE_PAGES,
   guidePageAt,
   guidePageCount,
+  BOOK_SKIP_KEY,
   hasSeenGuideBook,
+  hasSkipGuideOnConnect,
   markGuideBookSeen,
+  setSkipGuideOnConnect,
+  shouldAutoOpenGuideBook,
   renderClinicList,
   renderGuidePage,
 } from '../src/ui/GuideBook.js';
@@ -53,10 +62,18 @@ describe('대기실 자가진단', () => {
       lobbyCap: 10,
       hasInviteCopy: true,
       hasInviteNick: true,
+      hasLobbyInvite: true,
+      hasLobbyInviteModal: true,
+      hasBookSkip: true,
+      hasBookPlay: true,
     });
     expect(report.ok).toBe(true);
     expect(report.fails).toBe(0);
-    expect(report.total).toBe(20);
+    expect(report.total).toBe(24);
+    expect(report.items.find((row) => row.id === 'invite')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'pvpHold')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'bookSkip')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'nick')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'realtime')?.status).toBe(CLINIC_WARN);
     expect(report.items.find((row) => row.id === 'actionCam')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'ready')?.ok).toBe(true);
@@ -68,20 +85,32 @@ describe('대기실 자가진단', () => {
     const report = runLobbyClinic({});
     expect(report.ok).toBe(false);
     expect(report.items.find((row) => row.id === 'engine')?.status).toBe(CLINIC_FAIL);
-    expect(guidePageCount()).toBe(9);
+    expect(guidePageCount()).toBe(10);
     expect(guidePageAt(0).id).toBe('cover');
-    expect(guidePageAt(9).id).toBe('cover');
-    expect(GUIDE_PAGES[3].id).toBe('ready');
-    expect(GUIDE_PAGES[3].title).toContain('다시 놓기');
-    expect(GUIDE_PAGES[4].title).toContain('먼저');
-    expect(GUIDE_PAGES[5].points.some((line) => line.includes('액션캠'))).toBe(true);
-    expect(GUIDE_PAGES[8].title).toContain('액션캠');
+    expect(guidePageAt(10).id).toBe('cover');
+    expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.title).toContain('다시 놓기');
+    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.title).toContain('먼저');
+    expect(GUIDE_PAGES.find((page) => page.id === 'fall')?.points.some((line) => line.includes('액션캠'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'sound')?.title).toContain('액션캠');
+    expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.title).toContain('대기방');
+    expect(GUIDE_PAGES.find((page) => page.id === 'cover')?.points.some((line) => line.includes('바로시작'))).toBe(true);
+    expect(renderGuidePage(GUIDE_PAGES.find((page) => page.id === 'invite'))).toContain('초대하기');
     expect(renderGuidePage(guidePageAt(0))).toContain('튜토리얼 시작');
     expect(renderGuidePage(guidePageAt(1))).toContain('당기고');
     expect(renderGuidePage(guidePageAt(3))).toContain('재배치');
     expect(renderClinicList(report)).toContain('clinic-row');
     expect(renderClinicList(report)).toContain('액션캠');
     expect(readyClinicOk()).toBe(true);
+    expect(pvpHoldClinicOk()).toBe(true);
+    expect(nickClinicOk()).toBe(true);
+    expect(pvpExpireClinicOk()).toBe(true);
+    expect(bookSkipClinicOk({ hasBookSkip: true, hasBookPlay: true })).toBe(true);
+    expect(lobbyInviteClinicOk({
+      hasInviteCopy: true,
+      hasInviteNick: true,
+      hasLobbyInvite: true,
+      hasLobbyInviteModal: true,
+    })).toBe(true);
     expect(actionCamClinicOk({ hasActionCam: true, killCamOffSkips: true })).toBe(true);
     expect(actionCamClinicOk({ hasActionCam: true, killCamOffSkips: false })).toBe(false);
     expect(pullClinicOk({
@@ -97,5 +126,18 @@ describe('대기실 자가진단', () => {
     markGuideBookSeen(storage);
     expect(hasSeenGuideBook(storage)).toBe(true);
     expect(store[BOOK_SEEN_KEY]).toBe('1');
+    expect(shouldAutoOpenGuideBook({ session: storage, local: storage })).toBe(false);
+    const fresh = {
+      getItem: (k) => (k === BOOK_SKIP_KEY ? store[k] ?? null : null),
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: (k) => { delete store[k]; },
+    };
+    expect(shouldAutoOpenGuideBook({ session: fresh, local: fresh })).toBe(true);
+    expect(hasSkipGuideOnConnect(fresh)).toBe(false);
+    setSkipGuideOnConnect(true, fresh);
+    expect(hasSkipGuideOnConnect(fresh)).toBe(true);
+    expect(shouldAutoOpenGuideBook({ session: fresh, local: fresh })).toBe(false);
+    setSkipGuideOnConnect(false, fresh);
+    expect(shouldAutoOpenGuideBook({ session: fresh, local: fresh })).toBe(true);
   });
 });

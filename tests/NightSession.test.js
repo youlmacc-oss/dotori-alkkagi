@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   NIGHT_ACORN_KEY,
+  NIGHT_CLAIM_KEY,
   NIGHT_USER_KEY,
   ensureNightUserId,
+  newNightUserId,
   readNightAcorns,
   readNightUserId,
+  takeNightUserId,
   writeNightAcorns,
+  writeNightClaim,
   writeNightUserId,
 } from '../src/network/NightSession.js';
 import {
@@ -54,5 +58,22 @@ describe('같은 밤 세션', () => {
     expect(clearAcornHistory(local)).toBe(SESSION_ACORNS);
     expect(local.store[NICKNAME_STORAGE_KEY]).toBeUndefined();
     expect(local.store[ACORN_HISTORY_KEY]).toBeUndefined();
+  });
+
+  it('다른 탭이 같은 아이디를 쓰고 있으면 새 아이디를 준다', () => {
+    const session = memoryStore({ [NIGHT_USER_KEY]: 'user_shared' });
+    const claim = memoryStore();
+    writeNightClaim('user_shared', 'tab_a', claim);
+    const next = takeNightUserId({
+      storage: session,
+      claimStore: claim,
+      tabToken: 'tab_b',
+      now: Date.now(),
+      makeId: () => 'user_split',
+    });
+    expect(next.userId).toBe('user_split');
+    expect(next.tabToken).toBe('tab_b');
+    expect(JSON.parse(claim.store[NIGHT_CLAIM_KEY]).userId).toBe('user_split');
+    expect(newNightUserId()).toMatch(/^user_/);
   });
 });

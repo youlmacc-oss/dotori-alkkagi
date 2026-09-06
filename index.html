@@ -8,7 +8,11 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>도토리 알까기</title>
-    <link rel="stylesheet" href="/src/style.css?v=20260906h" />
+    <meta property="og:title" content="도토리 알까기 대전 초대" />
+    <meta property="og:description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
+    <meta property="og:type" content="website" />
+    <meta name="description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
+    <link rel="stylesheet" href="/src/style.css?v=20260906s" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -153,6 +157,120 @@
         white-space: nowrap;
       }
       #stage #invite-copy[hidden] { display: none !important; }
+      #stage .invite-share-sheet {
+        position: absolute;
+        inset: 0;
+        z-index: 56;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(8, 4, 3, 0.5);
+        pointer-events: auto;
+      }
+      #stage .invite-share-sheet[hidden] { display: none !important; }
+      #stage .invite-share-card {
+        width: min(280px, calc(100% - 32px));
+        padding: 16px 16px 12px;
+        border-radius: 16px;
+        border: 1.5px solid rgba(244, 192, 110, 0.55);
+        background: rgba(22, 13, 10, 0.92);
+      }
+      #stage .invite-share-title {
+        margin: 0 0 12px;
+        color: #f4c06e;
+        font-size: 15px;
+        font-weight: 900;
+        text-align: center;
+      }
+      #stage .invite-share-card button {
+        display: block;
+        width: 100%;
+        height: 36px;
+        margin: 0 0 8px;
+        border-radius: 18px;
+        border: 1.5px solid #f4c06e;
+        background: rgba(16, 10, 8, 0.8);
+        color: #fff3c8;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      #stage #invite-share-kakao {
+        background: #fee500;
+        border-color: #fee500;
+        color: #191919;
+      }
+      #stage #invite-share-close {
+        margin-bottom: 0;
+        border-color: rgba(244, 192, 110, 0.35);
+        background: transparent;
+      }
+      #stage .invite-lobby-hint {
+        margin: 0 0 8px;
+        color: #e8c4b0;
+        font-size: 12px;
+        font-weight: 700;
+        text-align: center;
+      }
+      #stage .invite-lobby-list {
+        max-height: 120px;
+        overflow-y: auto;
+        margin: 0 0 10px;
+      }
+      #stage .invite-lobby-empty {
+        margin: 0 0 8px;
+        color: rgba(232, 196, 176, 0.75);
+        font-size: 12px;
+        text-align: center;
+      }
+      #stage .lobby-invite-modal {
+        position: absolute;
+        inset: 0;
+        z-index: 57;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(8, 4, 3, 0.55);
+        pointer-events: auto;
+      }
+      #stage .lobby-invite-modal[hidden] { display: none !important; }
+      #stage .lobby-invite-card {
+        width: min(280px, calc(100% - 32px));
+        padding: 16px;
+        border-radius: 16px;
+        border: 1.5px solid rgba(244, 192, 110, 0.55);
+        background: rgba(22, 13, 10, 0.92);
+      }
+      #stage .lobby-invite-ask {
+        margin: 0 0 12px;
+        color: #fff3c8;
+        font-size: 14px;
+        font-weight: 800;
+        text-align: center;
+        line-height: 1.4;
+      }
+      #stage .lobby-invite-card button {
+        display: block;
+        width: 100%;
+        height: 36px;
+        margin: 0 0 8px;
+        border-radius: 18px;
+        border: 1.5px solid #f4c06e;
+        background: rgba(16, 10, 8, 0.8);
+        color: #fff3c8;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      #stage #lobby-invite-accept {
+        background: #f4c06e;
+        color: #160d0a;
+      }
+      #stage #lobby-invite-decline {
+        margin-bottom: 0;
+        border-color: rgba(244, 192, 110, 0.35);
+        background: transparent;
+      }
       #stage .invite-nick-modal {
         position: absolute;
         inset: 0;
@@ -377,6 +495,37 @@
         z-index: 50;
         isolation: isolate;
       }
+      #stage .lobby-user.owner .lobby-user-name {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+      }
+      #stage .lobby-user.owner .lobby-user-name::after {
+        content: '내닉네임';
+        flex: 0 0 auto;
+        margin-left: 6px;
+        padding: 1px 5px 2px;
+        border-radius: 8px 8px 8px 3px;
+        background: #f4c06e;
+        color: #160d0a;
+        font-size: 9px;
+        font-weight: 900;
+        line-height: 1.15;
+        letter-spacing: 0;
+        white-space: nowrap;
+      }
+      #stage .lobby-user-invite {
+        flex: 0 0 auto;
+        height: auto;
+        padding: 0;
+        border: none;
+        background: none;
+        color: #f4c06e;
+        font-size: 11px;
+        font-weight: 800;
+        opacity: 1;
+        cursor: pointer;
+      }
       #stage.is-lobby .hud-top,
       #stage.is-lobby .hud-bottom-zone,
       #stage.is-lobby .floating-buttons,
@@ -563,6 +712,25 @@
         background: rgba(22, 13, 10, 0.78); color: #f4c06e;
         font-size: 13px; font-weight: 800; text-align: center;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      #stage .seat-name.is-mine { overflow: visible; }
+      #stage .seat-name.is-mine::after {
+        content: '내닉네임';
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 2px);
+        transform: translateX(-50%);
+        margin: 0;
+        padding: 1px 5px 2px;
+        border-radius: 8px 8px 8px 3px;
+        background: #f4c06e;
+        color: #160d0a;
+        font-size: 9px;
+        font-weight: 900;
+        line-height: 1.15;
+        letter-spacing: 0;
+        white-space: nowrap;
+        pointer-events: none;
       }
       #stage .seat-name-far { top: calc(max(16px, env(safe-area-inset-top)) + 62px); }
       #stage .seat-name-near {
@@ -951,7 +1119,7 @@
               </div>
             </div>
             <button type="button" id="match-start" hidden aria-label="시작">시작</button>
-            <button type="button" id="invite-copy" hidden>초대 링크 복사</button>
+            <button type="button" id="invite-copy" hidden>친구 초대</button>
           </div>
           <div class="pull-block-toast" id="pull-block-toast" hidden role="status">붙어 있는 돌 방향으로는 당길 수 없습니다.</div>
           <div class="tutorial-coach" id="tutorial-coach" hidden>
@@ -1133,7 +1301,7 @@
               <header class="lobby-header">
                 <button type="button" class="lobby-title" id="lobby-book-open" aria-label="안내와 점검">👥 대국 방 (<span id="user-count">0</span>/10)</button>
                 <button type="button" class="lobby-close" id="lobby-settings" aria-label="설정">⚙️</button>
-                <button type="button" class="lobby-close" id="lobby-close">✕</button>
+                <button type="button" class="lobby-close" id="lobby-close" aria-label="게임종료">✕</button>
               </header>
               <div class="lobby-modes" id="lobby-modes" aria-label="대전 모드">
                 <button type="button" class="lobby-mode-btn" id="lobby-mode-solo" data-mode="solo">1인</button>
@@ -1145,7 +1313,7 @@
                 <input id="lobby-nick-input" class="lobby-nick-input" type="text" maxlength="5" autocomplete="off" spellcheck="false" aria-describedby="lobby-nick-hint" />
                 <button type="button" class="lobby-nick-save" id="lobby-nick-save" aria-label="닉네임 저장">저장</button>
                 <span class="lobby-nick-hint" id="lobby-nick-hint">닉네임은 5글자 이내</span>
-                <button type="button" class="lobby-location-guide" id="lobby-location-guide" aria-label="안내와 점검">1인 연습 · AI 대국 · 1:1은 상대가 와야 시작</button>
+                <button type="button" class="lobby-location-guide" id="lobby-location-guide" aria-label="안내와 점검">1인 연습 · AI 대국 · 1:1은 초대로만 입장</button>
               </div>
               <div class="lobby-book-bar" id="lobby-book-bar">
                 <button type="button" class="lobby-book-bar-btn" id="lobby-book-bar-guide">가이드북</button>
@@ -1180,9 +1348,29 @@
                 <div class="book-dots" id="lobby-book-dots"></div>
                 <button type="button" class="book-nav-btn" id="lobby-book-next">다음</button>
               </footer>
-              <button type="button" class="book-tutorial-btn is-dock" id="lobby-book-tutorial">튜토리얼 시작</button>
+              <div class="book-dock" id="lobby-book-dock">
+                <label class="book-skip" for="lobby-book-skip">
+                  <input type="checkbox" id="lobby-book-skip" />
+                  <span id="lobby-book-skip-text">다음 접속시에는 이 창을 띄우지 않음</span>
+                </label>
+                <div class="book-dock-actions">
+                  <button type="button" class="book-tutorial-btn is-dock is-play" id="lobby-book-play">바로시작</button>
+                  <button type="button" class="book-tutorial-btn is-dock" id="lobby-book-tutorial">튜토리얼 시작</button>
+                </div>
+              </div>
             </div>
           </section>
+          <div class="invite-share-sheet" id="invite-share-sheet" hidden>
+            <div class="invite-share-card">
+              <p class="invite-share-title">초대 링크 보내기</p>
+              <p class="invite-lobby-hint" id="invite-lobby-hint">대기방 친구를 초대할 수 있습니다</p>
+              <div class="invite-lobby-list" id="invite-lobby-list"></div>
+              <button type="button" id="invite-share-kakao">카카오톡</button>
+              <button type="button" id="invite-share-apps">다른 앱</button>
+              <button type="button" id="invite-share-copy">링크 복사</button>
+              <button type="button" id="invite-share-close">닫기</button>
+            </div>
+          </div>
           <div class="invite-nick-modal" id="invite-nick-modal" hidden>
             <div class="invite-nick-card">
               <p class="invite-nick-title" id="invite-nick-title">도토리 알까기 대전 초대</p>
@@ -1191,10 +1379,17 @@
               <button type="button" id="btn-enter-room">대전 입장하기</button>
             </div>
           </div>
+          <div class="lobby-invite-modal" id="lobby-invite-modal" hidden>
+            <div class="lobby-invite-card">
+              <p class="lobby-invite-ask" id="lobby-invite-ask">1:1 대전에 초대했습니다</p>
+              <button type="button" id="lobby-invite-accept">수락</button>
+              <button type="button" id="lobby-invite-decline">거절</button>
+            </div>
+          </div>
 
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260906h"></script>
+    <script type="module" src="/src/main.js?v=20260906s"></script>
   </body>
 </html>

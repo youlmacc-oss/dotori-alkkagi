@@ -3,13 +3,14 @@
  * 관전 데이터 브로드캐스트와 Presence 관리를 담당한다.
  */
 
-import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser } from './LobbyRooms.js';
+import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, mergePresenceList, presenceViewKey, usersFromPresenceState } from './LobbyRooms.js';
+import { PVP_INVITE_EVENT } from './PvpInvite.js';
 import {
   defaultNickname,
   NICKNAME_LOCKED_HINT,
   nextDotoriNumber,
   readStoredNickname,
-  takenNicknames,
+  shouldKeepAssignedNickname,
   uniqueLobbyNickname,
   writeStoredNickname,
 } from './Nickname.js';
@@ -43,7 +44,8 @@ export class RealtimeManager {
   constructor(options = {}) {
     this.supabaseClient = options.supabaseClient;
     this.channelName = options.channelName || LOBBY_CHANNEL;
-    this.userId = options.userId || `user_${Date.now()}`;
+    this.userId = options.userId || `user_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    this.presenceKey = options.presenceKey || this.userId;
     this._fixedNickname = Object.prototype.hasOwnProperty.call(options, 'userNickname');
     this.userNickname = this._fixedNickname ? (options.userNickname || '익명') : '';
     this.userCharacter = options.userCharacter || '🐶';
@@ -70,6 +72,7 @@ export class RealtimeManager {
     this.onLobbyFull = options.onLobbyFull || (() => {});
     this.onStaleLeave = options.onStaleLeave || (() => {});
     this.onSweepLeave = options.onSweepLeave || (() => {});
+    this.onPvpInvite = options.onPvpInvite || (() => {});
     this.keepNickname = options.keepNickname || null;
     this._disconnectedAt = null;
     this._staleTimer = 0;
@@ -79,6 +82,7 @@ export class RealtimeManager {
     this._lobbySwept = false;
     this._nickAssigned = Boolean(this._fixedNickname && this.userNickname);
     this._localSeeds = new Map();
+    this._presenceViewKey = '';
   }
 
   rememberLocalPresence(users) {
@@ -126,7 +130,7 @@ export class RealtimeManager {
       this._lobbyFull = false;
       this._lobbySwept = false;
       this.channel = this.supabaseClient
-        .channel(this.channelName, lobbyChannelConfig(this.userId))
+        .channel(this.channelName, lobbyChannelConfig(this.presenceKey || this.userId))
         .on('presence', { event: 'sync' }, () => {
           this._handlePresenceSync();
         })
@@ -141,10 +145,13 @@ export class RealtimeManager {
         })
         .on('broadcast', { event: LOBBY_SWEEP_EVENT }, ({ payload }) => {
           this._handleLobbySweep(payload);
+        })
+        .on('broadcast', { event: PVP_INVITE_EVENT }, ({ payload }) => {
+          this.onPvpInvite?.(payload);
         });
 
       await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('realtime timeout')), 8000);
+        const timer = setTimeout(() => reject(new Error('realtime timeout')), 15000);
         this.channel.subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
             this._handlePresenceSync();
@@ -197,6 +204,13 @@ export class RealtimeManager {
       return 'SUBSCRIBED';
     } catch (error) {
       console.error('Realtime 연결 실패:', error);
+      try {
+        await this.channel?.unsubscribe();
+      } catch {
+        /* ignore */
+      }
+      this.channel = null;
+      this.isConnected = false;
       throw error;
     }
   }
@@ -246,6 +260,7 @@ export class RealtimeManager {
     this._heartbeatTimer = setInterval(() => {
       if (this.isConnected) this._trackPresence();
     }, PRESENCE_HEARTBEAT_MS);
+    if (this.isConnected) this._trackPresence();
   }
 
   _stopHeartbeat() {
@@ -285,10 +300,16 @@ export class RealtimeManager {
   }
 
   _applyVisiblePresence(raw) {
-    const users = this._visibleUsers(raw);
-    this.onlineUsers = new Map(users.map((u) => [u.userId, u]));
+    const users = mergePresenceList(
+      Array.from(this.onlineUsers.values()),
+      this._visibleUsers(raw),
+    );
+    const key = presenceViewKey(users);
+    const same = key === this._presenceViewKey && this._presenceViewKey !== '';
+    this._presenceViewKey = key;
+    this.onlineUsers = new Map(users.map((u) => [u.userId ?? u.id, u]));
     if (this.isConnected) {
-      this._reconcileOwnIdentity(users);
+      if (!same) this._reconcileOwnIdentity(users);
       if (this._shouldSelfEvict()) {
         this.sweepSelfLeave();
         return users;
@@ -297,7 +318,7 @@ export class RealtimeManager {
         this._broadcastLobbySweep();
       }
     }
-    this.onPresenceUpdate(users);
+    if (!same) this.onPresenceUpdate(users);
     return users;
   }
 
@@ -323,6 +344,20 @@ export class RealtimeManager {
   /**
    * 관전 데이터를 브로드캐스트한다.
    */
+  async broadcastPvpInvite(payload) {
+    if (!this.channel || !payload?.targetId || !payload?.roomId) return false;
+    try {
+      await this.channel.send({
+        type: 'broadcast',
+        event: PVP_INVITE_EVENT,
+        payload,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async broadcastSpectatorData(gameState) {
     if (!this.isConnected || !this.channel || !gameState) return false;
 
@@ -374,9 +409,14 @@ export class RealtimeManager {
       return this.userNickname;
     }
     const stored = readStoredNickname(this.nicknameStorage);
-    const taken = takenNicknames(others, this.userId);
     const already = Boolean(this._nickAssigned && this.userNickname);
-    if (already && !taken.has(this.userNickname)) return this.userNickname;
+    if (shouldKeepAssignedNickname({
+      assigned: already,
+      nickname: this.userNickname,
+      others,
+      myId: this.userId,
+      myJoinedAt: this.presence.joinedAt,
+    })) return this.userNickname;
     const candidate = already
       ? this.userNickname
       : (isCustomNickname(this.userNickname) ? this.userNickname : stored);
@@ -432,6 +472,7 @@ export class RealtimeManager {
       roomId: this.presence.roomId ?? null,
       acorns: parseAcorn(this.presence.acorns),
       rearranging: Boolean(this.presence.rearranging),
+      pvpOpenedAt: Number(this.presence.pvpOpenedAt) > 0 ? this.presence.pvpOpenedAt : null,
       joinedAt: this.presence.joinedAt ?? Date.now(),
       lastSeen: Date.now(),
     };
@@ -452,24 +493,20 @@ export class RealtimeManager {
    * Presence 동기화를 처리한다.
    */
   _handlePresenceSync() {
-    const presenceState = this.channel.presenceState();
-    this.onlineUsers.clear();
-
-    Object.keys(presenceState).forEach(userId => {
-      const presence = presenceState[userId][0];
-      if (presence) this.onlineUsers.set(presence.userId ?? userId, presence);
-    });
-
-    this._applyVisiblePresence(activeLobbyUsers(Array.from(this.onlineUsers.values())));
+    const users = usersFromPresenceState(this.channel.presenceState());
+    this.onlineUsers = new Map(users.map((user) => [user.userId, user]));
+    this._applyVisiblePresence(activeLobbyUsers(users));
   }
 
   /**
    * 사용자 입장을 처리한다.
    */
   _handlePresenceJoin(key, newPresences) {
-    newPresences.forEach(presence => {
-      this.onlineUsers.set(presence.userId, presence);
-      this.onUserJoin(presence);
+    newPresences.forEach((presence, index) => {
+      const slot = (newPresences.length > 1 ? `${key}#${index}` : key);
+      const row = { ...presence, userId: slot, id: slot, presenceKey: key };
+      this.onlineUsers.set(slot, row);
+      this.onUserJoin(row);
     });
 
     this._applyVisiblePresence(activeLobbyUsers(Array.from(this.onlineUsers.values())));
@@ -492,7 +529,9 @@ export class RealtimeManager {
    */
   _handlePresenceLeave(key, leftPresences) {
     leftPresences.forEach(presence => {
+      this.onlineUsers.delete(key);
       this.onlineUsers.delete(presence.userId);
+      this.onlineUsers.delete(presence.id);
       this.onUserLeave(presence);
     });
 

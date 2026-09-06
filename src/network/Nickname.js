@@ -9,6 +9,7 @@ export const NICKNAME_PREFIX = '도토리';
 export const NICKNAME_HINT = '닉네임은 5글자 이내';
 export const NICKNAME_TAKEN_HINT = '이미 있는 닉이라 다른 이름으로 저장했습니다';
 export const NICKNAME_LOCKED_HINT = '대전·관람 중에는 닉네임을 바꿀 수 없습니다';
+export const MY_NICK_LABEL = '내닉네임';
 
 export function canChangeNickname(state = {}) {
   if (typeof state === 'boolean') return state !== true;
@@ -45,6 +46,35 @@ export function nextDotoriNumber(users) {
     if (n > max) max = n;
   }
   return max + 1;
+}
+
+export function shouldKeepAssignedNickname({
+  assigned = false,
+  nickname = '',
+  others = [],
+  myId = '',
+  myJoinedAt = 0,
+} = {}) {
+  const name = String(nickname || '').trim();
+  if (!assigned || !name) return false;
+  const conflicts = (Array.isArray(others) ? others : []).filter((user) => {
+    const id = user?.userId ?? user?.id;
+    if (myId && id === myId) return false;
+    return String(user?.nickname ?? '').trim() === name;
+  });
+  if (!conflicts.length) return true;
+  const mineAt = Number(myJoinedAt) || 0;
+  const mineId = String(myId || '');
+  return conflicts.every((user) => {
+    const theirAt = Number(user.joinedAt) || 0;
+    const theirId = String(user.userId ?? user.id ?? '');
+    if (mineAt && theirAt) {
+      if (mineAt < theirAt) return true;
+      if (mineAt > theirAt) return false;
+    } else if (mineAt && !theirAt) return true;
+    else if (!mineAt && theirAt) return false;
+    return mineId && theirId ? mineId <= theirId : true;
+  });
 }
 
 export function takenNicknames(users, myId) {

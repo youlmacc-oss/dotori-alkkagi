@@ -323,6 +323,7 @@ describe('대기실 인원 기본 모드', () => {
     expect(shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.SOLO }, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP }, GAME_MODE.AI)).toBe(true);
+    expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP }, GAME_MODE.AI, { inRoom: true })).toBe(false);
     expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP, phase: PHASE.AIMING }, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode(null, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode(idle, null)).toBe(false);

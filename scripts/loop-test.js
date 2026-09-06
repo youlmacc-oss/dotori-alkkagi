@@ -109,11 +109,15 @@ try {
       const book = document.getElementById('lobby-book');
       const heading = document.querySelector('#lobby-book .book-heading')?.textContent;
       const start = document.getElementById('lobby-book-tutorial');
+      const play = document.getElementById('lobby-book-play');
+      const skip = document.getElementById('lobby-book-skip');
       const pageStart = document.querySelector('#lobby-book [data-tutorial-start]');
       return {
         ok: Boolean(
           book && !book.hidden && heading && heading.includes('도토리')
           && start && start.textContent.includes('튜토리얼')
+          && play && play.textContent.includes('바로시작')
+          && skip
           && pageStart && pageStart.textContent.includes('튜토리얼')
         ),
         heading,
@@ -127,7 +131,13 @@ try {
       const rows = [...document.querySelectorAll('#lobby-book .clinic-row')];
       const text = rows.map((row) => row.textContent).join(' ');
       return {
-        ok: rows.length >= 18 && text.includes('액션캠') && text.includes('재배치') && text.includes('당김'),
+        ok: rows.length >= 24
+          && text.includes('액션캠')
+          && text.includes('재배치')
+          && text.includes('당김')
+          && text.includes('바로시작')
+          && text.includes('대기방')
+          && text.includes('내닉네임'),
         n: rows.length,
       };
     });
@@ -340,7 +350,7 @@ try {
           && hint && hint.textContent.includes('5글자')
           && nick && !nick.disabled && save && !save.disabled
           && save && save.textContent.includes('저장')
-          && locGuide && (locGuide.textContent.includes('위치는 항상 공개') || locGuide.textContent.includes('기다리'))
+          && locGuide && (locGuide.textContent.includes('위치는 항상 공개') || locGuide.textContent.includes('기다리') || locGuide.textContent.includes('초대'))
           && loc && loc.includes('위치')
           && near && far
           && quit && quit.textContent.includes('게임종료')
@@ -402,10 +412,10 @@ try {
       return {
         ok: Boolean(
           guide?.classList.contains('is-wait-blink')
-          && guide.textContent.includes('게이머를 기다리')
+          && guide.textContent.includes('초대 대전')
           && anim.includes('blink')
           && blinking.length >= 1
-          && blinking.every((el) => el.textContent.includes('기다리')),
+          && blinking.every((el) => el.textContent.includes('초대 대전')),
         ),
         text: guide?.textContent,
         blinks: blinking.length,

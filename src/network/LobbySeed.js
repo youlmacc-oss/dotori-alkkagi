@@ -12,6 +12,7 @@ const CHARACTERS = ['🐱', '🦊', '🐼', '🐯', '🐸', '🐵', '🐰', '�
 
 export function seedPlayingGuests(count = VIRTUAL_GUEST_COUNT) {
   const n = Math.max(0, Math.min(9, Number(count) || 0));
+  const now = Date.now();
   return Array.from({ length: n }, (_, i) => {
     const mode = VIRTUAL_MODES[i % VIRTUAL_MODES.length];
     return {
@@ -23,6 +24,8 @@ export function seedPlayingGuests(count = VIRTUAL_GUEST_COUNT) {
       mode,
       roomId: `room_virt_${i + 1}`,
       acorns: 3 + (i % 8),
+      lastSeen: now,
+      joinedAt: now,
     };
   });
 }

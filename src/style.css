@@ -939,12 +939,44 @@ body {
 
 .lobby-user-name {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   font-weight: 500;
+}
+
+.lobby-user.owner .lobby-user-name::after,
+#stage .seat-name.is-mine::after {
+  content: '내닉네임';
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 1px 5px 2px;
+  border-radius: 8px 8px 8px 3px;
+  background: #f4c06e;
+  color: #160d0a;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .lobby-user-status {
   font-size: 11px;
   opacity: 0.7;
+}
+
+.lobby-user-invite {
+  flex: 0 0 auto;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #f4c06e;
+  font-size: 11px;
+  font-weight: 800;
+  opacity: 1;
+  cursor: pointer;
 }
 
 .lobby-user-crown {
@@ -1160,11 +1192,52 @@ body {
 
 .book-tutorial-btn.is-dock {
   width: auto;
-  margin: 0 12px 12px;
+  flex: 1;
+  margin: 0;
+}
+
+.book-tutorial-btn.is-play {
+  background: rgba(16, 10, 8, 0.72);
+  color: #f4c06e;
+  border-color: rgba(244, 192, 110, 0.55);
 }
 
 .book-tutorial-btn[hidden] {
   display: none !important;
+}
+
+.book-dock {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.book-dock[hidden] {
+  display: none !important;
+}
+
+.book-skip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e8c4b0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.book-skip input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #f4c06e;
+}
+
+.book-dock-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .lobby-book {

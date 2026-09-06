@@ -147,7 +147,8 @@ export function defaultGameModeForLobbyCount(count) {
   return Number(count) >= 2 ? null : GAME_MODE.AI;
 }
 
-export function shouldApplyLobbyDefaultMode(snapshot, nextMode) {
+export function shouldApplyLobbyDefaultMode(snapshot, nextMode, extras = {}) {
+  if (extras.inRoom) return false;
   if (!snapshot || nextMode == null) return false;
   if (snapshot.phase === PHASE.SPECTATING || snapshot.gameMode === GAME_MODE.SPECTATE) return false;
   if (snapshot.gameMode === GAME_MODE.AI || snapshot.gameMode === GAME_MODE.SOLO) return false;

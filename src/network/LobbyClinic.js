@@ -5,7 +5,19 @@
 import { LOBBY_CAP, LOBBY_MODE_HINT, PVP_WAIT_GUIDE } from './LobbyRooms.js';
 import { SESSION_ACORNS, shouldForfeitOnLeave, shouldSettleAcorns } from './AcornPolicy.js';
 import { RESULT_BEAT_MS, RESULT_FALL_HOLD_MS } from '../physics/ResultBeat.js';
+import {
+  GAME_MODE,
+  PHASE,
+  STONE_COLOR,
+  shouldApplyLobbyDefaultMode,
+} from '../physics/GameEngine.js';
+import { MY_NICK_LABEL, NICKNAME_MAX } from './Nickname.js';
 import { PVP_START_HINT, PVP_WAIT_HINT } from './MatchStart.js';
+import {
+  canInviteLobbyUser,
+  PVP_WAIT_EXPIRE_MS,
+} from './PvpInvite.js';
+import { BOOK_PLAY_LABEL, BOOK_SKIP_LABEL } from '../ui/GuideBook.js';
 import {
   FIRST_HINT,
   READY_ASK,
@@ -56,6 +68,44 @@ export function actionCamClinicOk(input = {}) {
   return Boolean(input.hasActionCam) && input.killCamOffSkips === true;
 }
 
+export function pvpHoldClinicOk() {
+  const idle = {
+    phase: PHASE.IDLE,
+    gameMode: GAME_MODE.PVP,
+    currentTurn: STONE_COLOR.BLACK,
+    scores: { black: 5, white: 5 },
+    formation: { count: 5 },
+  };
+  return shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI, { inRoom: true }) === false
+    && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI) === true;
+}
+
+export function nickClinicOk() {
+  return NICKNAME_MAX === 5 && MY_NICK_LABEL === '내닉네임';
+}
+
+export function bookSkipClinicOk(input = {}) {
+  return Boolean(input.hasBookSkip && input.hasBookPlay)
+    && BOOK_SKIP_LABEL.includes('띄우지')
+    && BOOK_PLAY_LABEL.includes('바로시작');
+}
+
+export function lobbyInviteClinicOk(input = {}) {
+  return Boolean(input.hasInviteCopy && input.hasInviteNick && input.hasLobbyInvite && input.hasLobbyInviteModal)
+    && canInviteLobbyUser({
+      mode: GAME_MODE.PVP,
+      inRoom: true,
+      started: false,
+      isHost: true,
+      hasOpponent: false,
+      target: { userId: 'guest', status: 'lobby' },
+    });
+}
+
+export function pvpExpireClinicOk() {
+  return PVP_WAIT_EXPIRE_MS === 10 * 60 * 1000;
+}
+
 export function runLobbyClinic(input = {}) {
   const win = {
     mode: 'pvp',
@@ -97,8 +147,33 @@ export function runLobbyClinic(input = {}) {
       'pvpWait',
       '1:1 상대 대기',
       String(input.pvpWaitHint || PVP_WAIT_HINT).includes('상대')
-        && String(PVP_WAIT_GUIDE).includes('기다리'),
-      PVP_WAIT_HINT,
+        && String(PVP_WAIT_GUIDE).includes('초대')
+        && pvpHoldClinicOk(),
+      pvpHoldClinicOk() ? '사람이 올 때까지 대기 · AI로 바뀌지 않음' : '1:1 방이 AI로 덮일 수 있음',
+    ),
+    item(
+      'pvpHold',
+      '1:1 방 유지',
+      pvpHoldClinicOk(),
+      pvpHoldClinicOk() ? '혼자 개설해도 1:1 대기 유지' : '대기 중 AI 전환',
+    ),
+    item(
+      'expire',
+      '1:1 10분 만료',
+      pvpExpireClinicOk(),
+      pvpExpireClinicOk() ? '10분 미시작이면 대기실' : '만료 시간 없음',
+    ),
+    item(
+      'nick',
+      '닉 · 내닉네임',
+      nickClinicOk(),
+      nickClinicOk() ? `최대 ${NICKNAME_MAX}글자 · ${MY_NICK_LABEL}` : '닉 규칙 누락',
+    ),
+    item(
+      'bookSkip',
+      '가이드 바로시작',
+      bookSkipClinicOk(input),
+      bookSkipClinicOk(input) ? '바로시작 · 다음 접속 숨김' : '바로시작/숨김 UI 없음',
     ),
     item(
       'first',
@@ -177,9 +252,9 @@ export function runLobbyClinic(input = {}) {
     ),
     item(
       'invite',
-      '초대 링크',
-      Boolean(input.hasInviteCopy && input.hasInviteNick),
-      input.hasInviteCopy && input.hasInviteNick ? '대기 중 복사 · 게스트 닉 입장' : '초대 링크 UI 없음',
+      '초대 · 대기방',
+      lobbyInviteClinicOk(input),
+      lobbyInviteClinicOk(input) ? '링크 · 대기방 초대 · 수락/거절' : '초대 UI 없음',
     ),
     item(
       'realtime',
