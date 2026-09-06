@@ -1,5 +1,5 @@
 /**
- * 대기실 닉네임: 접속 순 도토리1…, 임의 변경은 5글자 이내.
+ * 대기실 닉네임: 기본은 접속 중 도토리 최후 번호 다음, 임의 변경은 5글자 이내·중복 시 다른 이름.
  */
 
 import { LOBBY_CAP } from './LobbyRooms.js';
@@ -7,10 +7,12 @@ import { LOBBY_CAP } from './LobbyRooms.js';
 export const NICKNAME_MAX = 5;
 export const NICKNAME_PREFIX = '도토리';
 export const NICKNAME_HINT = '닉네임은 5글자 이내';
-export const NICKNAME_LOCKED_HINT = '접속 중에는 닉네임을 바꿀 수 없습니다';
+export const NICKNAME_TAKEN_HINT = '이미 있는 닉이라 다른 이름으로 저장했습니다';
+export const NICKNAME_LOCKED_HINT = '대전·관람 중에는 닉네임을 바꿀 수 없습니다';
 
-export function canChangeNickname(connected) {
-  return connected !== true;
+export function canChangeNickname(state = {}) {
+  if (typeof state === 'boolean') return state !== true;
+  return !state.inMatch && !state.spectating;
 }
 export const LOCATION_GUIDE = '접속된 게이머의 위치는 항상 공개됩니다';
 export const NICKNAME_STORAGE_KEY = 'dotori-alkkagi-nickname';
@@ -20,10 +22,85 @@ export function defaultNickname(seat) {
   return `${NICKNAME_PREFIX}${n >= 1 ? n : 1}`;
 }
 
-export function parseDefaultSeat(name) {
+export function parseDotoriNumber(name) {
   const match = String(name ?? '').match(/^도토리(\d+)$/);
-  const seat = Number(match?.[1]);
-  return seat >= 1 && seat <= LOBBY_CAP ? seat : null;
+  const n = Number(match?.[1]);
+  return n >= 1 ? n : null;
+}
+
+export function parseDefaultSeat(name) {
+  const n = parseDotoriNumber(name);
+  return n >= 1 && n <= LOBBY_CAP ? n : null;
+}
+
+export function isCustomNickname(name) {
+  const text = String(name ?? '').trim();
+  return Boolean(text) && parseDotoriNumber(text) == null;
+}
+
+export function nextDotoriNumber(users) {
+  let max = 0;
+  for (const user of users || []) {
+    const n = parseDotoriNumber(user?.nickname);
+    if (n > max) max = n;
+  }
+  return max + 1;
+}
+
+export function takenNicknames(users, myId) {
+  const taken = new Set();
+  for (const user of users || []) {
+    const id = user?.userId ?? user?.id;
+    if (myId && id === myId) continue;
+    const nick = String(user?.nickname ?? '').trim();
+    if (nick) taken.add(nick);
+  }
+  return taken;
+}
+
+export function uniqueLobbyNickname(raw, users = [], fallback = defaultNickname(1), myId) {
+  const taken = takenNicknames(users, myId);
+  const first = sanitizeNickname(raw, fallback);
+  const dotori = parseDotoriNumber(first.nickname);
+
+  const nextUnusedDotori = (renamed) => {
+    let n = nextDotoriNumber(users);
+    let name = defaultNickname(n);
+    while (taken.has(name)) {
+      n += 1;
+      name = defaultNickname(n);
+    }
+    return {
+      ok: true,
+      nickname: name,
+      custom: false,
+      hint: renamed ? NICKNAME_TAKEN_HINT : first.hint,
+      renamed,
+    };
+  };
+
+  if (dotori != null && (!first.custom || taken.has(first.nickname))) {
+    return nextUnusedDotori(Boolean(first.custom && taken.has(first.nickname)));
+  }
+  if (!taken.has(first.nickname)) return { ...first, renamed: false };
+
+  const base = first.nickname;
+  const baseLen = Array.from(base).length;
+  for (let i = 2; i <= 99; i += 1) {
+    const suffix = String(i);
+    if (baseLen + suffix.length > NICKNAME_MAX) break;
+    const next = `${base}${suffix}`;
+    if (!taken.has(next)) {
+      return {
+        ok: true,
+        nickname: next,
+        custom: true,
+        hint: NICKNAME_TAKEN_HINT,
+        renamed: true,
+      };
+    }
+  }
+  return nextUnusedDotori(true);
 }
 
 export function nextSeat(users, cap = LOBBY_CAP) {

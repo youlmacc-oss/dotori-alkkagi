@@ -10,3 +10,6 @@ coverage
 .vercel
 .supabase
 public/test-result.png
+*비밀번호*
+*password*
+.env*

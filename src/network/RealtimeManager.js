@@ -7,12 +7,26 @@ import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser } from './LobbyRooms.js';
 import {
   defaultNickname,
   NICKNAME_LOCKED_HINT,
-  nextSeat,
+  nextDotoriNumber,
   readStoredNickname,
-  sanitizeNickname,
+  takenNicknames,
+  uniqueLobbyNickname,
   writeStoredNickname,
 } from './Nickname.js';
 import { parseAcorn } from './AcornPolicy.js';
+import {
+  PRESENCE_HEARTBEAT_MS,
+  PRESENCE_STALE_MS,
+  activeLobbyUsers,
+  isCustomNickname,
+  isKeptConnectedNickname,
+  keepConnectedUsers,
+  reconcileOwnSeat,
+  shouldEvictConnectedUser,
+  shouldForceLobbyLeave,
+} from './PresencePolicy.js';
+
+export const LOBBY_SWEEP_EVENT = 'lobby_sweep';
 
 export const LOBBY_CHANNEL = 'dotori-lobby';
 
@@ -54,6 +68,16 @@ export class RealtimeManager {
     this.onUserJoin = options.onUserJoin || (() => {});
     this.onUserLeave = options.onUserLeave || (() => {});
     this.onLobbyFull = options.onLobbyFull || (() => {});
+    this.onStaleLeave = options.onStaleLeave || (() => {});
+    this.onSweepLeave = options.onSweepLeave || (() => {});
+    this.keepNickname = options.keepNickname || null;
+    this._disconnectedAt = null;
+    this._staleTimer = 0;
+    this._heartbeatTimer = 0;
+    this._reconciling = false;
+    this._sweeping = false;
+    this._lobbySwept = false;
+    this._nickAssigned = Boolean(this._fixedNickname && this.userNickname);
   }
 
   _presenceUsers() {
@@ -64,7 +88,16 @@ export class RealtimeManager {
     const state = this.channel?.presenceState?.() || {};
     const listed = Object.values(state).map((row) => row[0]).filter(Boolean);
     const pool = listed.length ? listed : this._presenceUsers();
-    return canAdmitUser(pool, this.userId, this.lobbyCap);
+    return canAdmitUser(this._visibleUsers(pool), this.userId, this.lobbyCap);
+  }
+
+  _visibleUsers(users) {
+    return keepConnectedUsers(activeLobbyUsers(users), this.keepNickname);
+  }
+
+  _shouldSelfEvict() {
+    return Boolean(this.keepNickname)
+      && !isKeptConnectedNickname(this.userNickname, this.keepNickname);
   }
 
   /**
@@ -75,6 +108,7 @@ export class RealtimeManager {
 
     try {
       this._lobbyFull = false;
+      this._lobbySwept = false;
       this.channel = this.supabaseClient
         .channel(this.channelName, lobbyChannelConfig(this.userId))
         .on('presence', { event: 'sync' }, () => {
@@ -88,6 +122,9 @@ export class RealtimeManager {
         })
         .on('broadcast', { event: 'spectator_update' }, ({ payload }) => {
           this._handleSpectatorUpdate(payload);
+        })
+        .on('broadcast', { event: LOBBY_SWEEP_EVENT }, ({ payload }) => {
+          this._handleLobbySweep(payload);
         });
 
       await new Promise((resolve, reject) => {
@@ -102,19 +139,33 @@ export class RealtimeManager {
               return;
             }
             this.assignJoinIdentity(this._presenceUsers());
+            if (this._shouldSelfEvict()) {
+              this._lobbySwept = true;
+              clearTimeout(timer);
+              resolve('SWEPT');
+              return;
+            }
             await this._trackPresence();
             this.isConnected = true;
+            this.noteReconnect();
+            await this._broadcastLobbySweep();
             this.emit('connected');
             clearTimeout(timer);
             resolve('SUBSCRIBED');
             return;
           }
-          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            this.noteDisconnect();
             clearTimeout(timer);
             reject(new Error(status));
           }
         });
       });
+
+      if (this._lobbySwept) {
+        await this.sweepSelfLeave();
+        return 'SWEPT';
+      }
 
       if (this._lobbyFull) {
         if (this.channel) {
@@ -138,13 +189,119 @@ export class RealtimeManager {
    * Realtime 연결을 종료한다.
    */
   async disconnect() {
+    this._stopHeartbeat();
+    this._clearStaleTimer();
     if (this.channel) {
+      try { await this.channel.untrack?.(this.userId); } catch { /* ignore */ }
       await this.channel.unsubscribe();
       this.channel = null;
     }
     this.isConnected = false;
     this.onlineUsers.clear();
     this.emit('disconnected');
+  }
+
+  noteDisconnect(now = Date.now()) {
+    if (this._disconnectedAt == null) this._disconnectedAt = Number(now) || Date.now();
+    this._armStaleLeave();
+    return this._disconnectedAt;
+  }
+
+  noteReconnect() {
+    this._disconnectedAt = null;
+    this._clearStaleTimer();
+  }
+
+  _armStaleLeave() {
+    this._clearStaleTimer();
+    const wait = Math.max(0, PRESENCE_STALE_MS - (Date.now() - (this._disconnectedAt || Date.now())));
+    this._staleTimer = setTimeout(() => {
+      this.checkStaleLeave();
+    }, wait);
+  }
+
+  _clearStaleTimer() {
+    if (this._staleTimer) clearTimeout(this._staleTimer);
+    this._staleTimer = 0;
+  }
+
+  startHeartbeat() {
+    this._stopHeartbeat();
+    this._heartbeatTimer = setInterval(() => {
+      if (this.isConnected) this._trackPresence();
+    }, PRESENCE_HEARTBEAT_MS);
+  }
+
+  _stopHeartbeat() {
+    if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
+    this._heartbeatTimer = 0;
+  }
+
+  checkStaleLeave(now = Date.now()) {
+    if (!shouldForceLobbyLeave(this._disconnectedAt, now)) return false;
+    this.forceLobbyLeave();
+    return true;
+  }
+
+  async sweepSelfLeave() {
+    if (this._sweeping) return false;
+    this._sweeping = true;
+    this.seat = null;
+    await this.disconnect();
+    this.emit('sweepLeave');
+    this.onSweepLeave();
+    this._sweeping = false;
+    return true;
+  }
+
+  async _broadcastLobbySweep() {
+    if (!this.keepNickname || this._shouldSelfEvict() || !this.channel || !this.isConnected) return false;
+    try {
+      await this.channel.send({
+        type: 'broadcast',
+        event: LOBBY_SWEEP_EVENT,
+        payload: { keep: this.keepNickname },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  _applyVisiblePresence(raw) {
+    const users = keepConnectedUsers(raw, this.keepNickname);
+    this.onlineUsers = new Map(users.map((u) => [u.userId, u]));
+    if (this.isConnected) {
+      this._reconcileOwnIdentity(users);
+      if (this._shouldSelfEvict()) {
+        this.sweepSelfLeave();
+        return users;
+      }
+      if (raw.some((user) => shouldEvictConnectedUser(user, this.keepNickname))) {
+        this._broadcastLobbySweep();
+      }
+    }
+    this.onPresenceUpdate(users);
+    return users;
+  }
+
+  _handleLobbySweep(payload = {}) {
+    const keep = payload.keep || this.keepNickname;
+    if (!keep || isKeptConnectedNickname(this.userNickname, keep)) return;
+    this.sweepSelfLeave();
+  }
+
+  async forceLobbyLeave() {
+    if (!isCustomNickname(this.userNickname)) {
+      this.userNickname = '';
+      writeStoredNickname('', this.nicknameStorage);
+      this._nickAssigned = false;
+    }
+    this.seat = null;
+    this.presence = { ...this.presence, joinedAt: undefined };
+    await this.disconnect();
+    this.emit('staleLeave');
+    this.onStaleLeave();
   }
 
   /**
@@ -186,22 +343,41 @@ export class RealtimeManager {
    * 현재 사용자의 Presence를 추적한다.
    */
   assignJoinIdentity(users) {
-    const others = (users || []).filter((u) => u.userId !== this.userId);
-    this.seat = this.seat || nextSeat(others) || 1;
-    const fallback = defaultNickname(this.seat);
+    if (!this.presence.joinedAt) this.presence.joinedAt = Date.now();
+    const others = this._visibleUsers(users).filter((u) => (u.userId ?? u.id) !== this.userId);
+    this.seat = reconcileOwnSeat({
+      others,
+      mySeat: this.seat,
+      myJoinedAt: this.presence.joinedAt,
+      myId: this.userId,
+      cap: this.lobbyCap,
+    });
+    const fallback = defaultNickname(nextDotoriNumber(others));
     if (this._fixedNickname) {
       if (!this.userNickname) this.userNickname = fallback;
       return this.userNickname;
     }
     const stored = readStoredNickname(this.nicknameStorage);
-    const result = sanitizeNickname(stored, fallback);
-    this.userNickname = result.nickname;
-    writeStoredNickname(this.userNickname, this.nicknameStorage);
+    const taken = takenNicknames(others, this.userId);
+    const already = Boolean(this._nickAssigned && this.userNickname);
+    if (already && !taken.has(this.userNickname)) return this.userNickname;
+    const candidate = already
+      ? this.userNickname
+      : (isCustomNickname(this.userNickname) ? this.userNickname : stored);
+    const raw = isCustomNickname(candidate) ? candidate : '';
+    const named = uniqueLobbyNickname(raw, others, fallback, this.userId);
+    this.userNickname = named.nickname;
+    this._nickAssigned = true;
+    if (isCustomNickname(this.userNickname)) {
+      writeStoredNickname(this.userNickname, this.nicknameStorage);
+    } else {
+      writeStoredNickname('', this.nicknameStorage);
+    }
     return this.userNickname;
   }
 
-  setDisplayNickname(raw) {
-    if (this.isConnected) {
+  setDisplayNickname(raw, extras = {}) {
+    if (extras.locked) {
       return {
         ok: false,
         locked: true,
@@ -210,10 +386,17 @@ export class RealtimeManager {
         hint: NICKNAME_LOCKED_HINT,
       };
     }
-    const fallback = defaultNickname(this.seat || 1);
-    const result = sanitizeNickname(raw, fallback);
+    const others = this._visibleUsers(extras.users ?? this._presenceUsers())
+      .filter((u) => (u.userId ?? u.id) !== this.userId);
+    const fallback = defaultNickname(nextDotoriNumber(others));
+    const result = uniqueLobbyNickname(raw, others, fallback, this.userId);
     this.userNickname = result.nickname;
+    this._nickAssigned = true;
     writeStoredNickname(result.custom ? result.nickname : '', this.nicknameStorage);
+    if (this._shouldSelfEvict()) {
+      this.sweepSelfLeave();
+      return { ...result, swept: true };
+    }
     if (this.isConnected) {
       this.updatePresence({ nickname: this.userNickname, seat: this.seat });
     }
@@ -234,6 +417,7 @@ export class RealtimeManager {
       acorns: parseAcorn(this.presence.acorns),
       rearranging: Boolean(this.presence.rearranging),
       joinedAt: this.presence.joinedAt ?? Date.now(),
+      lastSeen: Date.now(),
     };
 
     await this.channel.track(presenceData);
@@ -257,11 +441,10 @@ export class RealtimeManager {
 
     Object.keys(presenceState).forEach(userId => {
       const presence = presenceState[userId][0];
-      this.onlineUsers.set(userId, presence);
+      if (presence) this.onlineUsers.set(presence.userId ?? userId, presence);
     });
 
-    const users = Array.from(this.onlineUsers.values());
-    this.onPresenceUpdate(users);
+    this._applyVisiblePresence(activeLobbyUsers(Array.from(this.onlineUsers.values())));
   }
 
   /**
@@ -273,8 +456,19 @@ export class RealtimeManager {
       this.onUserJoin(presence);
     });
 
-    const users = Array.from(this.onlineUsers.values());
-    this.onPresenceUpdate(users);
+    this._applyVisiblePresence(activeLobbyUsers(Array.from(this.onlineUsers.values())));
+  }
+
+  _reconcileOwnIdentity(users) {
+    if (this._reconciling) return;
+    const prevSeat = this.seat;
+    const prevNick = this.userNickname;
+    this.assignJoinIdentity(users);
+    if (prevSeat === this.seat && prevNick === this.userNickname) return;
+    this._reconciling = true;
+    Promise.resolve(this._trackPresence()).finally(() => {
+      this._reconciling = false;
+    });
   }
 
   /**
@@ -286,7 +480,8 @@ export class RealtimeManager {
       this.onUserLeave(presence);
     });
 
-    const users = Array.from(this.onlineUsers.values());
+    const users = this._visibleUsers(Array.from(this.onlineUsers.values()));
+    this.onlineUsers = new Map(users.map((u) => [u.userId, u]));
     this.onPresenceUpdate(users);
   }
 

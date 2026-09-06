@@ -208,6 +208,30 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     expect(await second.connect()).toBe('SUBSCRIBED');
     expect(second.userNickname).toBe('도토리2');
     expect(second.seat).toBe(2);
+    const late = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'nick-order',
+      userId: 'n-late',
+    });
+    late.seat = 1;
+    late.presence.joinedAt = (first.presence.joinedAt || 0) + 5000;
+    late.assignJoinIdentity([
+      { userId: 'n1', seat: 1, nickname: '도토리1', joinedAt: first.presence.joinedAt },
+      { userId: 'n2', seat: 2, nickname: '도토리2', joinedAt: second.presence.joinedAt },
+    ]);
+    expect(late.seat).toBe(3);
+    expect(late.userNickname).toBe('도토리3');
+    const gapped = new RealtimeManager({
+      supabaseClient: new MockSupabaseClient(),
+      channelName: 'nick-gap',
+      userId: 'n-gap',
+    });
+    gapped.userNickname = '도토리2';
+    gapped.assignJoinIdentity([
+      { userId: 'a', seat: 1, nickname: '도토리1', joinedAt: 1000 },
+      { userId: 'b', seat: 5, nickname: '도토리5', joinedAt: 2000 },
+    ]);
+    expect(gapped.userNickname).toBe('도토리6');
   });
 
   test('저장된 임의 닉네임은 5글자 이내만 쓰고 좌석은 유지한다', async () => {
@@ -235,10 +259,52 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     expect(player.userNickname).toBe('달이');
     expect(player.seat).toBe(1);
     expect(storage.getItem('dotori-alkkagi-nickname')).toBe('달이');
-    const locked = player.setDisplayNickname('호치');
+    const renamed = player.setDisplayNickname('호치');
+    expect(renamed.ok).toBe(true);
+    expect(player.userNickname).toBe('호치');
+    const locked = player.setDisplayNickname('민수', { locked: true });
     expect(locked.ok).toBe(false);
     expect(locked.locked).toBe(true);
-    expect(player.userNickname).toBe('달이');
+    expect(player.userNickname).toBe('호치');
+    const taken = player.setDisplayNickname('달이', {
+      users: [{ userId: 'other', nickname: '달이' }],
+    });
+    expect(taken.ok).toBe(true);
+    expect(taken.renamed).toBe(true);
+    expect(player.userNickname).toBe('달이2');
+  });
+
+  test('keepNickname이면 도토리1 외 접속자를 목록에서 빼고 퇴장시킨다', async () => {
+    const client = new MockSupabaseClient();
+    const keeper = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'sweep-lobby',
+      userId: 'dev1',
+      keepNickname: '도토리1',
+    });
+    expect(await keeper.connect()).toBe('SUBSCRIBED');
+    expect(keeper.userNickname).toBe('도토리1');
+    keeper.channel._presenceState.set('ghost', [{
+      userId: 'ghost', nickname: '도토리3', lastSeen: Date.now(),
+    }]);
+    keeper.channel._presenceState.set('virt_1', [{
+      userId: 'virt_1', nickname: '도토리2', lastSeen: Date.now(),
+    }]);
+    keeper._handlePresenceSync();
+    expect(Array.from(keeper.onlineUsers.keys()).sort()).toEqual(['dev1', 'virt_1']);
+
+    let swept = false;
+    const other = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'sweep-lobby',
+      userId: 'guest1',
+      userNickname: '달이',
+      keepNickname: '도토리1',
+      onSweepLeave: () => { swept = true; },
+    });
+    expect(await other.connect()).toBe('SWEPT');
+    expect(swept).toBe(true);
+    expect(other.isConnected).toBe(false);
   });
 
   test('자신의 Presence 추적', async () => {

@@ -81,6 +81,7 @@ import {
   writeNightAcorns,
 } from './network/NightSession.js';
 import { isLiveRealtime, runLobbyClinic } from './network/LobbyClinic.js';
+import { KEEP_CONNECTED_NICKNAME, STALE_LEAVE_HINT, SWEEP_LEAVE_HINT } from './network/PresencePolicy.js';
 import { PVP_GUIDE_ASK, PVP_ROOM_HINT, shouldInvitePvp } from './network/PvpInvite.js';
 import {
   guidePageAt,
@@ -143,6 +144,7 @@ const realtimeManager = new RealtimeManager({
   userId: ensureNightUserId(),
   userCharacter: '🐶',
   nicknameStorage: globalThis.sessionStorage,
+  keepNickname: KEEP_CONNECTED_NICKNAME,
   onPresenceUpdate: (users) => {
     updateLobbyUserList(users.map((u) => ({
       id: u.userId,
@@ -161,6 +163,12 @@ const realtimeManager = new RealtimeManager({
   },
   onLobbyFull: () => {
     setTicker(`대기실이 가득 찼습니다 (${LOBBY_CAP}명)`);
+  },
+  onStaleLeave: () => {
+    handleStaleLeave();
+  },
+  onSweepLeave: () => {
+    handleSweepLeave();
   },
   onSpectatorData: (gameState) => {
     if (engine.phase === PHASE.SPECTATING) {
@@ -284,8 +292,19 @@ function syncSeatNames() {
   syncWatchers();
 }
 
+function nickLockState() {
+  return {
+    inMatch: Boolean(inMatchRoom),
+    spectating: engine.phase === PHASE.SPECTATING,
+  };
+}
+
+function isNickLocked() {
+  return !canChangeNickname(nickLockState());
+}
+
 function syncNickLock() {
-  const locked = !canChangeNickname(realtimeManager.isConnected);
+  const locked = isNickLocked();
   if (nickInput) {
     nickInput.readOnly = locked;
     nickInput.disabled = locked;
@@ -298,12 +317,12 @@ function syncNickLock() {
 }
 
 function saveNickname() {
-  if (!nickInput || !canChangeNickname(realtimeManager.isConnected)) return;
-  const result = realtimeManager.setDisplayNickname(nickInput.value);
+  if (!nickInput || isNickLocked()) return;
+  const result = realtimeManager.setDisplayNickname(nickInput.value, { locked: isNickLocked() });
   nickInput.value = result.nickname;
   if (nickHint) {
-    nickHint.textContent = result.ok ? NICKNAME_HINT : result.hint;
-    nickHint.classList.toggle('is-warn', !result.ok);
+    nickHint.textContent = result.renamed ? result.hint : (result.ok ? NICKNAME_HINT : result.hint);
+    nickHint.classList.toggle('is-warn', !result.ok || Boolean(result.renamed));
   }
   publishPresence();
   syncSeatNames();
@@ -775,10 +794,46 @@ function enterMatchRoom() {
   if (!joiningRoom) activeRoomId = `room_${realtimeManager.userId}`;
   beginMatchReady();
   hideLobby({ force: true });
+  syncNickLock();
   syncLobbyLeaveBtn();
   syncSceneMode();
   soundEngine.playDoor('enter');
   noteRoomMates(false);
+}
+
+function handleSweepLeave() {
+  stopTutorial('leave');
+  hideResult();
+  inMatchRoom = false;
+  awaitingStart = false;
+  matchStarted = false;
+  clearMatchReady();
+  activeRoomId = null;
+  lastRoomMates = new Set();
+  lobbyUserList = [];
+  setTicker(SWEEP_LEAVE_HINT);
+  showLobby();
+  syncNickField();
+}
+
+function handleStaleLeave() {
+  stopTutorial('leave');
+  hideResult();
+  inMatchRoom = false;
+  awaitingStart = false;
+  matchStarted = false;
+  clearMatchReady();
+  activeRoomId = null;
+  lastRoomMates = new Set();
+  lobbyUserList = [];
+  setTicker(STALE_LEAVE_HINT);
+  showLobby();
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  realtimeManager.connect().then(() => {
+    realtimeManager.startHeartbeat();
+    publishPresence();
+    syncNickField();
+  }).catch(() => {});
 }
 
 function leaveToWaitingRoom() {
@@ -1291,9 +1346,22 @@ nickInput?.addEventListener('keydown', (event) => {
 
 requestAnimationFrame(frame);
 
+window.addEventListener('offline', () => realtimeManager.noteDisconnect());
+window.addEventListener('online', () => {
+  realtimeManager.noteReconnect();
+  if (!realtimeManager.isConnected) {
+    realtimeManager.connect().then(() => {
+      realtimeManager.startHeartbeat();
+      publishPresence();
+      syncNickField();
+    }).catch(() => {});
+  }
+});
+
 realtimeManager.connect().then(() => {
   sessionAcorns = writeNightAcorns(readNightAcorns());
   syncAcornHud();
+  realtimeManager.startHeartbeat();
   publishPresence();
   syncNickField();
 }).catch(() => {});

@@ -337,8 +337,8 @@ try {
           panel && !panel.hidden && rooms.length >= 1
           && roomCount === String(rooms.length)
           && nick && nick.value.length <= 5 && /^도토리\d+$/.test(nick.value)
-          && hint && hint.textContent.includes('바꿀 수 없')
-          && nick.disabled && save.disabled
+          && hint && hint.textContent.includes('5글자')
+          && nick && !nick.disabled && save && !save.disabled
           && save && save.textContent.includes('저장')
           && locGuide && (locGuide.textContent.includes('위치는 항상 공개') || locGuide.textContent.includes('기다리'))
           && loc && loc.includes('위치')

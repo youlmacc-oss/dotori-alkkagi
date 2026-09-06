@@ -4,18 +4,23 @@ import {
   NICKNAME_HINT,
   NICKNAME_LOCKED_HINT,
   NICKNAME_MAX,
+  NICKNAME_TAKEN_HINT,
   canChangeNickname,
   countNicknameChars,
   defaultNickname,
+  isCustomNickname,
   locationLabel,
   matchSeatNames,
   funAiNickname,
   FUN_AI_NAMES,
+  nextDotoriNumber,
   nextSeat,
   parseDefaultSeat,
+  parseDotoriNumber,
   playerSeat,
   sanitizeNickname,
   sortBySeat,
+  uniqueLobbyNickname,
 } from '../src/network/Nickname.js';
 
 describe('대기실 닉네임', () => {
@@ -29,12 +34,28 @@ describe('대기실 닉네임', () => {
     expect(nextSeat(Array.from({ length: 10 }, (_, i) => ({ seat: i + 1 })))).toBeNull();
     expect(parseDefaultSeat('도토리4')).toBe(4);
     expect(parseDefaultSeat('민수')).toBeNull();
+    expect(parseDotoriNumber('도토리11')).toBe(11);
+    expect(isCustomNickname('도토리11')).toBe(false);
+    expect(nextDotoriNumber([{ nickname: '도토리1' }, { nickname: '도토리5' }])).toBe(6);
+    expect(uniqueLobbyNickname('', [
+      { userId: 'a', nickname: '도토리1' },
+      { userId: 'b', nickname: '도토리5' },
+    ]).nickname).toBe('도토리6');
+    expect(uniqueLobbyNickname('달이', [{ userId: 'a', nickname: '달이' }])).toMatchObject({
+      ok: true, nickname: '달이2', custom: true, renamed: true, hint: NICKNAME_TAKEN_HINT,
+    });
+    expect(uniqueLobbyNickname('가나다라마', [{ userId: 'a', nickname: '가나다라마' }])).toMatchObject({
+      ok: true, nickname: '도토리1', custom: false, renamed: true, hint: NICKNAME_TAKEN_HINT,
+    });
   });
 
-  it('접속 중에는 닉네임을 바꿀 수 없다', () => {
-    expect(canChangeNickname(true)).toBe(false);
-    expect(canChangeNickname(false)).toBe(true);
+  it('대기실에서는 바꾸고 대전·관람 중에는 잠근다', () => {
+    expect(canChangeNickname({})).toBe(true);
+    expect(canChangeNickname({ inMatch: false, spectating: false })).toBe(true);
+    expect(canChangeNickname({ inMatch: true })).toBe(false);
+    expect(canChangeNickname({ spectating: true })).toBe(false);
     expect(NICKNAME_LOCKED_HINT).toContain('바꿀 수 없');
+    expect(NICKNAME_LOCKED_HINT).toContain('대전');
   });
 
   it('임의 닉네임은 5글자 이내만 받고 안내 문구를 준다', () => {
