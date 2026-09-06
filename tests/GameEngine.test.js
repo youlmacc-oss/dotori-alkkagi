@@ -335,7 +335,7 @@ describe('대기실 인원 기본 모드', () => {
     expect(defaultGameModeForLobbyCount(4)).toBeNull();
   });
 
-  it('이미 AI나 1인이면 인원과 상관없이 바꾸지 않는다', () => {
+  it('이미 AI·1인·1:1이면 인원과 상관없이 바꾸지 않는다', () => {
     const idle = {
       phase: PHASE.IDLE,
       gameMode: GAME_MODE.AI,
@@ -345,8 +345,9 @@ describe('대기실 인원 기본 모드', () => {
     };
     expect(shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.SOLO }, GAME_MODE.AI)).toBe(false);
-    expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP }, GAME_MODE.AI)).toBe(true);
+    expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP }, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP }, GAME_MODE.AI, { inRoom: true })).toBe(false);
+    expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP }, GAME_MODE.AI, { joining: true })).toBe(false);
     expect(shouldApplyLobbyDefaultMode({ ...idle, gameMode: GAME_MODE.PVP, phase: PHASE.AIMING }, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode(null, GAME_MODE.AI)).toBe(false);
     expect(shouldApplyLobbyDefaultMode(idle, null)).toBe(false);

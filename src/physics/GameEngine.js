@@ -199,10 +199,14 @@ export function defaultGameModeForLobbyCount(count) {
 }
 
 export function shouldApplyLobbyDefaultMode(snapshot, nextMode, extras = {}) {
-  if (extras.inRoom) return false;
+  if (extras.inRoom || extras.joining) return false;
   if (!snapshot || nextMode == null) return false;
   if (snapshot.phase === PHASE.SPECTATING || snapshot.gameMode === GAME_MODE.SPECTATE) return false;
-  if (snapshot.gameMode === GAME_MODE.AI || snapshot.gameMode === GAME_MODE.SOLO) return false;
+  if (
+    snapshot.gameMode === GAME_MODE.AI
+    || snapshot.gameMode === GAME_MODE.SOLO
+    || snapshot.gameMode === GAME_MODE.PVP
+  ) return false;
   if (snapshot.gameMode === nextMode) return false;
   if (snapshot.phase === PHASE.GAME_OVER) return true;
   if (snapshot.phase !== PHASE.IDLE) return false;

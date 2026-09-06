@@ -300,11 +300,11 @@ let settingsModal = null;
 function applyLobbyDefaultMode(count) {
   const next = defaultGameModeForLobbyCount(count);
   if (!settingsModal) return;
-  if (inMatchRoom) {
+  if (inMatchRoom || joiningRoom) {
     lastLobbyModeCount = count;
     return;
   }
-  if (next == null || engine.gameMode === GAME_MODE.AI || engine.gameMode === GAME_MODE.SOLO) {
+  if (next == null || engine.gameMode === GAME_MODE.AI || engine.gameMode === GAME_MODE.SOLO || engine.gameMode === GAME_MODE.PVP) {
     lastLobbyModeCount = count;
     return;
   }
@@ -313,7 +313,10 @@ function applyLobbyDefaultMode(count) {
     return;
   }
   if (lastLobbyModeCount === count) return;
-  if (!shouldApplyLobbyDefaultMode(engine.getSnapshot(), next, { inRoom: inMatchRoom })) return;
+  if (!shouldApplyLobbyDefaultMode(engine.getSnapshot(), next, {
+    inRoom: inMatchRoom,
+    joining: joiningRoom,
+  })) return;
   lastLobbyModeCount = count;
   settingsModal.syncLobbyDefaultMode(next);
 }

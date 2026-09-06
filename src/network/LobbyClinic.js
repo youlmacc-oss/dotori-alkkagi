@@ -226,7 +226,8 @@ export function pvpHoldClinicOk() {
     formation: { count: 5 },
   };
   return shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI, { inRoom: true }) === false
-    && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI) === true;
+    && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI) === false
+    && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI, { joining: true }) === false;
 }
 
 export function nickClinicOk() {
