@@ -369,9 +369,9 @@ export function sentInviteFields({
   return sent || { inviteTargetId: null, inviteAt: null };
 }
 
-/** 방을 연 동안 Presence를 자주 올려 대기실이 새로고침 없이 방을 보게 한다. */
-export function shouldRepublishOpenRoom({ inRoom, mode } = {}) {
-  return Boolean(inRoom && isPlayableLobbyMode(mode));
+/** 대기 중인 방만 Presence를 자주 올린다. 시작된 판은 track 폭풍으로 방송이 끊긴다. */
+export function shouldRepublishOpenRoom({ inRoom, mode, started } = {}) {
+  return Boolean(inRoom && isPlayableLobbyMode(mode) && started !== true);
 }
 
 export function presenceInvitePayload(user) {

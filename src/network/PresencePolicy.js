@@ -7,7 +7,7 @@ import { defaultNickname, isCustomNickname, nextSeat, parseDefaultSeat } from '.
 
 export const PRESENCE_STALE_MS = 5 * 60 * 1000;
 export const PRESENCE_HEARTBEAT_MS = 30 * 1000;
-export const PRESENCE_RETRACK_GRACE_MS = 400;
+export const PRESENCE_RETRACK_GRACE_MS = 2000;
 export const STALE_LEAVE_HINT = '접속이 5분 이상 끊겨 대기실에서 나갔습니다';
 export const KEEP_CONNECTED_NICKNAME = '도토리1';
 export const SWEEP_LEAVE_HINT = '개발자 외 접속은 대기실에서 나갔습니다';
@@ -84,6 +84,7 @@ export function isRetrackPresenceLeave({
 
 export function shouldConfirmPresenceLeave(opts = {}) {
   if (opts.explicitLeft) return true;
+  if (opts.selfLeave) return false;
   return !isRetrackPresenceLeave(opts);
 }
 

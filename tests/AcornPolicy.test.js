@@ -35,6 +35,10 @@ describe('접속 중 도토리 정책', () => {
     expect(settleSessionAcorns(10, { mode: 'pvp', started: false, winner: 'white', myColor: 'black' })).toBe(10);
     expect(settleSessionAcorns(10, { mode: 'pvp', started: true, winner: 'draw', myColor: 'black' })).toBe(10);
     expect(settleSessionAcorns(10, { mode: 'pvp', started: true, winner: 'black', spectating: true, myColor: 'black' })).toBe(10);
+    const settleKey = 'room_h:0:black';
+    expect(shouldSettleAcorns({ ...win, settleKey, lastSettledKey: settleKey })).toBe(false);
+    expect(settleSessionAcorns(11, { ...win, settleKey, lastSettledKey: settleKey })).toBe(11);
+    expect(shouldSettleAcorns({ ...win, settleKey: 'room_h:1:black', lastSettledKey: settleKey })).toBe(true);
   });
 
   it('1:1이 시작된 뒤 나가기·기권만 몰수하고, 대기 중 나가기는 정산하지 않는다', () => {

@@ -10,6 +10,7 @@ import {
   hasPvpOpponent,
   isPeerMatchStarted,
   matchPlayersFromPresence,
+  overlayRoomAcorns,
   readAcornCount,
   shouldFollowPeerStart,
   shouldHoldPvpStartGate,
@@ -48,6 +49,12 @@ describe('선공·시작 권한', () => {
     expect(firstPlayerId(players)).toBe('poor');
     expect(canStartMatch({ mode: 'pvp', userId: 'poor', players })).toBe(true);
     expect(canStartMatch({ mode: 'pvp', userId: 'rich', players })).toBe(false);
+    const fromRoom = overlayRoomAcorns([], {
+      hostId: 'rich', guestId: 'poor', hostAcorns: 11, guestAcorns: 9,
+    }, { myId: 'rich', myAcorns: 11 });
+    expect(fromRoom.map((p) => p.userId).sort()).toEqual(['poor', 'rich']);
+    expect(canStartMatch({ mode: 'pvp', userId: 'poor', players: fromRoom })).toBe(true);
+    expect(canStartMatch({ mode: 'pvp', userId: 'rich', players: fromRoom })).toBe(false);
   });
 
   it('도토리가 같으면 userId 순으로 선공을 정한다', () => {

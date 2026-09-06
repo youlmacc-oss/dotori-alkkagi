@@ -500,7 +500,9 @@ export class RealtimeManager {
    */
   async broadcastPvpInvite(payload) {
     if (!this.channel || !payload?.targetId || !payload?.roomId) return false;
-    return this._sendBroadcast(PVP_INVITE_EVENT, payload);
+    const ok = await this._sendBroadcast(PVP_INVITE_EVENT, payload, 2);
+    if (ok) void this._sendBroadcast(PVP_INVITE_EVENT, payload, 0);
+    return ok;
   }
 
   async broadcastRoomState(payload) {
@@ -590,12 +592,10 @@ export class RealtimeManager {
     return result;
   }
 
-  async _trackPresence() {
-    if (!this.channel) return;
-
+  _presencePayload() {
     const roomId = this.presence.roomId ?? null;
     const status = this.presence.status ?? PRESENCE_STATUS.LOBBY;
-    const presenceData = {
+    return {
       userId: this.userId,
       presenceKey: this.presenceKey || this.userId,
       nickname: this.userNickname,
@@ -616,7 +616,16 @@ export class RealtimeManager {
       joinedAt: this.presence.joinedAt ?? Date.now(),
       lastSeen: Date.now(),
     };
+  }
 
+  async broadcastLobbyHint() {
+    if (!this.channel || !this.isConnected) return false;
+    return this._broadcastLobbyState(this._presencePayload());
+  }
+
+  async _trackPresence() {
+    if (!this.channel) return;
+    const presenceData = this._presencePayload();
     const tracking = this.channel.track(presenceData);
     void this._broadcastLobbyState(presenceData);
     await Promise.race([
@@ -716,6 +725,16 @@ export class RealtimeManager {
     const rows = Array.isArray(leftPresences) && leftPresences.length
       ? leftPresences
       : [{ userId: key, id: key }];
+    const selfKey = String(this.presenceKey || this.userId || '');
+    const selfLeave = String(key || '') === selfKey
+      || rows.some((row) => {
+        const id = String(row?.presenceKey || row?.userId || row?.id || '');
+        return id && (id === selfKey || id === String(this.userId || ''));
+      });
+    if (selfLeave) {
+      this.resyncPresence({ force: true });
+      return;
+    }
     const liveUsers = usersFromPresenceState(this.channel?.presenceState?.() || {});
     const hint = this._presenceLeaveHint(key, rows);
     if (!shouldConfirmPresenceLeave({

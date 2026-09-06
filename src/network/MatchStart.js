@@ -42,6 +42,35 @@ export function matchPlayersFromPresence(users, {
   return mine.userId ? [mine, ...others] : others;
 }
 
+/** 방 상태에 적힌 도토리가 Presence보다 우선한다. 상대가 목록에서 빠져도 선공을 유지한다. */
+export function overlayRoomAcorns(players, room, { myId, myAcorns } = {}) {
+  const byId = new Map();
+  for (const player of Array.isArray(players) ? players : []) {
+    const id = String(player?.userId ?? player?.id ?? '');
+    if (!id) continue;
+    byId.set(id, { userId: id, acorns: acornOf(player) });
+  }
+  const mine = String(myId || '');
+  if (mine) {
+    const row = byId.get(mine) || { userId: mine, acorns: DEFAULT_ACORNS };
+    if (Number.isFinite(Number(myAcorns))) row.acorns = Math.floor(Number(myAcorns));
+    byId.set(mine, row);
+  }
+  if (room?.hostId) {
+    const id = String(room.hostId);
+    const row = byId.get(id) || { userId: id, acorns: DEFAULT_ACORNS };
+    if (room.hostAcorns != null && id !== mine) row.acorns = parseAcorn(room.hostAcorns);
+    byId.set(id, row);
+  }
+  if (room?.guestId) {
+    const id = String(room.guestId);
+    const row = byId.get(id) || { userId: id, acorns: DEFAULT_ACORNS };
+    if (room.guestAcorns != null && id !== mine) row.acorns = parseAcorn(room.guestAcorns);
+    byId.set(id, row);
+  }
+  return Array.from(byId.values());
+}
+
 export function acornOf(player) {
   return parseAcorn(player?.acorns, DEFAULT_ACORNS);
 }

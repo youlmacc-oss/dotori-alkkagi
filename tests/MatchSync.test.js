@@ -7,6 +7,7 @@ import {
   shouldApplyMatchSync,
   shouldFollowRemoteStart,
   shouldPublishMatchSync,
+  shouldPulseMatchSync,
   findRemoteStone,
 } from '../src/network/MatchSync.js';
 import { GAME_MODE, GameEngine, PHASE, STONE_COLOR } from '../src/physics/GameEngine.js';
@@ -52,14 +53,36 @@ describe('1:1 판 동기', () => {
     })).toBe(true);
     expect(canApplyRemoteBoard({ localPhase: PHASE.AIMING, remotePhase: PHASE.RESOLVING })).toBe(true);
     expect(canApplyRemoteBoard({ localPhase: PHASE.RESOLVING, remotePhase: PHASE.RESOLVING })).toBe(true);
-    expect(canApplyRemoteBoard({ localPhase: PHASE.RESOLVING, remotePhase: PHASE.IDLE })).toBe(true);
+    expect(canApplyRemoteBoard({ localPhase: PHASE.RESOLVING, remotePhase: PHASE.IDLE })).toBe(false);
+    expect(canApplyRemoteBoard({
+      localPhase: PHASE.RESOLVING,
+      remotePhase: PHASE.IDLE,
+      localTurn: STONE_COLOR.BLACK,
+      remoteTurn: STONE_COLOR.WHITE,
+    })).toBe(true);
+    expect(canApplyRemoteBoard({
+      localPhase: PHASE.RESOLVING,
+      remotePhase: PHASE.AIMING,
+      localTurn: STONE_COLOR.WHITE,
+      remoteTurn: STONE_COLOR.WHITE,
+    })).toBe(false);
+    expect(canApplyRemoteBoard({ localPhase: PHASE.GAME_OVER, remotePhase: PHASE.IDLE })).toBe(false);
+    expect(canApplyRemoteBoard({ localPhase: PHASE.GAME_OVER, remotePhase: PHASE.AIMING })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: true })).toBe(true);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'launch' })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })).toBe(true);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'start' })).toBe(false);
+    expect(shouldPulseMatchSync({ inPvp: true, started: true })).toBe(true);
+    expect(shouldPulseMatchSync({ inPvp: true, started: false })).toBe(false);
+    expect(shouldPulseMatchSync({ inPvp: true, started: true, spectating: true })).toBe(false);
     expect(shouldFollowRemoteStart({
       awaitingStart: true, started: false, remoteStarted: true, mode: 'pvp',
     })).toBe(true);
+    expect(shouldFollowRemoteStart({
+      awaitingStart: true, started: false, remoteStarted: true, mode: 'pvp',
+      remotePhase: PHASE.GAME_OVER, remoteWinner: STONE_COLOR.BLACK,
+    })).toBe(false);
   });
 
   it('상대 판을 받으면 돌과 턴이 같아진다', () => {

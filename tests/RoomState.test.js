@@ -17,6 +17,7 @@ import {
   shouldKeepInviteShareFromRoom,
   shouldKeepPvpRematch,
   shouldReturnToPvpWait,
+  stampRoomAcorns,
 } from '../src/network/RoomState.js';
 
 describe('1:1 방 상태', () => {
@@ -85,8 +86,13 @@ describe('1:1 방 상태', () => {
       inRoom: true, mode: 'pvp', hadOpponent: true, hasOpponent: false, started: true, phase: 'gameOver',
     })).toBe(true);
     const rematch = applyRoomRematch(playing);
-    expect(rematch).toMatchObject({ guestId: 'guest', started: false, phase: 'ready' });
+    expect(rematch).toMatchObject({ guestId: 'guest', started: false, phase: 'ready', matchGen: 1 });
     expect(incomingResetsForRematch(playing, rematch)).toBe(true);
+    expect(mergeRoomState(playing, rematch).started).toBe(false);
+    expect(mergeRoomState(rematch, { ...playing, hostAcorns: 11, guestAcorns: 9 }).started).toBe(false);
+    expect(mergeRoomState(rematch, { ...rematch, started: true, phase: 'playing' }).started).toBe(true);
+    expect(stampRoomAcorns(rematch, { myId: 'host', acorns: 11 }).hostAcorns).toBe(11);
+    expect(stampRoomAcorns(rematch, { myId: 'guest', acorns: 9 }).guestAcorns).toBe(9);
     expect(shouldKeepPvpRematch({
       mode: 'pvp', inRoom: true, roomId: 'room_host', hostId: 'host', guestId: 'guest',
     })).toBe(true);

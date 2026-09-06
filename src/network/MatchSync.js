@@ -63,7 +63,18 @@ export function shouldPublishMatchSync({
 } = {}) {
   if (!inPvp) return false;
   if (isHost) return true;
-  return force === true && (event === 'launch' || event === 'turnEnd' || event === 'gameOver');
+  return force === true && (
+    event === 'launch' || event === 'turnEnd' || event === 'gameOver' || event === 'pulse'
+  );
+}
+
+/** 시작된 1:1은 Presence 대신 호스트 판을 짧게 다시 보낸다. */
+export function shouldPulseMatchSync({
+  inPvp = false,
+  started = false,
+  spectating = false,
+} = {}) {
+  return Boolean(inPvp && started && !spectating);
 }
 
 export function canApplyRemoteBoard({
@@ -72,14 +83,21 @@ export function canApplyRemoteBoard({
   localTurn,
   remoteTurn,
 } = {}) {
-  if (
-    localPhase === PHASE.AIMING
-    && (remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE)
-  ) {
-    if (remoteTurn && localTurn && remoteTurn !== localTurn) return true;
+  if (shouldHoldEndedBoard({ localPhase, remotePhase })) return false;
+  const remoteBehind = remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE;
+  const turnMoved = Boolean(remoteTurn && localTurn && remoteTurn !== localTurn);
+  if (localPhase === PHASE.RESOLVING && remoteBehind && !turnMoved) return false;
+  if (localPhase === PHASE.AIMING && remoteBehind) {
+    if (turnMoved) return true;
     return false;
   }
   return true;
+}
+
+/** 결과창(GAME_OVER)은 다시하기 IDLE/AIMING으로 덮음 금지. */
+export function shouldHoldEndedBoard({ localPhase, remotePhase } = {}) {
+  return localPhase === PHASE.GAME_OVER
+    && (remotePhase === PHASE.IDLE || remotePhase === PHASE.AIMING);
 }
 
 export function remoteStonesNeedRebuild(localStones, remoteStones) {
@@ -113,7 +131,31 @@ export function findRemoteStone(stones, data, index) {
   return list[index] || null;
 }
 
-export function shouldFollowRemoteStart({ awaitingStart, started, remoteStarted, mode } = {}) {
+export function isStaleEndedMatchSync({
+  awaitingStart,
+  started,
+  remotePhase,
+  remoteWinner,
+} = {}) {
+  return awaitingStart === true
+    && started !== true
+    && (remotePhase === PHASE.GAME_OVER || Boolean(remoteWinner));
+}
+
+export function shouldFollowRemoteStart({
+  awaitingStart,
+  started,
+  remoteStarted,
+  mode,
+  remotePhase,
+  remoteWinner,
+} = {}) {
+  if (isStaleEndedMatchSync({
+    awaitingStart,
+    started,
+    remotePhase,
+    remoteWinner,
+  })) return false;
   return mode === 'pvp'
     && awaitingStart === true
     && started !== true

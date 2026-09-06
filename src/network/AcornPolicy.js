@@ -23,11 +23,19 @@ export function clearAcornHistory(storage = globalThis.localStorage) {
   return SESSION_ACORNS;
 }
 
+export function acornSettleKey({ roomId, matchGen, winner } = {}) {
+  if (!roomId || winner == null || winner === 'draw') return '';
+  const gen = Number(matchGen);
+  return `${roomId}:${Number.isFinite(gen) && gen > 0 ? Math.floor(gen) : 0}:${winner}`;
+}
+
 export function shouldSettleAcorns(result = {}) {
   if (result.mode !== 'pvp') return false; // 1인·AI는 증감 없음
   if (result.started !== true) return false;
   if (result.spectating) return false;
   if (result.winner == null || result.winner === 'draw') return false;
+  const key = result.settleKey || acornSettleKey(result);
+  if (key && result.lastSettledKey && key === result.lastSettledKey) return false;
   return result.myColor === 'black' || result.myColor === 'white';
 }
 

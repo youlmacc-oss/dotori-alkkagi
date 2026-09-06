@@ -20,7 +20,25 @@ export function createRoomState({
     inviteTargetId: null,
     started: false,
     phase: 'waiting',
+    matchGen: 0,
+    hostAcorns: null,
+    guestAcorns: null,
   };
+}
+
+export function roomMatchGen(state) {
+  const n = Number(state?.matchGen);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+export function stampRoomAcorns(state, { myId, acorns } = {}) {
+  if (!state?.roomId || !myId) return state;
+  const value = Number(acorns);
+  if (!Number.isFinite(value)) return state;
+  const next = Math.floor(value);
+  if (String(state.hostId) === String(myId)) return { ...state, hostAcorns: next };
+  if (String(state.guestId) === String(myId)) return { ...state, guestAcorns: next };
+  return state;
 }
 
 export function applyRoomInvite(state, targetId) {
@@ -67,6 +85,7 @@ export function applyRoomLeave(state, { leaverId } = {}) {
     inviteTargetId: null,
     started: false,
     phase: 'waiting',
+    matchGen: 0,
     leaverId: who || null,
     leftoverId: leftoverId || null,
   };
@@ -100,10 +119,14 @@ export function shouldReturnToPvpWait({
 
 export function applyRoomRematch(state) {
   if (!state?.roomId || !state.guestId) return state;
+  const nextGen = state.started === true
+    ? roomMatchGen(state) + 1
+    : Math.max(roomMatchGen(state), 1);
   return {
     ...state,
     started: false,
     phase: 'ready',
+    matchGen: nextGen,
     inviteTargetId: null,
     leaverId: null,
     leftoverId: null,
@@ -116,6 +139,19 @@ export function incomingResetsForRematch(current, incoming) {
   if (!current.guestId || !incoming.guestId) return false;
   if (String(current.guestId) !== String(incoming.guestId)) return false;
   return current.started === true && incoming.started !== true;
+}
+
+/** 다시하기 뒤에 도착한 1국 started=true는 시작으로 되돌리지 않는다. */
+export function incomingStaleAfterRematch(current, incoming) {
+  if (!current?.roomId || !incoming?.roomId) return false;
+  if (String(current.roomId) !== String(incoming.roomId)) return false;
+  if (current.started === true) return false;
+  if (incoming.started !== true) return false;
+  if (!current.guestId || !incoming.guestId) return false;
+  if (String(current.guestId) !== String(incoming.guestId)) return false;
+  const curGen = roomMatchGen(current);
+  const inGen = roomMatchGen(incoming);
+  return inGen < curGen || (curGen > 0 && inGen === 0);
 }
 
 export function shouldKeepPvpRematch({
@@ -139,12 +175,34 @@ export function mergeRoomState(current, incoming) {
   if (incomingClearsOpponent(current, incoming)) {
     return applyRoomLeave(current, { leaverId: incoming.leaverId || current.guestId });
   }
+  if (incomingResetsForRematch(current, incoming)) {
+    return applyRoomRematch({
+      ...current,
+      ...incoming,
+      guestId: current.guestId,
+      guestName: current.guestName || incoming.guestName,
+      hostAcorns: incoming.hostAcorns ?? current.hostAcorns,
+      guestAcorns: incoming.guestAcorns ?? current.guestAcorns,
+    });
+  }
+  if (incomingStaleAfterRematch(current, incoming)) {
+    return {
+      ...current,
+      hostAcorns: incoming.hostAcorns ?? current.hostAcorns,
+      guestAcorns: incoming.guestAcorns ?? current.guestAcorns,
+      hostName: incoming.hostName || current.hostName,
+      guestName: incoming.guestName || current.guestName,
+    };
+  }
   const withGuest = applyRoomGuest(current, incoming);
   const next = {
     ...withGuest,
     hostName: incoming.hostName || withGuest.hostName,
     guestName: incoming.guestName || withGuest.guestName,
     started: Boolean(withGuest.started || incoming.started),
+    matchGen: Math.max(roomMatchGen(withGuest), roomMatchGen(incoming)),
+    hostAcorns: incoming.hostAcorns ?? withGuest.hostAcorns,
+    guestAcorns: incoming.guestAcorns ?? withGuest.guestAcorns,
     inviteTargetId: (withGuest.guestId || incoming.guestId)
       ? null
       : (incoming.inviteTargetId || withGuest.inviteTargetId || null),

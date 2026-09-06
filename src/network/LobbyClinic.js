@@ -15,7 +15,7 @@ import {
   lobbySeatUsers,
   roomsFromPresence,
 } from './LobbyRooms.js';
-import { SESSION_ACORNS, shouldForfeitOnLeave, shouldForfeitOnOpponentGone, shouldSettleAcorns } from './AcornPolicy.js';
+import { SESSION_ACORNS, acornSettleKey, shouldForfeitOnLeave, shouldForfeitOnOpponentGone, shouldSettleAcorns } from './AcornPolicy.js';
 import { RESULT_BEAT_MS, RESULT_FALL_HOLD_MS } from '../physics/ResultBeat.js';
 import {
   BOARD,
@@ -37,6 +37,7 @@ import {
   hasPvpOpponent,
   isPeerMatchStarted,
   matchPlayersFromPresence,
+  overlayRoomAcorns,
   shouldFollowPeerStart,
   shouldHoldPvpStartGate,
 } from './MatchStart.js';
@@ -64,9 +65,12 @@ import {
 import {
   MATCH_SYNC_EVENT,
   canApplyRemoteBoard,
+  isStaleEndedMatchSync,
+  shouldHoldEndedBoard,
   shouldApplyMatchSync,
   shouldFollowRemoteStart,
   shouldPublishMatchSync,
+  shouldPulseMatchSync,
 } from './MatchSync.js';
 import {
   applyRoomGuest,
@@ -77,6 +81,8 @@ import {
   ROOM_STATE_EVENT,
   pvpSeatColor,
   incomingResetsForRematch,
+  incomingStaleAfterRematch,
+  mergeRoomState,
   shouldKeepInviteShareFromRoom,
   shouldKeepPvpRematch,
   shouldReturnToPvpWait,
@@ -270,7 +276,45 @@ export function pvpInviteAcceptClinicOk() {
     && shouldPublishMatchSync({ inPvp: true, isHost: true })
     && !shouldPublishMatchSync({ inPvp: true, isHost: false })
     && shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'launch' })
+    && shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })
+    && shouldPulseMatchSync({ inPvp: true, started: true })
+    && mergeRoomState(
+      { roomId: 'room_h', hostId: 'h', guestId: 'g', started: true, phase: 'playing' },
+      { roomId: 'room_h', hostId: 'h', guestId: 'g', started: false, phase: 'ready' },
+    )?.started === false
+    && incomingStaleAfterRematch(
+      { roomId: 'room_h', guestId: 'g', started: false, matchGen: 1 },
+      { roomId: 'room_h', guestId: 'g', started: true, matchGen: 0 },
+    )
+    && mergeRoomState(
+      { roomId: 'room_h', hostId: 'h', guestId: 'g', started: false, phase: 'ready', matchGen: 1 },
+      { roomId: 'room_h', hostId: 'h', guestId: 'g', started: true, phase: 'playing', matchGen: 0 },
+    )?.started === false
+    && !isStaleEndedMatchSync({
+      awaitingStart: true, started: false, remotePhase: PHASE.IDLE,
+    })
+    && isStaleEndedMatchSync({
+      awaitingStart: true, started: false, remotePhase: PHASE.GAME_OVER, remoteWinner: STONE_COLOR.BLACK,
+    })
+    && !shouldFollowRemoteStart({
+      awaitingStart: true, started: false, remoteStarted: true, mode: 'pvp',
+      remotePhase: PHASE.GAME_OVER, remoteWinner: STONE_COLOR.BLACK,
+    })
+    && overlayRoomAcorns([], {
+      hostId: 'h', guestId: 'g', hostAcorns: 11, guestAcorns: 9,
+    }, { myId: 'h', myAcorns: 11 }).length === 2
+    && !shouldPulseMatchSync({ inPvp: true, started: false })
+    && shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp', started: false })
+    && !shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp', started: true })
     && canApplyRemoteBoard({ localPhase: PHASE.RESOLVING, remotePhase: PHASE.RESOLVING })
+    && !canApplyRemoteBoard({
+      localPhase: PHASE.RESOLVING,
+      remotePhase: PHASE.AIMING,
+      localTurn: STONE_COLOR.WHITE,
+      remoteTurn: STONE_COLOR.WHITE,
+    })
+    && shouldHoldEndedBoard({ localPhase: PHASE.GAME_OVER, remotePhase: PHASE.IDLE })
+    && !canApplyRemoteBoard({ localPhase: PHASE.GAME_OVER, remotePhase: PHASE.IDLE })
     && shouldApplyInviteDecline(
       { action: 'decline', hostId: 'host', targetId: 'guest' },
       { myId: 'host', sentTargetId: 'guest' },
@@ -336,7 +380,8 @@ export function pvpPresenceClinicOk() {
       hint: { userId: 'g', lastSeen: 200, nickname: '달이' },
       leftPresences: [{ userId: 'g', lastSeen: 100, nickname: '도토리2' }],
     })
-    && shouldConfirmPresenceLeave({ key: 'g', liveUsers: [], explicitLeft: true });
+    && shouldConfirmPresenceLeave({ key: 'g', liveUsers: [], explicitLeft: true })
+    && !shouldConfirmPresenceLeave({ key: 'me', selfLeave: true, liveUsers: [] });
 }
 
 export function pvpRearrangeClinicOk() {
@@ -485,7 +530,12 @@ export function runLobbyClinic(input = {}) {
       '도토리 정산',
       shouldSettleAcorns(win)
         && !shouldSettleAcorns({ ...win, mode: 'ai' })
-        && !shouldSettleAcorns({ ...win, started: false }),
+        && !shouldSettleAcorns({ ...win, started: false })
+        && !shouldSettleAcorns({
+          ...win,
+          settleKey: acornSettleKey({ roomId: 'room_h', matchGen: 0, winner: 'black' }),
+          lastSettledKey: acornSettleKey({ roomId: 'room_h', matchGen: 0, winner: 'black' }),
+        }),
       `시작 10 · 1:1만 ±1 · 음수 허용 (${SESSION_ACORNS})`,
     ),
     item(
@@ -508,6 +558,10 @@ export function runLobbyClinic(input = {}) {
         && incomingResetsForRematch(
           { roomId: 'room_h', guestId: 'g', started: true },
           { roomId: 'room_h', guestId: 'g', started: false },
+        )
+        && incomingStaleAfterRematch(
+          { roomId: 'room_h', guestId: 'g', started: false, matchGen: 1 },
+          { roomId: 'room_h', guestId: 'g', started: true },
         ),
       '시작된 판 이탈은 기권 · 대기는 상대 대기 · 다시하기는 같은 방',
     ),
@@ -546,7 +600,7 @@ export function runLobbyClinic(input = {}) {
       'pvpPresence',
       '1:1 실시간 입장',
       pvpPresenceClinicOk(),
-      pvpPresenceClinicOk() ? '방 개설 표시 · 대국 종료 · 닉 변경은 퇴장 아님' : '입장 동기화 오류',
+      pvpPresenceClinicOk() ? '방 개설 표시 · 시작된 판은 Presence 재전송 없음' : '입장 동기화 오류',
     ),
     item(
       'pvpPlace',

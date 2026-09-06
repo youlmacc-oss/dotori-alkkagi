@@ -71,14 +71,17 @@ import {
   hasPvpOpponent,
   isPeerMatchStarted,
   matchPlayersFromPresence,
+  overlayRoomAcorns,
   shouldFollowPeerStart,
   shouldHoldPvpStartGate,
 } from './network/MatchStart.js';
 import {
   canApplyRemoteBoard,
+  isStaleEndedMatchSync,
   shouldApplyMatchSync,
   shouldFollowRemoteStart,
   shouldPublishMatchSync,
+  shouldPulseMatchSync,
 } from './network/MatchSync.js';
 import {
   applyRoomGuest,
@@ -96,6 +99,7 @@ import {
   shouldApplyRoomState,
   shouldKeepPvpRematch,
   shouldReturnToPvpWait,
+  stampRoomAcorns,
 } from './network/RoomState.js';
 import {
   FIRST_HINT,
@@ -111,10 +115,12 @@ import {
   stepMatchReady,
 } from './network/MatchReady.js';
 import {
+  acornSettleKey,
   clearAcornHistory,
   settleSessionAcorns,
   shouldForfeitOnLeave,
   shouldForfeitOnOpponentGone,
+  shouldSettleAcorns,
 } from './network/AcornPolicy.js';
 import {
   newNightUserId,
@@ -362,6 +368,7 @@ let sentLobbyInvite = null;
 const lastSeenInviteAt = new Map();
 let lastMatchSyncAt = 0;
 let lastMatchSyncTs = 0;
+let lastAcornSettleKey = '';
 
 let settingsModal = null;
 
@@ -590,14 +597,24 @@ function isMatchHost() {
 }
 
 function applyAcornResult(payload) {
-  sessionAcorns = writeNightAcorns(settleSessionAcorns(sessionAcorns, {
+  const settleKey = acornSettleKey({
+    roomId: currentMatchRoomId(),
+    matchGen: matchRoom?.matchGen,
+    winner: payload?.winner,
+  });
+  const result = {
     mode: engine.gameMode,
     started: matchStarted,
     winner: payload?.winner,
     myColor: myStoneColor(),
     spectating: engine.phase === PHASE.SPECTATING,
-  }));
+    settleKey,
+    lastSettledKey: lastAcornSettleKey,
+  };
+  if (shouldSettleAcorns(result)) lastAcornSettleKey = settleKey;
+  sessionAcorns = writeNightAcorns(settleSessionAcorns(sessionAcorns, result));
   syncAcornHud();
+  if (matchRoom?.roomId) publishRoomState();
 }
 
 function livePresencePool() {
@@ -608,12 +625,16 @@ function livePresencePool() {
 }
 
 function matchPlayers() {
-  return matchPlayersFromPresence(lobbyRoomsUsers(), {
-    myId: realtimeManager.userId,
-    myAcorns: myAcorns(),
-    mode: engine.gameMode,
-    roomId: currentMatchRoomId(),
-  });
+  return overlayRoomAcorns(
+    matchPlayersFromPresence(lobbyRoomsUsers(), {
+      myId: realtimeManager.userId,
+      myAcorns: myAcorns(),
+      mode: engine.gameMode,
+      roomId: currentMatchRoomId(),
+    }),
+    matchRoom,
+    { myId: realtimeManager.userId, myAcorns: myAcorns() },
+  );
 }
 
 function canStartNow() {
@@ -750,6 +771,10 @@ function clearSentLobbyInvite() {
 
 function publishRoomState() {
   if (!matchRoom?.roomId || !matchRoom?.hostId) return false;
+  matchRoom = stampRoomAcorns(matchRoom, {
+    myId: realtimeManager.userId,
+    acorns: myAcorns(),
+  });
   return realtimeManager.broadcastRoomState(matchRoom);
 }
 
@@ -858,6 +883,7 @@ function publishMatchSync({ force = false, event = '' } = {}) {
     force,
     event,
   })) return false;
+  if (!force && awaitingStart) return false;
   const now = Date.now();
   if (!force && now - lastMatchSyncAt < 180) return false;
   lastMatchSyncAt = now;
@@ -881,11 +907,19 @@ function applyIncomingMatchSync(payload) {
     spectating,
     inPvp: inMatchRoom && engine.gameMode === GAME_MODE.PVP,
   })) return false;
+  if (isStaleEndedMatchSync({
+    awaitingStart,
+    started: matchStarted,
+    remotePhase: payload?.phase,
+    remoteWinner: payload?.winner,
+  })) return false;
   if (shouldFollowRemoteStart({
     awaitingStart,
     started: matchStarted,
     remoteStarted: payload?.started === true,
     mode: engine.gameMode,
+    remotePhase: payload?.phase,
+    remoteWinner: payload?.winner,
   })) {
     applyMatchStarted();
   }
@@ -1315,6 +1349,7 @@ function handleSweepLeave() {
   inMatchRoom = false;
   awaitingStart = false;
   matchStarted = false;
+  lastAcornSettleKey = '';
   clearMatchReady();
   activeRoomId = null;
   joiningRoomId = '';
@@ -1343,6 +1378,7 @@ function handleStaleLeave() {
   inMatchRoom = false;
   awaitingStart = false;
   matchStarted = false;
+  lastAcornSettleKey = '';
   clearMatchReady();
   activeRoomId = null;
   joiningRoomId = '';
@@ -1432,6 +1468,8 @@ function restartPvpRematch() {
   matchRoom = applyRoomRematch(matchRoom);
   awaitingStart = true;
   matchStarted = false;
+  lastMatchSyncTs = 0;
+  lastAcornSettleKey = '';
   inMatchRoom = true;
   engine.setHost(pvpSeatColor({
     myId: realtimeManager.userId,
@@ -1445,6 +1483,7 @@ function restartPvpRematch() {
   hideLobby({ force: true });
   matchBadge.textContent = '흑 턴 15';
   syncStartGate();
+  syncSceneMode();
   publishRoomState();
   publishPresence();
   joiningRoom = false;
@@ -1462,6 +1501,8 @@ function followPvpRematch(payload) {
   hideResult();
   awaitingStart = true;
   matchStarted = false;
+  lastMatchSyncTs = 0;
+  lastAcornSettleKey = '';
   engine.setHost(pvpSeatColor({
     myId: realtimeManager.userId,
     hostId: matchRoom?.hostId,
@@ -1474,6 +1515,8 @@ function followPvpRematch(payload) {
   hideLobby({ force: true });
   matchBadge.textContent = '흑 턴 15';
   syncStartGate();
+  syncSceneMode();
+  publishRoomState();
   publishPresence();
   return true;
 }
@@ -1506,6 +1549,7 @@ function leaveToWaitingRoom() {
   inMatchRoom = false;
   awaitingStart = false;
   matchStarted = false;
+  lastAcornSettleKey = '';
   clearMatchReady();
   activeRoomId = null;
   joiningRoomId = '';
@@ -2600,8 +2644,15 @@ if (!window.__dotoriLobbyRefresh) {
     if (shouldRepublishOpenRoom({
       inRoom: inMatchRoom && engine.phase !== PHASE.SPECTATING,
       mode: engine.gameMode,
+      started: matchStarted,
     })) {
-      publishPresence();
+      void realtimeManager.broadcastLobbyHint();
+    } else if (shouldPulseMatchSync({
+      inPvp: inMatchRoom && engine.gameMode === GAME_MODE.PVP && engine.phase !== PHASE.SPECTATING,
+      started: matchStarted,
+      spectating: engine.phase === PHASE.SPECTATING,
+    })) {
+      publishMatchSync({ force: true, event: 'pulse' });
     }
   }, 2000);
 }

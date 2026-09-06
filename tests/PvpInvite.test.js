@@ -257,6 +257,7 @@ describe('대기실 1:1 안내', () => {
     expect(shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp' })).toBe(true);
     expect(shouldRepublishOpenRoom({ inRoom: true, mode: 'solo' })).toBe(true);
     expect(shouldRepublishOpenRoom({ inRoom: false, mode: 'pvp' })).toBe(false);
+    expect(shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp', started: true })).toBe(false);
     const liveInvite = {
       userId: 'host',
       nickname: '호치',

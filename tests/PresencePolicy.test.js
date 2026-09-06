@@ -76,7 +76,7 @@ describe('대기실 입장 순 닉네임·5분 퇴장', () => {
   });
 
   it('닉 변경으로 track만 다시 하면 퇴장으로 보지 않는다', () => {
-    expect(PRESENCE_RETRACK_GRACE_MS).toBe(400);
+    expect(PRESENCE_RETRACK_GRACE_MS).toBe(2000);
     expect(isRetrackPresenceLeave({
       key: 'g',
       leftPresences: [{ userId: 'g', nickname: '도토리2', lastSeen: 10 }],
@@ -97,5 +97,10 @@ describe('대기실 입장 순 닉네임·5분 퇴장', () => {
       key: 'g',
       liveUsers: [],
     })).toBe(true);
+    expect(shouldConfirmPresenceLeave({
+      key: 'me',
+      selfLeave: true,
+      liveUsers: [],
+    })).toBe(false);
   });
 });

@@ -1621,7 +1621,13 @@ export class GameEngine {
     const localTurn = this.currentTurn;
     const remoteTurn = gameState.currentTurn;
     if (
-      localPhase === PHASE.AIMING
+      localPhase === PHASE.GAME_OVER
+      && (remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE)
+    ) {
+      return false;
+    }
+    if (
+      (localPhase === PHASE.RESOLVING || localPhase === PHASE.AIMING)
       && (remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE)
       && !(remoteTurn && localTurn && remoteTurn !== localTurn)
     ) {
