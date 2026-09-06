@@ -25,8 +25,12 @@ import {
   evaluateLobbyInvite,
   guestClaimHeld,
   incomingRejectsMyGuestSeat,
+  INVITE_ACTION_ACCEPT,
   INVITE_ACTION_CANCEL,
   INVITE_ACTION_DECLINE,
+  pickJoinablePvp,
+  roomFromInvite,
+  shouldApplyInviteAccept,
   shouldApplyInviteDecline,
   shouldDismissInviteModal,
   attemptInviteJoin,
@@ -134,6 +138,26 @@ describe('대기실 1:1 안내', () => {
     expect(shouldApplyInviteDecline({
       action: INVITE_ACTION_DECLINE, hostId: 'host', targetId: 'guest',
     }, { myId: 'host', sentTargetId: 'guest' })).toBe(true);
+    expect(shouldApplyInviteAccept({
+      action: INVITE_ACTION_ACCEPT, hostId: 'host', targetId: 'guest', roomId: 'room_host_1',
+    }, { myId: 'host', sentTargetId: 'guest', roomId: 'room_host_1' })).toBe(true);
+    expect(shouldApplyInviteAccept({
+      action: INVITE_ACTION_ACCEPT, hostId: 'host', targetId: 'other', roomId: 'room_host_1',
+    }, { myId: 'host', sentTargetId: 'guest' })).toBe(false);
+    expect(evaluateLobbyInvite({
+      roomId: 'room_host_1', hostId: 'host', targetId: 'guest', action: INVITE_ACTION_ACCEPT,
+    }, 'guest').ok).toBe(false);
+    expect(roomFromInvite({
+      roomId: 'room_host_1', hostId: 'host', hostName: '호치',
+    })).toMatchObject({ id: 'room_host_1', hostId: 'host', status: 'waiting', started: false });
+    expect(evaluateInviteJoin(roomFromInvite({
+      roomId: 'room_host_1', hostId: 'host',
+    }), 'guest').ok).toBe(true);
+    expect(roomFromInvite({ roomId: 'room_host_1' })?.hostId).toBe('host_1');
+    expect(pickJoinablePvp([
+      { id: 'room_host_1', mode: 'pvp', status: 'playing', started: true, hostId: 'host' },
+      roomFromInvite({ roomId: 'room_host_1', hostId: 'host' }),
+    ], 'guest')?.status).toBe('waiting');
     expect(shouldDismissInviteModal(
       { hostId: 'host', targetId: 'guest' },
       { action: INVITE_ACTION_CANCEL, hostId: 'host', targetId: 'guest' },

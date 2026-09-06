@@ -95,6 +95,36 @@ export function writeStoredInviteRoom(roomId, storage = globalThis.sessionStorag
   return id;
 }
 
+/** 초대 payload만으로 대기 1:1 방을 만든다. Presence가 늦어도 수락 입장에 쓴다. */
+export function roomFromInvite(invite) {
+  const roomId = String(invite?.roomId || '').trim();
+  const hostId = String(invite?.hostId || '').trim()
+    || (roomId.startsWith('room_') ? roomId.slice(5) : '');
+  if (!roomId || !hostId) return null;
+  const started = invite?.started === true;
+  return {
+    id: roomId,
+    mode: 'pvp',
+    status: started ? 'playing' : 'waiting',
+    started,
+    hostId,
+    hostName: String(invite?.hostName || '').trim(),
+    players: [{
+      userId: hostId,
+      nickname: String(invite?.hostName || '').trim(),
+      mode: 'pvp',
+      status: 'playing',
+      roomId,
+      started,
+    }],
+  };
+}
+
+export function pickJoinablePvp(candidates, userId) {
+  const list = (Array.isArray(candidates) ? candidates : []).filter(Boolean);
+  return list.find((room) => evaluateInviteJoin(room, userId).ok) || list[0] || null;
+}
+
 export function resolveInviteRoom(users, roomId) {
   const id = String(roomId || '').trim();
   if (!id) return null;
@@ -255,16 +285,21 @@ export function evaluateLobbyInvite(payload, myId) {
 
 export const INVITE_ACTION_DECLINE = 'decline';
 export const INVITE_ACTION_CANCEL = 'cancel';
+export const INVITE_ACTION_ACCEPT = 'accept';
 
 export function isInviteReply(payload) {
   const action = String(payload?.action || '');
-  return action === INVITE_ACTION_DECLINE || action === INVITE_ACTION_CANCEL;
+  return action === INVITE_ACTION_DECLINE
+    || action === INVITE_ACTION_CANCEL
+    || action === INVITE_ACTION_ACCEPT;
 }
 
-export function buildInviteReply(invite, action) {
+export function buildInviteReply(invite, action, extras = {}) {
+  const guestName = String(extras.guestName || invite?.guestName || '').trim();
   return {
     ...buildLobbyInvite(invite || {}),
     action: String(action || ''),
+    ...(guestName ? { guestName } : {}),
   };
 }
 
@@ -273,6 +308,14 @@ export function shouldApplyInviteDecline(payload, { myId, sentTargetId } = {}) {
     && Boolean(myId)
     && String(payload.hostId) === String(myId)
     && (!sentTargetId || String(payload.targetId) === String(sentTargetId));
+}
+
+export function shouldApplyInviteAccept(payload, { myId, sentTargetId, roomId } = {}) {
+  if (payload?.action !== INVITE_ACTION_ACCEPT || !myId) return false;
+  if (String(payload.hostId) !== String(myId)) return false;
+  if (sentTargetId && String(payload.targetId) !== String(sentTargetId)) return false;
+  if (roomId && payload.roomId && String(payload.roomId) !== String(roomId)) return false;
+  return Boolean(payload.targetId && payload.roomId);
 }
 
 export function shouldDismissInviteModal(openInvite, payload, myId) {

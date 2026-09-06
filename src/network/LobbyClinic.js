@@ -50,6 +50,9 @@ import {
   guestClaimHeld,
   incomingRejectsMyGuestSeat,
   idleLobbyInvitees,
+  pickJoinablePvp,
+  roomFromInvite,
+  shouldApplyInviteAccept,
   shouldApplyInviteDecline,
   shouldDismissInviteModal,
   shouldOpenPresenceInvite,
@@ -270,6 +273,17 @@ export function pvpInviteAcceptClinicOk() {
       { action: 'decline', hostId: 'host', targetId: 'guest' },
       { myId: 'host', sentTargetId: 'guest' },
     )
+    && shouldApplyInviteAccept(
+      { action: 'accept', hostId: 'host', targetId: 'guest', roomId: 'room_host' },
+      { myId: 'host', sentTargetId: 'guest', roomId: 'room_host' },
+    )
+    && evaluateInviteJoin(roomFromInvite({
+      roomId: 'room_host', hostId: 'host', hostName: '호치',
+    }), 'guest').ok === true
+    && pickJoinablePvp([
+      { id: 'room_host', mode: 'pvp', status: 'playing', started: true, hostId: 'host' },
+      roomFromInvite({ roomId: 'room_host', hostId: 'host' }),
+    ], 'guest')?.status === 'waiting'
     && shouldDismissInviteModal(
       { hostId: 'host', targetId: 'guest' },
       { action: 'cancel', hostId: 'host', targetId: 'guest' },
@@ -506,7 +520,7 @@ export function runLobbyClinic(input = {}) {
       'pvpAccept',
       '1:1 초대 수락',
       pvpInviteAcceptClinicOk(),
-      pvpInviteAcceptClinicOk() ? '수락·거절·재초대 무효 · 호스트 방에 붙음' : '초대 수락·시작 동기 오류',
+      pvpInviteAcceptClinicOk() ? '수락은 바로 호스트에 전달 · 초대만으로 입장' : '초대 수락·시작 동기 오류',
     ),
     item(
       'pvpPresence',

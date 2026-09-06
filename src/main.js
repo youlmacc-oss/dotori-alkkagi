@@ -150,9 +150,13 @@ import {
   buildLobbyInvite,
   guestClaimHeld,
   incomingRejectsMyGuestSeat,
+  INVITE_ACTION_ACCEPT,
   INVITE_ACTION_CANCEL,
   INVITE_ACTION_DECLINE,
   lobbyInviteAsk,
+  pickJoinablePvp,
+  roomFromInvite,
+  shouldApplyInviteAccept,
   shouldApplyInviteDecline,
   shouldDismissInviteModal,
   presenceInvitePayload,
@@ -306,6 +310,14 @@ const realtimeManager = new RealtimeManager({
       matchRoom = applyRoomClearInvite(matchRoom);
       publishPresence();
       publishRoomState();
+      return;
+    }
+    if (shouldApplyInviteAccept(payload, {
+      myId: realtimeManager.userId,
+      sentTargetId: sentLobbyInvite?.inviteTargetId,
+      roomId: currentMatchRoomId(),
+    })) {
+      applyHostAcceptedInvite(payload);
       return;
     }
     receiveLobbyInvite(payload);
@@ -1554,12 +1566,34 @@ function leaveWatchedRoom() {
   showLobby();
 }
 
-function resolveJoinablePvp(room) {
-  const id = room?.id;
-  return lobbyRooms().find((r) => r.id === id)
-    || resolveInviteRoom(lobbyRoomsUsers(), id)
-    || findInviteRoom(roomsFromPresence(lobbyRoomsUsers()), id)
-    || room;
+function resolveJoinablePvp(room, invite) {
+  const id = room?.id || invite?.roomId;
+  return pickJoinablePvp([
+    lobbyRooms().find((r) => r.id === id),
+    resolveInviteRoom(lobbyRoomsUsers(), id),
+    findInviteRoom(roomsFromPresence(lobbyRoomsUsers()), id),
+    roomFromInvite(invite),
+    room,
+  ], realtimeManager.userId);
+}
+
+function applyHostAcceptedInvite(payload) {
+  if (!inMatchRoom || engine.phase === PHASE.SPECTATING) return false;
+  const next = applyRoomGuest(matchRoom || createRoomState({
+    roomId: payload?.roomId || currentMatchRoomId(),
+    hostId: realtimeManager.userId,
+    hostName: realtimeManager.userNickname,
+  }), {
+    guestId: payload?.targetId,
+    guestName: payload?.guestName,
+  });
+  if (!roomHasOpponent(next)) return false;
+  syncMatchRoom(next);
+  clearSentLobbyInvite();
+  publishPresence();
+  publishRoomState();
+  syncPvpWait();
+  return true;
 }
 
 function enterJoinedPvp(room) {
@@ -1615,11 +1649,11 @@ function bounceRejectedJoin() {
   showLobby();
 }
 
-function joinPvpRoom(room) {
-  let live = resolveJoinablePvp(room);
+function joinPvpRoom(room, invite) {
+  let live = resolveJoinablePvp(room, invite);
   if (!canJoinPvpRoom(live, realtimeManager.userId)) {
-    refreshLobbyPresence({ reconnect: true });
-    live = resolveJoinablePvp(room);
+    refreshLobbyPresence({ reconnect: false });
+    live = resolveJoinablePvp(room, invite);
   }
   if (!canJoinPvpRoom(live, realtimeManager.userId)) {
     setTicker(INVITE_ROOM_GONE_HINT);
@@ -1823,13 +1857,26 @@ async function sendLobbyInvite(target) {
   if (ok) setTicker(LOBBY_INVITE_SENT);
 }
 
+async function announceInviteAccept(invite) {
+  if (!invite?.roomId || !invite?.hostId) return false;
+  const reply = buildInviteReply(invite, INVITE_ACTION_ACCEPT, {
+    guestName: realtimeManager.userNickname,
+  });
+  await publishPresence();
+  await publishRoomState();
+  let ok = await realtimeManager.broadcastPvpInvite(reply);
+  if (!ok) ok = await realtimeManager.broadcastPvpInvite(reply);
+  return ok;
+}
+
 async function acceptLobbyInvite() {
   const invite = pendingLobbyInvite;
   const result = await attemptInviteJoin({
     roomId: invite?.roomId,
-    join: (roomId) => joinRoom(roomId),
-    refresh: () => refreshLobbyPresence({ reconnect: true, publish: true }),
+    join: (roomId) => joinRoom(roomId, { invite }),
+    refresh: () => refreshLobbyPresence({ reconnect: false, publish: true }),
   });
+  if (result.ok) await announceInviteAccept(invite);
   closeLobbyInviteModal();
   if (!result.ok) setTicker(INVITE_ROOM_GONE_HINT);
 }
@@ -1845,8 +1892,11 @@ function joinRoom(roomId, extras = {}) {
     persistInviteNickname(named.nickname, realtimeManager.nicknameStorage);
     syncNickField();
   }
-  const room = resolveInviteRoom(lobbyRoomsUsers(), roomId)
-    || findInviteRoom(roomsFromPresence(lobbyRoomsUsers()), roomId);
+  const room = pickJoinablePvp([
+    resolveInviteRoom(lobbyRoomsUsers(), roomId),
+    findInviteRoom(roomsFromPresence(lobbyRoomsUsers()), roomId),
+    roomFromInvite(extras.invite || { roomId, hostId: extras.hostId, hostName: extras.hostName }),
+  ], realtimeManager.userId);
   if (!room) return false;
   if (room.hostId === realtimeManager.userId) {
     joiningRoom = false;
@@ -1856,7 +1906,7 @@ function joinRoom(roomId, extras = {}) {
   }
   const verdict = evaluateInviteJoin(room, realtimeManager.userId);
   if (!verdict.ok) return false;
-  return joinPvpRoom(verdict.room);
+  return joinPvpRoom(verdict.room, extras.invite);
 }
 
 async function enterInviteRoom() {
