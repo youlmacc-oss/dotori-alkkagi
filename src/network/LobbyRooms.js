@@ -209,25 +209,59 @@ export function userStatusLabel(status) {
   return '대기중';
 }
 
+export function presenceIdentity(user) {
+  return String(user?.presenceKey || user?.userId || user?.id || '').trim();
+}
+
+export function pickLatestPresence(metas) {
+  const list = (Array.isArray(metas) ? metas : []).filter(Boolean);
+  if (!list.length) return null;
+  return list.reduce((best, row) => {
+    const nextAt = Number(row.lastSeen || row.joinedAt) || 0;
+    const bestAt = Number(best.lastSeen || best.joinedAt) || 0;
+    return nextAt >= bestAt ? row : best;
+  });
+}
+
 export function usersFromPresenceState(state = {}) {
   const users = [];
   for (const [key, metas] of Object.entries(state || {})) {
-    const list = Array.isArray(metas) ? metas : [];
-    list.forEach((presence, index) => {
-      if (!presence) return;
-      const slot = list.length > 1 ? `${key}#${index}` : key;
-      users.push({
-        ...presence,
-        userId: slot,
-        id: slot,
-        presenceKey: key,
-        status: presence.status || PRESENCE_STATUS.LOBBY,
-        mode: presence.mode ?? null,
-        roomId: presence.roomId ?? null,
-      });
+    const presence = pickLatestPresence(metas);
+    if (!presence) continue;
+    users.push({
+      ...presence,
+      userId: key,
+      id: key,
+      presenceKey: key,
+      status: presence.status || PRESENCE_STATUS.LOBBY,
+      mode: presence.mode ?? null,
+      roomId: presence.roomId ?? null,
     });
   }
   return users;
+}
+
+export function dedupePresenceUsers(users) {
+  const byKey = new Map();
+  for (const user of users || []) {
+    const key = presenceIdentity(user);
+    if (!key) continue;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, { ...user, userId: user.userId || key, id: user.id || key, presenceKey: user.presenceKey || key });
+      continue;
+    }
+    const nextAt = Number(user.lastSeen || user.joinedAt) || 0;
+    const prevAt = Number(prev.lastSeen || prev.joinedAt) || 0;
+    const next = nextAt >= prevAt ? { ...prev, ...user } : { ...user, ...prev };
+    byKey.set(key, {
+      ...next,
+      userId: key,
+      id: key,
+      presenceKey: key,
+    });
+  }
+  return Array.from(byKey.values());
 }
 
 export function mergePresenceList(prev, next) {
@@ -254,10 +288,26 @@ export function mergePresenceList(prev, next) {
 }
 
 export function mergeSelfPresence(users, self, cap = LOBBY_CAP) {
-  const next = { ...self, id: self.userId ?? self.id, isOwner: true };
+  const mine = self.userId ?? self.id;
+  const next = {
+    ...self,
+    id: mine,
+    userId: mine,
+    presenceKey: self.presenceKey || mine,
+    isOwner: true,
+  };
   const list = Array.isArray(users) ? users.slice() : [];
-  const idx = list.findIndex((u) => (u.userId ?? u.id) === next.userId);
+  const idx = list.findIndex((u) => {
+    const id = u.userId ?? u.id;
+    return id === mine || presenceIdentity(u) === presenceIdentity(next);
+  });
   if (idx < 0) list.unshift(next);
   else list[idx] = { ...list[idx], ...next };
-  return list.slice(0, cap);
+  return dedupePresenceUsers(list).slice(0, cap);
+}
+
+/** Presence 스냅샷이 권위. 떠난 사람은 이전 목록에 남지 않는다. */
+export function applyLivePresence(live, self, cap = LOBBY_CAP) {
+  const list = dedupePresenceUsers(Array.isArray(live) ? live : []);
+  return self ? mergeSelfPresence(list, self, cap) : list.slice(0, cap);
 }

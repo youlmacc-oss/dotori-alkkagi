@@ -38,6 +38,8 @@ describe('대기실 닉네임', () => {
     expect(parseDefaultSeat('민수')).toBeNull();
     expect(parseDotoriNumber('도토리11')).toBe(11);
     expect(isCustomNickname('도토리11')).toBe(false);
+    expect(nextDotoriNumber([])).toBe(1);
+    expect(uniqueLobbyNickname('', []).nickname).toBe('도토리1');
     expect(nextDotoriNumber([{ nickname: '도토리1' }, { nickname: '도토리5' }])).toBe(6);
     expect(uniqueLobbyNickname('', [
       { userId: 'a', nickname: '도토리1' },

@@ -231,7 +231,10 @@ try {
       const stage = document.getElementById('stage')?.getBoundingClientRect();
       const slot = document.querySelector('#stage .power-slot')?.getBoundingClientRect();
       const track = document.querySelector('#stage .power-track')?.getBoundingClientRect();
-      const guide = document.getElementById('guide-btn')?.getBoundingClientRect();
+      const guideEl = document.getElementById('guide-btn');
+      const guide = guideEl?.getBoundingClientRect();
+      const guideText = guideEl?.textContent || '';
+      const guideHint = guideEl?.getAttribute('aria-label') || '';
       const timer = document.getElementById('match-timer')?.getBoundingClientRect();
       const acorn = document.getElementById('acorn-wallet')?.getBoundingClientRect();
       const settingsBtn = document.getElementById('settings-btn');
@@ -262,6 +265,8 @@ try {
       const sameSize = Math.abs(surrender.width - guide.width) <= 2
         && Math.abs(leave.width - guide.width) <= 2
         && slot.height === guide.height;
+      const guideOnOff = /ON|OFF/.test(guideText)
+        && (guideHint.includes('사용중') || guideHint.includes('미사용'));
       const settingsHidden = !settingsBtn || getComputedStyle(settingsBtn).display === 'none';
       const chromeRow = Math.abs(acorn.top - timer.top) <= 4
         && Math.abs(far.top - acorn.top) <= 14
@@ -277,6 +282,7 @@ try {
       return {
         ok: rowY
           && sameSize
+          && guideOnOff
           && lobbyGone
           && settingsHidden
           && chromeRow
@@ -294,6 +300,8 @@ try {
         boardCx,
         rowY,
         sameSize,
+        guideOnOff,
+        guideText,
         lobbyGone,
         settingsHidden,
         chromeRow,

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { PHASE, GAME_MODE, GameEngine, STONE_COLOR } from '../src/physics/GameEngine.js';
-import { RealtimeManager, MockSupabaseClient } from '../src/network/RealtimeManager.js';
+import { RealtimeManager, MockSupabaseClient, bindPresenceUnload } from '../src/network/RealtimeManager.js';
 import { roomsFromPresence } from '../src/network/LobbyRooms.js';
 
 describe('관전 모드 (Spectator Mode)', () => {
@@ -368,6 +368,59 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     const rooms = roomsFromPresence(seenByB.at(-1));
     expect(rooms).toHaveLength(2);
     expect(rooms.map((r) => r.mode).sort()).toEqual(['ai', 'solo']);
+  });
+
+  test('한 클라이언트가 나가면 다른 목록에서 바로 빠진다', async () => {
+    const client = new MockSupabaseClient();
+    const seen = [];
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'leave-sync',
+      userId: 'leave_a',
+      userNickname: '호치',
+    });
+    const guest = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'leave-sync',
+      userId: 'leave_b',
+      userNickname: '달이',
+      onPresenceUpdate: (users) => { seen.push(users.map((u) => u.userId).sort()); },
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    expect(await guest.connect()).toBe('SUBSCRIBED');
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(seen.at(-1)).toEqual(['leave_a', 'leave_b']);
+    await host.disconnect();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(seen.at(-1)).toEqual(['leave_b']);
+    expect(Array.from(guest.onlineUsers.keys())).toEqual(['leave_b']);
+    expect(client.removed).toContain('leave-sync');
+  });
+
+  test('페이지를 닫으면 Presence를 바로 내린다', async () => {
+    const listeners = new Map();
+    const target = {
+      addEventListener(type, fn) {
+        listeners.set(type, fn);
+      },
+      removeEventListener(type) {
+        listeners.delete(type);
+      },
+    };
+    const client = new MockSupabaseClient();
+    const manager = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'unload-sync',
+      userId: 'bye_1',
+      userNickname: '호치',
+    });
+    expect(await manager.connect()).toBe('SUBSCRIBED');
+    const unbind = bindPresenceUnload(manager, target);
+    listeners.get('beforeunload')({});
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(manager.isConnected).toBe(false);
+    expect(client.removed).toContain('unload-sync');
+    unbind();
   });
 
   test('9명이 대국 중이면 10번째는 입장하고 11번째는 거절된다', async () => {

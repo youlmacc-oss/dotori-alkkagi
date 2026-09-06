@@ -18,13 +18,15 @@ import { aimChargeRatio, applyPowerFill, timerRingOffset } from './ui/HudPower.j
 import { exitGame, shouldQuitFromLobbyClose } from './ui/GameExit.js';
 import { resultSubLine } from './physics/ResultBeat.js';
 import { soundEngine } from './audio/SoundEngine.js';
-import { RealtimeManager } from './network/RealtimeManager.js';
+import { RealtimeManager, bindPresenceUnload } from './network/RealtimeManager.js';
 import { createRealtimeClient, readSupabaseConfig } from './network/RealtimeClient.js';
 import {
   LOBBY_CAP,
+  dedupePresenceUsers,
   filterOwnIdleRooms,
   idleLobbyPresence,
   mergeSelfPresence,
+  applyLivePresence,
   presenceFromMatch,
   presenceViewKey,
   roomTitle,
@@ -32,7 +34,6 @@ import {
   roomsFromPresence,
   canJoinPvpFromLobby,
   canJoinPvpRoom,
-  mergePresenceList,
   isPvpWaiting,
   lobbyGuideLine,
   presenceStatusLabel,
@@ -205,9 +206,10 @@ const realtimeManager = new RealtimeManager({
   userCharacter: '🐶',
   nicknameStorage: globalThis.sessionStorage,
   onPresenceUpdate: (users) => {
-    updateLobbyUserList(mergePresenceList(lobbyUserList, users.map((u) => ({
+    const mapped = users.map((u) => ({
       id: u.userId,
       userId: u.userId,
+      presenceKey: u.presenceKey || u.userId,
       nickname: u.nickname,
       character: u.character,
       seat: u.seat,
@@ -218,7 +220,8 @@ const realtimeManager = new RealtimeManager({
       rearranging: Boolean(u.rearranging),
       pvpOpenedAt: u.pvpOpenedAt,
       isOwner: u.userId === realtimeManager.userId,
-    }))));
+    }));
+    updateLobbyUserList(applyLivePresence(mapped, selfPresence()));
     syncNickField();
   },
   onLobbyFull: () => {
@@ -680,10 +683,21 @@ function confirmPvpGuide(enabled) {
   settingsModal?.setGameMode(GAME_MODE.PVP, { startMatch: true });
 }
 
+function refreshLobbyPresence({ reconnect = false } = {}) {
+  if (realtimeManager.isConnected && !realtimeManager.channelNeedsReconnect()) {
+    realtimeManager.resyncPresence({ force: true });
+    publishPresence();
+    if (lobbyVisible) renderLobby();
+    return;
+  }
+  if (reconnect) bootRealtime();
+}
+
 function showLobby() {
   lobbyVisible = true;
   lobbyUsers.hidden = false;
   syncNickField();
+  refreshLobbyPresence({ reconnect: true });
   renderLobby();
   syncSceneMode();
   if (shouldAutoOpenGuideBook() && !pendingInviteRoom) openLobbyBookSheet('guide');
@@ -1307,7 +1321,8 @@ async function copyInviteUrlOnly() {
 function selfPresence() {
   const snap = engine.getSnapshot();
   const watching = snap.phase === PHASE.SPECTATING;
-  return presenceFromMatch({
+  return {
+    ...presenceFromMatch({
     userId: realtimeManager.userId,
     nickname: realtimeManager.userNickname,
     character: realtimeManager.userCharacter,
@@ -1321,7 +1336,9 @@ function selfPresence() {
     pvpOpenedAt: snap.gameMode === GAME_MODE.PVP && inMatchRoom && !matchStarted
       ? currentPvpOpenedAt()
       : null,
-  });
+    }),
+    presenceKey: realtimeManager.presenceKey || realtimeManager.userId,
+  };
 }
 
 function publishPresence() {
@@ -1357,7 +1374,7 @@ function lobbyRooms() {
 }
 
 function updateLobbyUserList(users) {
-  const next = (users || []).slice(0, LOBBY_CAP);
+  const next = dedupePresenceUsers(users).slice(0, LOBBY_CAP);
   const key = `${presenceViewKey(next)}#${roomsFromPresence(next).map((r) => r.id).sort().join(',')}`;
   const same = key === lastLobbyViewKey && lastLobbyViewKey !== '';
   lobbyUserList = next;
@@ -1842,6 +1859,22 @@ function bootRealtime(attempt = 0) {
 }
 
 bootRealtime();
+bindPresenceUnload(realtimeManager);
+
+function onLobbyResume() {
+  refreshLobbyPresence({ reconnect: true });
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') onLobbyResume();
+});
+window.addEventListener('focus', onLobbyResume);
+window.addEventListener('pageshow', onLobbyResume);
+if (!window.__dotoriLobbyRefresh) {
+  window.__dotoriLobbyRefresh = setInterval(() => {
+    refreshLobbyPresence({ reconnect: true });
+  }, 4000);
+}
 
 function seedVirtualLobby() {
   const guests = seedPlayingGuests(9);

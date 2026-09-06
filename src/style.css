@@ -283,7 +283,8 @@ body {
 .guide-btn.is-on,
 .settings-guide.is-on {
   border-color: var(--vivid-gold);
-  color: var(--vivid-gold);
+  background: var(--vivid-gold);
+  color: #1a0c0a;
 }
 
 .surrender-slot {

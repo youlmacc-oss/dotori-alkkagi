@@ -27,8 +27,12 @@ import {
   VIRTUAL_HEIGHT,
   VIRTUAL_WIDTH,
   canControlPowerRatio,
+  AIM_GUIDE_VISUAL,
+  aimGuideVisualScale,
   clampPowerScale,
   clampPullVector,
+  isPhoneAimViewport,
+  scaleAimGuideEnd,
   computeElasticTension,
   computeRelativeVelocity,
   computeSlingshotLaunch,
@@ -208,7 +212,24 @@ describe('슬링샷 텐션·클램프', () => {
     );
     const gone = Math.hypot(guide.aimEnd.x - guide.origin.x, guide.aimEnd.y - guide.origin.y);
     expect(gone).toBeCloseTo(shot.travel, 1);
+    const phoneEnd = scaleAimGuideEnd(guide.origin, guide.aimEnd, 0.58);
+    const phoneGone = Math.hypot(phoneEnd.x - guide.origin.x, phoneEnd.y - guide.origin.y);
+    expect(phoneGone).toBeCloseTo(shot.travel * 0.58, 1);
+    expect(gone).toBeCloseTo(shot.travel, 1);
     engine.destroy();
+  });
+
+  it('휴대폰 조준선 시각 배율만 줄이고 노트북은 1이다', () => {
+    expect(isPhoneAimViewport({ width: 1280, height: 800 })).toBe(false);
+    expect(aimGuideVisualScale({ width: 1280, height: 800 })).toBe(AIM_GUIDE_VISUAL.DESKTOP);
+    expect(isPhoneAimViewport({ width: 390, height: 844 })).toBe(true);
+    const phone = aimGuideVisualScale({ width: 390, height: 844 });
+    expect(phone).toBeCloseTo(390 / AIM_GUIDE_VISUAL.REF_WIDTH);
+    expect(phone).toBeGreaterThanOrEqual(AIM_GUIDE_VISUAL.PHONE_MIN);
+    expect(phone).toBeLessThan(1);
+    const end = scaleAimGuideEnd({ x: 10, y: 20 }, { x: 10, y: 120 }, phone);
+    expect(end.x).toBe(10);
+    expect(end.y).toBeCloseTo(20 + 100 * phone);
   });
 
   it('설정 판 한 스텝은 Matter 속도를 8배하지 않는다', () => {

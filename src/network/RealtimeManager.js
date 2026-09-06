@@ -3,7 +3,7 @@
  * 관전 데이터 브로드캐스트와 Presence 관리를 담당한다.
  */
 
-import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, mergePresenceList, presenceViewKey, usersFromPresenceState } from './LobbyRooms.js';
+import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, presenceViewKey, usersFromPresenceState } from './LobbyRooms.js';
 import { PVP_INVITE_EVENT } from './PvpInvite.js';
 import {
   defaultNickname,
@@ -83,6 +83,8 @@ export class RealtimeManager {
     this._nickAssigned = Boolean(this._fixedNickname && this.userNickname);
     this._localSeeds = new Map();
     this._presenceViewKey = '';
+    this._connecting = false;
+    this._unloading = false;
   }
 
   rememberLocalPresence(users) {
@@ -120,15 +122,41 @@ export class RealtimeManager {
       && !isKeptConnectedNickname(this.userNickname, this.keepNickname);
   }
 
+  channelNeedsReconnect() {
+    if (!this.channel) return true;
+    const state = String(this.channel.state || '').toLowerCase();
+    return state === 'closed' || state === 'errored' || state === 'leaving';
+  }
+
+  async _teardownChannel() {
+    const ch = this.channel;
+    this.channel = null;
+    this.isConnected = false;
+    if (!ch) return;
+    const key = this.presenceKey || this.userId;
+    try { await ch.untrack?.(key); } catch { /* ignore */ }
+    try { await ch.unsubscribe(); } catch { /* ignore */ }
+    try { await this.supabaseClient?.removeChannel?.(ch); } catch { /* ignore */ }
+  }
+
   /**
    * Realtime 연결을 시작한다.
    */
-  async connect() {
-    if (!this.supabaseClient || this.isConnected) return this.isConnected ? 'SUBSCRIBED' : undefined;
+  async connect(options = {}) {
+    const force = Boolean(options.force);
+    if (!this.supabaseClient) return undefined;
+    if (this._connecting) return this.isConnected ? 'SUBSCRIBED' : undefined;
+    if (this.isConnected && !force && !this.channelNeedsReconnect()) {
+      return 'SUBSCRIBED';
+    }
 
     try {
+      this._connecting = true;
       this._lobbyFull = false;
       this._lobbySwept = false;
+      if (this.channel || this.isConnected) {
+        await this._teardownChannel();
+      }
       this.channel = this.supabaseClient
         .channel(this.channelName, lobbyChannelConfig(this.presenceKey || this.userId))
         .on('presence', { event: 'sync' }, () => {
@@ -191,11 +219,7 @@ export class RealtimeManager {
       }
 
       if (this._lobbyFull) {
-        if (this.channel) {
-          await this.channel.unsubscribe();
-          this.channel = null;
-        }
-        this.isConnected = false;
+        await this._teardownChannel();
         this.emit('lobbyFull');
         this.onLobbyFull();
         return 'FULL';
@@ -204,14 +228,10 @@ export class RealtimeManager {
       return 'SUBSCRIBED';
     } catch (error) {
       console.error('Realtime 연결 실패:', error);
-      try {
-        await this.channel?.unsubscribe();
-      } catch {
-        /* ignore */
-      }
-      this.channel = null;
-      this.isConnected = false;
+      await this._teardownChannel();
       throw error;
+    } finally {
+      this._connecting = false;
     }
   }
 
@@ -221,13 +241,9 @@ export class RealtimeManager {
   async disconnect() {
     this._stopHeartbeat();
     this._clearStaleTimer();
-    if (this.channel) {
-      try { await this.channel.untrack?.(this.userId); } catch { /* ignore */ }
-      await this.channel.unsubscribe();
-      this.channel = null;
-    }
-    this.isConnected = false;
+    await this._teardownChannel();
     this.onlineUsers.clear();
+    this._presenceViewKey = '';
     this.emit('disconnected');
   }
 
@@ -299,11 +315,8 @@ export class RealtimeManager {
     }
   }
 
-  _applyVisiblePresence(raw) {
-    const users = mergePresenceList(
-      Array.from(this.onlineUsers.values()),
-      this._visibleUsers(raw),
-    );
+  _applyVisiblePresence(raw, { force = false } = {}) {
+    const users = dedupePresenceUsers(this._visibleUsers(raw));
     const key = presenceViewKey(users);
     const same = key === this._presenceViewKey && this._presenceViewKey !== '';
     this._presenceViewKey = key;
@@ -318,7 +331,7 @@ export class RealtimeManager {
         this._broadcastLobbySweep();
       }
     }
-    if (!same) this.onPresenceUpdate(users);
+    if (!same || force) this.onPresenceUpdate(users);
     return users;
   }
 
@@ -462,14 +475,20 @@ export class RealtimeManager {
   async _trackPresence() {
     if (!this.channel) return;
 
+    const roomId = this.presence.roomId ?? null;
+    const status = this.presence.status ?? PRESENCE_STATUS.LOBBY;
     const presenceData = {
       userId: this.userId,
+      presenceKey: this.presenceKey || this.userId,
       nickname: this.userNickname,
       character: this.userCharacter,
       seat: this.seat,
-      status: this.presence.status ?? PRESENCE_STATUS.LOBBY,
+      role: status === PRESENCE_STATUS.PLAYING && roomId
+        ? (roomId === `room_${this.userId}` ? 'host' : 'guest')
+        : 'lobby',
+      status,
       mode: this.presence.mode ?? null,
-      roomId: this.presence.roomId ?? null,
+      roomId,
       acorns: parseAcorn(this.presence.acorns),
       rearranging: Boolean(this.presence.rearranging),
       pvpOpenedAt: Number(this.presence.pvpOpenedAt) > 0 ? this.presence.pvpOpenedAt : null,
@@ -492,24 +511,28 @@ export class RealtimeManager {
   /**
    * Presence 동기화를 처리한다.
    */
+  resyncPresence({ force = false } = {}) {
+    const state = this.channel?.presenceState?.() || {};
+    const users = usersFromPresenceState(state);
+    return this._applyVisiblePresence(activeLobbyUsers(users), { force });
+  }
+
   _handlePresenceSync() {
-    const users = usersFromPresenceState(this.channel.presenceState());
-    this.onlineUsers = new Map(users.map((user) => [user.userId, user]));
-    this._applyVisiblePresence(activeLobbyUsers(users));
+    this.resyncPresence();
   }
 
   /**
    * 사용자 입장을 처리한다.
    */
   _handlePresenceJoin(key, newPresences) {
-    newPresences.forEach((presence, index) => {
-      const slot = (newPresences.length > 1 ? `${key}#${index}` : key);
-      const row = { ...presence, userId: slot, id: slot, presenceKey: key };
-      this.onlineUsers.set(slot, row);
+    const presence = newPresences?.[newPresences.length - 1];
+    if (presence) {
+      const row = { ...presence, userId: key, id: key, presenceKey: key };
+      this.onlineUsers.set(key, row);
       this.onUserJoin(row);
-    });
-
-    this._applyVisiblePresence(activeLobbyUsers(Array.from(this.onlineUsers.values())));
+      console.info('[dotori-presence] join', key, presence.nickname || '');
+    }
+    this.resyncPresence({ force: true });
   }
 
   _reconcileOwnIdentity(users) {
@@ -528,16 +551,19 @@ export class RealtimeManager {
    * 사용자 퇴장을 처리한다.
    */
   _handlePresenceLeave(key, leftPresences) {
-    leftPresences.forEach(presence => {
+    const rows = Array.isArray(leftPresences) && leftPresences.length
+      ? leftPresences
+      : [{ userId: key, id: key }];
+    rows.forEach((presence) => {
       this.onlineUsers.delete(key);
       this.onlineUsers.delete(presence.userId);
       this.onlineUsers.delete(presence.id);
+      this._localSeeds.delete(key);
+      this._localSeeds.delete(presence.userId);
       this.onUserLeave(presence);
+      console.info('[dotori-presence] leave', key, presence.nickname || '');
     });
-
-    const users = this._visibleUsers(Array.from(this.onlineUsers.values()));
-    this.onlineUsers = new Map(users.map((u) => [u.userId, u]));
-    this.onPresenceUpdate(users);
+    this.resyncPresence({ force: true });
   }
 
   /**
@@ -567,9 +593,25 @@ export class RealtimeManager {
 }
 
 // 임시 Mock 클라이언트 (실제 Supabase 없이 테스트용)
+export function bindPresenceUnload(manager, target = globalThis) {
+  if (!manager || !target?.addEventListener) return () => {};
+  const leave = (event) => {
+    if (event?.type === 'pagehide' && event.persisted) return;
+    manager._unloading = true;
+    void manager.disconnect();
+  };
+  target.addEventListener('pagehide', leave);
+  target.addEventListener('beforeunload', leave);
+  return () => {
+    target.removeEventListener('pagehide', leave);
+    target.removeEventListener('beforeunload', leave);
+  };
+}
+
 export class MockSupabaseClient {
   constructor() {
     this.channels = new Map();
+    this.removed = [];
   }
 
   channel(name) {
@@ -578,14 +620,24 @@ export class MockSupabaseClient {
     }
     return this.channels.get(name);
   }
+
+  removeChannel(channel) {
+    this.removed.push(channel?.name || '');
+    if ((channel?._subs || 0) > 0) return 'ok';
+    const name = channel?.name;
+    if (name && this.channels.get(name) === channel) this.channels.delete(name);
+    return 'ok';
+  }
 }
 
 class MockChannel {
   constructor(name) {
     this.name = name;
+    this.state = 'closed';
     this.listeners = new Map();
     this._presenceState = new Map();
     this.isSubscribed = false;
+    this._subs = 0;
   }
 
   on(type, filter, callback) {
@@ -600,6 +652,7 @@ class MockChannel {
   async subscribe(callback) {
     this._subs = (this._subs || 0) + 1;
     this.isSubscribed = true;
+    this.state = 'joined';
     setTimeout(() => callback('SUBSCRIBED'), 10);
     return 'SUBSCRIBED';
   }
@@ -608,20 +661,27 @@ class MockChannel {
     this._subs = Math.max(0, (this._subs || 1) - 1);
     if (this._subs === 0) {
       this.isSubscribed = false;
+      this.state = 'closed';
       this.listeners.clear();
       this._presenceState.clear();
     }
   }
 
   async track(data) {
-    this._presenceState.set(data.userId, [data]);
-    this._emitPresence('sync');
+    const key = String(data?.presenceKey || data?.userId || '');
+    if (!key) return data;
+    this._presenceState.set(key, [{ ...data, userId: data.userId || key, presenceKey: key }]);
+    this._emitPresence('join', { key, newPresences: this._presenceState.get(key) });
+    this._emitPresence('sync', {});
     return data;
   }
 
   async untrack(userId) {
-    this._presenceState.delete(userId);
-    this._emitPresence('sync');
+    const key = String(userId || '');
+    const left = key ? (this._presenceState.get(key) || []) : [];
+    if (key) this._presenceState.delete(key);
+    if (key) this._emitPresence('leave', { key, leftPresences: left });
+    this._emitPresence('sync', {});
   }
 
   async send({ type, event, payload }) {
@@ -639,10 +699,10 @@ class MockChannel {
     return state;
   }
 
-  _emitPresence(event) {
+  _emitPresence(event, payload = {}) {
     const key = `presence:${event}`;
     const callbacks = this.listeners.get(key) || [];
-    callbacks.forEach(callback => callback());
+    callbacks.forEach((callback) => callback(payload));
   }
 
   _emitBroadcast(event, payload) {

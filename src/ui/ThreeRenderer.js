@@ -1,11 +1,36 @@
 import * as THREE from 'three';
-import { GAME_MODE, POWER_RATIO, STONE_COLOR, STONE_RADIUS, STONE_VISUAL_SCALE, clampPowerScale, isOutsideInnerBoard } from '../physics/GameEngine.js';
+import { GAME_MODE, POWER_RATIO, STONE_COLOR, STONE_RADIUS, STONE_VISUAL_SCALE, aimGuideVisualScale, clampPowerScale, isOutsideInnerBoard, scaleAimGuideEnd } from '../physics/GameEngine.js';
 import { isActionCamEnabled } from './PlayPrefs.js';
 import { ndcBoundsFitBox, ndcBoxToCss, ndcLiftToClearBottom, playfieldNdcBox, PLAYFIELD_HUD, visualShellRect } from './ViewportShell.js';
 
 export { visualShellRect };
 
 export const GUIDE_LINE_KEY = 'dotori_guide_enabled';
+export const GUIDE_BTN_ON = 'ON';
+export const GUIDE_BTN_OFF = 'OFF';
+export const GUIDE_BTN_ON_HINT = '조준선 사용중';
+export const GUIDE_BTN_OFF_HINT = '조준선 미사용';
+
+export function guideButtonChrome(on) {
+  const enabled = Boolean(on);
+  return {
+    on: enabled,
+    state: enabled ? GUIDE_BTN_ON : GUIDE_BTN_OFF,
+    hint: enabled ? GUIDE_BTN_ON_HINT : GUIDE_BTN_OFF_HINT,
+  };
+}
+
+export function applyGuideButtonChrome(btn, on) {
+  if (!btn) return guideButtonChrome(on);
+  const chrome = guideButtonChrome(on);
+  btn.classList.toggle('is-on', chrome.on);
+  btn.setAttribute('aria-pressed', chrome.on ? 'true' : 'false');
+  btn.setAttribute('aria-label', chrome.hint);
+  btn.setAttribute('title', chrome.hint);
+  const state = btn.querySelector('.guide-btn-state');
+  if (state) state.textContent = chrome.state;
+  return chrome;
+}
 
 /** 액션캠이 꺼져 있거나 이미 한 건이 진행 중이면 클로즈업을 붙이지 않는다. */
 export function shouldAttachKillCam(actionCamEnabled, killCamActive) {
@@ -1373,13 +1398,18 @@ export class ThreeRenderer {
       const pullDist = Math.hypot(dx, dz);
 
       if (pullDist > 1) {
-        const mapped = aim.aimEnd ? this._matterToThree(aim.aimEnd.x, aim.aimEnd.y) : null;
+        const visualScale = aimGuideVisualScale({
+          width: this.canvas?.clientWidth || this.canvas?.width,
+          height: this.canvas?.clientHeight || this.canvas?.height,
+        });
+        const scaledAim = scaleAimGuideEnd(pullFrom, aim.aimEnd, visualScale);
+        const mapped = scaledAim ? this._matterToThree(scaledAim.x, scaledAim.y) : null;
         const aimEnd = mapped
           ? { x: mapped.x, y: lineY, z: mapped.z }
           : {
-            x: pStart.x + (dx / pullDist) * (pullDist * this.aimScale),
+            x: pStart.x + (dx / pullDist) * (pullDist * this.aimScale * visualScale),
             y: lineY,
-            z: pStart.z + (dz / pullDist) * (pullDist * this.aimScale),
+            z: pStart.z + (dz / pullDist) * (pullDist * this.aimScale * visualScale),
           };
         const aimPositions = this.aimLineMesh.geometry.attributes.position;
         aimPositions.setXYZ(0, pStart.x, lineY, pStart.z);

@@ -73,7 +73,7 @@ export function shouldKeepAssignedNickname({
       if (mineAt > theirAt) return false;
     } else if (mineAt && !theirAt) return true;
     else if (!mineAt && theirAt) return false;
-    return mineId && theirId ? mineId <= theirId : true;
+    return mineId && theirId ? mineId <= theirId : false;
   });
 }
 

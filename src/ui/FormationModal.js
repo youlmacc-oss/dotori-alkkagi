@@ -15,6 +15,7 @@ import {
   STONE_VISUAL_SCALE,
   computeSlingshotLaunch,
   estimateLaunchTravel,
+  aimGuideVisualScale,
   createPreviewLaunchState,
   createPresetLayout,
   createRandomFormationLayout,
@@ -33,6 +34,7 @@ import {
   BOARD_MESH_SIZE,
   BOARD_WORLD_INSET,
   GUIDE_LINE_KEY,
+  applyGuideButtonChrome,
   boardFaceToMatter,
   boardTonePalette,
   matterToBoardFace,
@@ -652,11 +654,12 @@ export class SettingsModal {
 
   syncGuideButtons() {
     const on = this.renderer.guideEnabled;
+    const hint = on ? '조준선 사용중' : '조준선 미사용';
     this.settingsGuide.classList.toggle('is-on', on);
     this.settingsGuide.setAttribute('aria-pressed', on ? 'true' : 'false');
-    this.settingsGuide.textContent = on ? '조준 가이드선 On' : '조준 가이드선 Off';
-    this.hudGuide.classList.toggle('is-on', on);
-    this.hudGuide.setAttribute('aria-pressed', on ? 'true' : 'false');
+    this.settingsGuide.setAttribute('title', hint);
+    this.settingsGuide.textContent = hint;
+    applyGuideButtonChrome(this.hudGuide, on);
   }
 
   syncColorChips() {
@@ -962,7 +965,11 @@ export class SettingsModal {
       const shot = computeSlingshotLaunch(this.aimPreview.origin, this.aimPreview.pointer, {
         powerScale: this.engine.powerScale,
       });
-      const travel = shot.travel ?? estimateLaunchTravel(shot.velocity);
+      const visualScale = aimGuideVisualScale({
+        width: this.preview.clientWidth || this.preview.width,
+        height: this.preview.clientHeight || this.preview.height,
+      });
+      const travel = (shot.travel ?? estimateLaunchTravel(shot.velocity)) * visualScale;
       const speed = Math.hypot(shot.velocity.x, shot.velocity.y) || 1;
       const end = this.toPreview(
         this.aimPreview.origin.x + (shot.velocity.x / speed) * travel,

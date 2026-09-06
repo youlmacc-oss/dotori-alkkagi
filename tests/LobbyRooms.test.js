@@ -3,6 +3,7 @@ import {
   LOBBY_CAP,
   canAdmitUser,
   isPlayableLobbyMode,
+  applyLivePresence,
   mergeSelfPresence,
   presenceFromMatch,
   openRoomCount,
@@ -11,6 +12,8 @@ import {
   idleLobbyPresence,
   presenceViewKey,
   usersFromPresenceState,
+  pickLatestPresence,
+  dedupePresenceUsers,
   roomsFromPresence,
   canJoinPvpFromLobby,
   canJoinPvpRoom,
@@ -200,6 +203,20 @@ describe('대기실 게임방', () => {
       pk_a: [{ userId: 'same', nickname: '호치', status: 'playing', mode: 'pvp' }],
       pk_b: [{ userId: 'same', nickname: '랄2', status: 'lobby' }],
     }).map((u) => u.nickname).sort()).toEqual(['랄2', '호치']);
+    expect(usersFromPresenceState({
+      host: [
+        { userId: 'host', nickname: '도토리1', lastSeen: 1000 },
+        { userId: 'host', nickname: '도토리1', lastSeen: 2000 },
+      ],
+    }).map((u) => u.userId)).toEqual(['host']);
+    expect(pickLatestPresence([
+      { nickname: '도토리1', lastSeen: 1 },
+      { nickname: '도토리1', lastSeen: 9 },
+    ]).lastSeen).toBe(9);
+    expect(dedupePresenceUsers([
+      { userId: 'host#0', presenceKey: 'host', nickname: '도토리1' },
+      { userId: 'host', presenceKey: 'host', nickname: '도토리1', lastSeen: 5 },
+    ])).toHaveLength(1);
     const kept = mergePresenceList(
       [presenceFromMatch({ userId: 'u2', nickname: '달이', mode: 'solo', phase: 'idle' })],
       [{ userId: 'u2', nickname: '달이', status: 'playing' }],
@@ -217,6 +234,20 @@ describe('대기실 게임방', () => {
     expect(roomsFromPresence([
       presenceFromMatch({ userId: 'u1', mode: 'ai', phase: 'spectating' }),
     ])).toHaveLength(0);
+  });
+
+  it('대기실 목록은 Presence 스냅샷이 권위이고 떠난 사람을 남기지 않는다', () => {
+    const self = { userId: 'me', nickname: '호치', status: 'lobby' };
+    const live = applyLivePresence([
+      user('a', { status: 'playing', mode: 'solo', nickname: '달이' }),
+      { userId: 'me', nickname: '호치', status: 'lobby', mode: null, roomId: null },
+    ], self);
+    expect(live.map((u) => u.userId).sort()).toEqual(['a', 'me']);
+    const afterLeave = applyLivePresence([
+      { userId: 'me', nickname: '호치', status: 'lobby', mode: null, roomId: null },
+    ], self);
+    expect(afterLeave.map((u) => u.userId)).toEqual(['me']);
+    expect(roomsFromPresence(afterLeave)).toHaveLength(0);
   });
 
   it('한 명이 나가면 그 방만 사라지고 나머지는 유지된다', () => {

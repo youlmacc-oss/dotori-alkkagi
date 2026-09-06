@@ -81,6 +81,43 @@ export function clampPowerScale(value) {
   return Number(clamped.toFixed(1));
 }
 
+/** 발사 물리와 분리한 조준선 화면 길이. 노트북은 1, 휴대폰만 뷰포트에 연동해 줄인다. */
+export const AIM_GUIDE_VISUAL = Object.freeze({
+  DESKTOP: 1,
+  PHONE_MIN: 0.52,
+  PHONE_MAX: 0.72,
+  REF_WIDTH: 720,
+  PHONE_MAX_WIDTH: 480,
+  PHONE_TALL_MAX_WIDTH: 600,
+  PHONE_MIN_ASPECT: 1.35,
+});
+
+export function isPhoneAimViewport({ width, height } = {}) {
+  const w = Number(width);
+  const h = Number(height);
+  if (!Number.isFinite(w) || w <= 0) return false;
+  if (w <= AIM_GUIDE_VISUAL.PHONE_MAX_WIDTH) return true;
+  const aspect = Number.isFinite(h) && h > 0 ? h / w : 0;
+  return w <= AIM_GUIDE_VISUAL.PHONE_TALL_MAX_WIDTH && aspect >= AIM_GUIDE_VISUAL.PHONE_MIN_ASPECT;
+}
+
+export function aimGuideVisualScale(viewport = {}) {
+  if (!isPhoneAimViewport(viewport)) return AIM_GUIDE_VISUAL.DESKTOP;
+  const raw = Number(viewport.width) / AIM_GUIDE_VISUAL.REF_WIDTH;
+  if (!Number.isFinite(raw) || raw <= 0) return AIM_GUIDE_VISUAL.PHONE_MIN;
+  return Math.min(AIM_GUIDE_VISUAL.PHONE_MAX, Math.max(AIM_GUIDE_VISUAL.PHONE_MIN, raw));
+}
+
+export function scaleAimGuideEnd(origin, aimEnd, scale = 1) {
+  if (!origin || !aimEnd) return aimEnd ?? null;
+  const s = Number(scale);
+  if (!Number.isFinite(s) || s === 1) return { x: aimEnd.x, y: aimEnd.y };
+  return {
+    x: origin.x + (aimEnd.x - origin.x) * s,
+    y: origin.y + (aimEnd.y - origin.y) * s,
+  };
+}
+
 export function readStoredPowerScale() {
   try {
     const raw = globalThis.localStorage?.getItem(POWER_RATIO.STORAGE_KEY);
