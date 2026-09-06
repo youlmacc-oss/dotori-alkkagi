@@ -55,7 +55,14 @@ try {
     throw new Error(`lobby monitor failed: ${JSON.stringify(lobby)}`);
   }
 
-  await page.evaluate(() => document.querySelector('.spectate-btn')?.click());
+  await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.lobby-room')].find((el) => {
+      const name = el.querySelector('.lobby-room-name')?.textContent || '';
+      const btn = el.querySelector('.spectate-btn');
+      return Boolean(btn?.textContent.includes('관람하기') && name.includes('1:1'));
+    });
+    row?.querySelector('.spectate-btn')?.click();
+  });
   await page.waitForTimeout(600);
   const watching = await page.evaluate(() => {
     const bar = document.getElementById('spectate-bar');

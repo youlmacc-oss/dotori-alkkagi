@@ -6,6 +6,7 @@ import {
   parseAcorn,
   settleSessionAcorns,
   shouldForfeitOnLeave,
+  shouldForfeitOnOpponentGone,
   shouldSettleAcorns,
 } from '../src/network/AcornPolicy.js';
 
@@ -44,6 +45,15 @@ describe('접속 중 도토리 정책', () => {
     expect(shouldForfeitOnLeave({ mode: 'pvp', started: true, spectating: true, phase: 'spectating' })).toBe(false);
     expect(shouldForfeitOnLeave({ mode: 'ai', started: true, phase: 'idle' })).toBe(false);
     expect(shouldForfeitOnLeave({ mode: 'solo', started: true, phase: 'idle' })).toBe(false);
+    expect(shouldForfeitOnOpponentGone({
+      mode: 'pvp', started: true, phase: 'idle', hadOpponent: true, hasOpponent: false,
+    })).toBe(true);
+    expect(shouldForfeitOnOpponentGone({
+      mode: 'pvp', started: true, phase: 'gameOver', hadOpponent: true, hasOpponent: false,
+    })).toBe(false);
+    expect(shouldForfeitOnOpponentGone({
+      mode: 'pvp', started: false, phase: 'idle', hadOpponent: true, hasOpponent: false,
+    })).toBe(false);
     const leaveLose = { mode: 'pvp', started: true, winner: 'white', myColor: 'black' };
     expect(settleSessionAcorns(10, leaveLose)).toBe(9);
   });

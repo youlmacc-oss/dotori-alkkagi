@@ -30,6 +30,7 @@ import {
   resolveCustomFormationDrop,
   validateFormationLayout,
 } from '../physics/GameEngine.js';
+import { SETTINGS_APPLY_BLOCK } from './PlayPrefs.js';
 import {
   BOARD_COLOR_DEFAULT,
   BOARD_COLOR_KEY,
@@ -197,13 +198,14 @@ function saveBoardColorState(state) {
 }
 
 export class SettingsModal {
-  constructor({ root, engine, renderer, onApply, onGuideChange, onPvpPick }) {
+  constructor({ root, engine, renderer, onApply, onGuideChange, onPvpPick, shouldBlockApply }) {
     this.root = root;
     this.engine = engine;
     this.renderer = renderer;
     this.onApply = onApply;
     this.onGuideChange = onGuideChange;
     this.onPvpPick = onPvpPick;
+    this.shouldBlockApply = shouldBlockApply;
     this.count = engine.formation?.count ?? 5;
     this.mode = FORMATION_MODE.PRESET;
     this.shape = engine.formation?.shape ?? FORMATION_SHAPE.LINE;
@@ -622,6 +624,10 @@ export class SettingsModal {
   }
 
   apply() {
+    if (this.shouldBlockApply?.()) {
+      this.setStatus(SETTINGS_APPLY_BLOCK);
+      return;
+    }
     this.draft = commitPlayLayout(this.count, this.draft, undefined, FORMATION_ZONE.CUSTOM);
     if (!validateFormationLayout(this.draft, undefined, FORMATION_ZONE.CUSTOM).ok) {
       this.draft = [

@@ -48,6 +48,41 @@ export function shouldAutoOpenGuideBook({ session, local } = {}) {
   return true;
 }
 
+export const INVITE_ONLY_NOTICE = '도토리 알까기 게임은 초대에 의해서만 게임을 할 수 있습니다. 대전방 개설후 게임상대를 초대하세요';
+export const INVITE_ONLY_OK = '확인';
+export const INVITE_ONLY_SEEN_KEY = 'dotori-alkkagi-invite-only-seen';
+
+export function hasSeenInviteOnlyNotice(storage = globalThis.sessionStorage) {
+  try {
+    return storage?.getItem?.(INVITE_ONLY_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function markInviteOnlyNoticeSeen(storage = globalThis.sessionStorage) {
+  try {
+    storage?.setItem?.(INVITE_ONLY_SEEN_KEY, '1');
+  } catch {
+    /* private mode */
+  }
+}
+
+export function shouldOfferInviteOnlyNotice({
+  alreadyShown = false,
+  inviteJoin = false,
+  guidebookClosed = false,
+  tutorialEnded = false,
+  tutorialSkipped = false,
+  guidebookSkippedOnConnect = false,
+} = {}) {
+  if (alreadyShown || inviteJoin) return false;
+  return guidebookClosed === true
+    || tutorialEnded === true
+    || tutorialSkipped === true
+    || guidebookSkippedOnConnect === true;
+}
+
 export const GUIDE_PAGES = Object.freeze([
   Object.freeze({
     id: 'cover',
@@ -55,7 +90,7 @@ export const GUIDE_PAGES = Object.freeze([
     title: '도토리 알까기',
     visual: 'cover',
     lead: '원목 판 위에서 알을 당기고 튕깁니다.',
-    points: ['1인 연습', 'AI 대국', '1:1은 대기실 참가 또는 초대', '바로시작은 대기방 · 다음 접속 숨김 가능'],
+    points: ['1인 연습', 'AI 대국', '1:1은 초대 또는 대기실 참가', '바로시작은 대기방 · 다음 접속 숨김 가능', '가이드를 닫거나 튜토리얼을 끝내면 초대만 가능하다는 안내'],
   }),
   Object.freeze({
     id: 'pull',
@@ -71,7 +106,7 @@ export const GUIDE_PAGES = Object.freeze([
     title: '세 가지 대전',
     visual: 'modes',
     lead: '대기실에서 고른 모드가 곧 방입니다.',
-    points: ['1인: 흑·백 모두 나', 'AI: 위는 봇, 아래는 나', '1:1: 사람이 들어올 때까지 대기 · 혼자 열어도 AI가 대신 두지 않음', '호스트는 흑, 초대 입장은 백'],
+    points: ['1인: 흑·백 모두 나', 'AI: 위는 봇, 아래는 나', '1:1: 사람이 들어올 때까지 대기 · 혼자 열어도 AI가 대신 두지 않음', '호스트는 흑, 초대 입장은 백', '다시하기는 같은 방 · 같은 상대'],
   }),
   Object.freeze({
     id: 'ready',
@@ -87,7 +122,7 @@ export const GUIDE_PAGES = Object.freeze([
     title: '적은 쪽이 먼저',
     visual: 'acorn',
     lead: '시작은 10개. 1:1만 승 +1 / 패 −1, 음수도 됩니다.',
-    points: ['도토리가 같으면 아이디 순', '1인·AI·관람은 숫자를 건드리지 않습니다', '같은 탭에서 F5를 눌러도 닉과 도토리는 남습니다'],
+    points: ['도토리가 같으면 아이디 순', '1인·AI·관람은 숫자를 건드리지 않습니다', '창을 닫거나 끊겨도 시작된 1:1은 기권승으로 정산합니다', '같은 탭에서 F5를 눌러도 닉과 도토리는 남습니다'],
   }),
   Object.freeze({
     id: 'fall',
@@ -102,8 +137,8 @@ export const GUIDE_PAGES = Object.freeze([
     kicker: '매너',
     title: '시작된 1:1은 나가면 패',
     visual: 'leave',
-    lead: '시작 버튼 이후 대기방·기권은 상대 승리입니다.',
-    points: ['상대를 기다리는 중 나가기는 정산 없음', '이미 끝난 판에서 대기실은 그냥 복귀', '관람 중 나가기는 도토리에 손대지 않음', '대기실 ✕는 게임 종료'],
+    lead: '시작된 판에서 나가거나 창을 닫거나 연결이 끊기면 기권입니다.',
+    points: ['남은 사람은 승을 정산하고 결과창을 봅니다', '상대를 기다리는 중 나가기는 정산 없음 · 남은 사람은 상대 대기', '호스트가 대기 중 나가면 남은 사람이 자기 방을 엽니다', '다시하기는 같은 방을 유지합니다', '이미 끝난 판에서 대기실은 그냥 복귀', '관람 중 나가기는 도토리에 손대지 않음', '대기실 ✕는 게임 종료'],
   }),
   Object.freeze({
     id: 'room',
@@ -111,7 +146,7 @@ export const GUIDE_PAGES = Object.freeze([
     title: '방 · 관람 · 위치',
     visual: 'room',
     lead: '정원 10명. 위치 번호는 항상 공개됩니다.',
-    points: ['1:1은 대기실에서 참가하기 또는 초대로 입장 · 관람도 가능', '방장이 대기방 친구를 초대할 수 있음', '받은 초대를 수락하면 호스트 방에 바로 붙습니다', '내 자리는 내닉네임으로 표시', '기본 닉은 접속 중 도토리 최후 번호 다음 · 최대 5글자', '같은 닉은 저장 때 다른 이름으로 바꿉니다', '접속이 5분 끊기면 대기실에서 나갑니다', '대기실에서 닉네임을 바꿀 수 있고 대전·관람 중에는 잠깁니다'],
+    points: ['1:1은 대기실에서 참가하기 또는 초대로 입장', '1:1 관람만 가능 · 1인·AI는 관람할 수 없습니다', '누가 1:1을 열면 방에 보이고 초대손님을 기다리는 중이라고 안내합니다', '이미 시작된 방에는 참가할 수 없고 끝난 방은 대국 종료로 보입니다', '대기실이 10명이면 11번째는 접속하지 않습니다', '방장이 대기방 친구를 초대할 수 있음', '받은 초대를 수락하면 호스트 방에 바로 붙습니다', '내 자리는 내닉네임으로 표시', '기본 닉은 접속 중 도토리 최후 번호 다음 · 최대 5글자', '같은 닉은 저장 때 다른 이름으로 바꿉니다', '접속이 5분 끊기면 대기실에서 나갑니다', '대기실에서 닉네임을 바꿀 수 있고 대전·관람 중에는 잠깁니다'],
   }),
   Object.freeze({
     id: 'sound',
@@ -119,15 +154,15 @@ export const GUIDE_PAGES = Object.freeze([
     title: '소리·액션캠·재배치',
     visual: 'sound',
     lead: '⚙️에서 음량·판 색·감도·액션캠·시작 전 재배치를 맞춥니다.',
-    points: ['액션캠을 끄면 장외 클로즈업이 없습니다', '재배치를 끄면 시작 버튼이 바로 나옵니다', '첫 터치로 소리가 열립니다', '모바일은 세로로 잡는 것이 기준입니다', '다음 접속시 이 창을 숨길 수 있습니다'],
+    points: ['액션캠을 끄면 장외 클로즈업이 없습니다', '재배치를 끄면 시작 버튼이 바로 나옵니다', '대국 중에는 설정을 적용할 수 없습니다', '첫 터치로 소리가 열립니다', '모바일은 세로로 잡는 것이 기준입니다', '다음 접속시 이 창을 숨길 수 있습니다'],
   }),
   Object.freeze({
     id: 'invite',
     kicker: '1:1 초대',
     title: '대기방 친구도 초대',
     visual: 'invite',
-    lead: '링크와 대기실에서 사람을 부릅니다. 혼자 열어도 1:1 방이 유지됩니다.',
-    points: ['방장이 친구 초대에서 대기 중인 사람을 고릅니다', '대기실 목록의 참가하기 · 초대하기로 들어갑니다', '카카오톡·다른 앱·링크 복사로도 보냅니다', '받은 쪽은 수락하면 초대한 방에 붙습니다', '호스트는 흑, 참가·초대 입장은 백', '10분 안에 시작하지 않으면 대기실로 돌아갑니다'],
+    lead: '이 게임은 초대에 의해서만 둘 수 있습니다. 대전방을 연 뒤 상대를 초대하세요.',
+    points: ['방장이 친구 초대에서 대기 중인 사람을 고릅니다', '대기실 목록의 참가하기 · 초대하기로 들어갑니다', '카카오톡·다른 앱·링크 복사로도 보냅니다', '받은 쪽은 수락하면 초대한 방에 붙고 거절하면 호스트 초대는 지워집니다', '다른 사람을 다시 초대하면 이전 팝업은 닫힙니다', '참가는 한 명만 · 늦은 쪽은 대기실로 돌아갑니다', '이미 시작된 방에는 참가할 수 없습니다', '호스트는 흑, 참가·초대 입장은 백', '10분 안에 시작하지 않으면 대기실로 돌아갑니다'],
   }),
 ]);
 
@@ -199,7 +234,7 @@ export function renderClinicList(report) {
   return `
     <p class="book-kicker">연동 점검</p>
     <h3 class="book-heading">${report?.summary || '점검'}</h3>
-    <p class="clinic-lead">물리 · 1:1 입장·초대·재배치 · 대기방 · 실시간</p>
+    <p class="clinic-lead">물리 · 1:1 입장·초대·기권 · 대기방 · 실시간</p>
     <ul class="clinic-list">${rows}</ul>
   `;
 }

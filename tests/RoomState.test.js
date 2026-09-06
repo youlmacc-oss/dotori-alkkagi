@@ -1,0 +1,103 @@
+import { describe, expect, it } from 'vitest';
+import {
+  ROOM_STATE_EVENT,
+  applyRoomClearInvite,
+  applyRoomGuest,
+  applyRoomInvite,
+  applyRoomLeave,
+  applyRoomRematch,
+  applyRoomStart,
+  createRoomState,
+  incomingClearsOpponent,
+  incomingResetsForRematch,
+  mergeRoomState,
+  pvpSeatColor,
+  roomHasOpponent,
+  shouldApplyRoomState,
+  shouldKeepInviteShareFromRoom,
+  shouldKeepPvpRematch,
+  shouldReturnToPvpWait,
+} from '../src/network/RoomState.js';
+
+describe('1:1 방 상태', () => {
+  it('수락하면 guestId가 생기고 호스트 초대 시트는 접는다', () => {
+    const opened = createRoomState({ roomId: 'room_host', hostId: 'host', hostName: '호치' });
+    expect(opened.guestId).toBeNull();
+    expect(shouldKeepInviteShareFromRoom(opened, {
+      myId: 'host', inRoom: true, mode: 'pvp',
+    })).toBe(true);
+    const invited = applyRoomInvite(opened, 'guest');
+    expect(invited.inviteTargetId).toBe('guest');
+    expect(applyRoomClearInvite(invited).inviteTargetId).toBeNull();
+    const joined = applyRoomGuest(invited, { guestId: 'guest', guestName: '달이' });
+    expect(joined.guestId).toBe('guest');
+    expect(joined.inviteTargetId).toBeNull();
+    expect(roomHasOpponent(joined)).toBe(true);
+    expect(shouldKeepInviteShareFromRoom(joined, {
+      myId: 'host', inRoom: true, mode: 'pvp',
+    })).toBe(false);
+    expect(applyRoomStart(joined)).toMatchObject({ started: true, phase: 'playing' });
+  });
+
+  it('호스트는 상대가 보낸 방 상태를 같은 방에만 합친다', () => {
+    const host = createRoomState({ roomId: 'room_host', hostId: 'host' });
+    const merged = mergeRoomState(host, {
+      roomId: 'room_host',
+      hostId: 'host',
+      guestId: 'guest',
+      guestName: '달이',
+    });
+    expect(merged.guestId).toBe('guest');
+    expect(shouldApplyRoomState(merged, { myId: 'host', roomId: 'room_host' })).toBe(true);
+    expect(shouldApplyRoomState(merged, { myId: 'other', roomId: 'room_host' })).toBe(false);
+    expect(ROOM_STATE_EVENT).toBe('room_state');
+    expect(mergeRoomState(host, { roomId: 'room_other', hostId: 'x', guestId: 'guest' }).guestId).toBeNull();
+  });
+
+  it('게스트는 백, 호스트는 흑으로 앉는다', () => {
+    expect(pvpSeatColor({ myId: 'host', hostId: 'host', roomId: 'room_host' })).toBe('black');
+    expect(pvpSeatColor({ myId: 'guest', hostId: 'host', roomId: 'room_host' })).toBe('white');
+    expect(pvpSeatColor({ myId: 'guest', roomId: 'room_host' })).toBe('white');
+  });
+
+  it('한 명이 나가면 남은 방은 상대 대기로 돌아간다', () => {
+    const playing = applyRoomStart(applyRoomGuest(
+      createRoomState({ roomId: 'room_host', hostId: 'host' }),
+      { guestId: 'guest' },
+    ));
+    const left = applyRoomLeave(playing, { leaverId: 'guest' });
+    expect(left.guestId).toBeNull();
+    expect(left.started).toBe(false);
+    expect(left.phase).toBe('waiting');
+    expect(left.leftoverId).toBe('host');
+    expect(incomingClearsOpponent(playing, left)).toBe(true);
+    expect(mergeRoomState(playing, left).guestId).toBeNull();
+    expect(shouldReturnToPvpWait({
+      inRoom: true, mode: 'pvp', hadOpponent: true, hasOpponent: false,
+    })).toBe(true);
+    expect(shouldReturnToPvpWait({
+      inRoom: true, mode: 'pvp', hadOpponent: true, hasOpponent: true,
+    })).toBe(false);
+    expect(shouldReturnToPvpWait({
+      inRoom: true, mode: 'pvp', hadOpponent: true, hasOpponent: false, started: true, phase: 'idle',
+    })).toBe(false);
+    expect(shouldReturnToPvpWait({
+      inRoom: true, mode: 'pvp', hadOpponent: true, hasOpponent: false, started: true, phase: 'gameOver',
+    })).toBe(true);
+    const rematch = applyRoomRematch(playing);
+    expect(rematch).toMatchObject({ guestId: 'guest', started: false, phase: 'ready' });
+    expect(incomingResetsForRematch(playing, rematch)).toBe(true);
+    expect(shouldKeepPvpRematch({
+      mode: 'pvp', inRoom: true, roomId: 'room_host', hostId: 'host', guestId: 'guest',
+    })).toBe(true);
+    expect(shouldKeepPvpRematch({
+      mode: 'pvp', inRoom: true, roomId: 'room_host', hostId: 'host', guestId: null,
+    })).toBe(false);
+    expect(shouldApplyRoomState(left, {
+      myId: 'host', roomId: 'room_host', inRoom: true,
+    })).toBe(true);
+    expect(shouldKeepInviteShareFromRoom(left, {
+      myId: 'host', inRoom: true, mode: 'pvp',
+    })).toBe(true);
+  });
+});

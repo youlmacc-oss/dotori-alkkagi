@@ -1586,27 +1586,54 @@ export class GameEngine {
     return this.getSnapshot();
   }
 
-  /**
-   * 관전 중인 게임의 실시간 상태를 업데이트한다.
-   * @param {object} gameState - 실시간 게임 상태
-   */
+  _remoteStonesNeedRebuild(remoteStones) {
+    if (!Array.isArray(remoteStones) || remoteStones.length === 0) return false;
+    if (this.stones.length !== remoteStones.length) return true;
+    return remoteStones.some((data, index) => {
+      const stone = (data?.id != null && this.stones.find((s) => s.id === data.id))
+        || this.stones[index];
+      if (!stone) return true;
+      if (data.color && stone.color && data.color !== stone.color) return true;
+      return false;
+    });
+  }
+
+  _rebuildFromRemoteStones(remoteStones) {
+    const layout = remoteStones.map((stone) => ({
+      x: Number(stone.position?.x ?? stone.x),
+      y: Number(stone.position?.y ?? stone.y),
+      color: stone.color === STONE_COLOR.WHITE ? STONE_COLOR.WHITE : STONE_COLOR.BLACK,
+    })).filter((spot) => Number.isFinite(spot.x) && Number.isFinite(spot.y));
+    if (!layout.length) return false;
+    this._clearStones();
+    this._spawnStones(layout);
+    if (this.formation) {
+      this.formation.layout = layout;
+      this.formation.count = Math.max(1, Math.floor(layout.length / 2));
+    }
+    return true;
+  }
+
   applyRemoteMatchState(gameState, { asSpectator = false } = {}) {
     if (!gameState) return false;
     const localPhase = this.phase;
     const remotePhase = gameState.phase;
+    const localTurn = this.currentTurn;
+    const remoteTurn = gameState.currentTurn;
     if (
       localPhase === PHASE.AIMING
       && (remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE)
+      && !(remoteTurn && localTurn && remoteTurn !== localTurn)
     ) {
-      return false;
-    }
-    if (localPhase === PHASE.RESOLVING && remotePhase === PHASE.RESOLVING) {
       return false;
     }
     if (asSpectator && this.phase !== PHASE.SPECTATING) return false;
     if (!asSpectator && this.phase === PHASE.SPECTATING) return false;
 
-    if (Array.isArray(gameState.stones)) {
+    if (Array.isArray(gameState.stones) && gameState.stones.length) {
+      if (this._remoteStonesNeedRebuild(gameState.stones)) {
+        this._rebuildFromRemoteStones(gameState.stones);
+      }
       gameState.stones.forEach((stoneData, index) => {
         const stone = (stoneData?.id != null && this.stones.find((s) => s.id === stoneData.id))
           || this.stones[index];

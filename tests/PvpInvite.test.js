@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   canShareInvite,
+  joinedMatchRoomId,
+  shouldKeepInviteShare,
   inviteShareMessage,
   kakaoTalkHref,
   KAKAO_SHARE_HINT,
@@ -21,6 +23,12 @@ import {
   canInviteLobbyUser,
   buildLobbyInvite,
   evaluateLobbyInvite,
+  guestClaimHeld,
+  incomingRejectsMyGuestSeat,
+  INVITE_ACTION_CANCEL,
+  INVITE_ACTION_DECLINE,
+  shouldApplyInviteDecline,
+  shouldDismissInviteModal,
   attemptInviteJoin,
   lobbyInviteAsk,
   presenceInvitePayload,
@@ -111,16 +119,67 @@ describe('대기실 1:1 안내', () => {
     ], 'room_host_1')?.hostId).toBe('host');
     expect(findInviteRoom([waiting], 'room_host_1')).toEqual(waiting);
     expect(evaluateInviteJoin(waiting, 'guest').ok).toBe(true);
+    expect(evaluateInviteJoin({ ...waiting, started: true }, 'guest').ok).toBe(false);
     expect(evaluateInviteJoin(full, 'late').ok).toBe(false);
+    expect(resolveInviteRoom([
+      { userId: 'host', nickname: '도토리1', status: 'playing', mode: 'pvp', roomId: 'room_host_1', started: true },
+    ], 'room_host_1')?.status).toBe('playing');
+    expect(evaluateInviteJoin(resolveInviteRoom([
+      { userId: 'host', nickname: '도토리1', status: 'playing', mode: 'pvp', roomId: 'room_host_1', started: true },
+    ], 'room_host_1'), 'late').ok).toBe(false);
     expect(evaluateInviteJoin(null, 'guest').hint).toBe(INVITE_ROOM_GONE_HINT);
     expect(INVITE_ROOM_GONE_HINT).toContain('종료');
     expect(inviteMissFallback(false)).toEqual({ toLobby: true, hint: INVITE_ROOM_GONE_HINT });
     expect(inviteMissFallback(true)).toEqual({ toLobby: false, hint: '' });
+    expect(shouldApplyInviteDecline({
+      action: INVITE_ACTION_DECLINE, hostId: 'host', targetId: 'guest',
+    }, { myId: 'host', sentTargetId: 'guest' })).toBe(true);
+    expect(shouldDismissInviteModal(
+      { hostId: 'host', targetId: 'guest' },
+      { action: INVITE_ACTION_CANCEL, hostId: 'host', targetId: 'guest' },
+      'guest',
+    )).toBe(true);
+    expect(evaluateLobbyInvite({
+      roomId: 'room_host_1', hostId: 'host', targetId: 'guest', action: INVITE_ACTION_DECLINE,
+    }, 'guest').ok).toBe(false);
+    expect(guestClaimHeld({ guestId: 'guest' }, 'guest')).toBe(true);
+    expect(incomingRejectsMyGuestSeat(
+      { roomId: 'room_host_1', guestId: 'late' },
+      { roomId: 'room_host_1', hostId: 'host', guestId: 'guest' },
+      'late',
+    )).toBe(true);
     expect(evaluateInviteJoin({ ...waiting, mode: 'solo' }, 'guest').ok).toBe(false);
     expect(evaluateInviteJoin({ ...waiting, mode: 'ai' }, 'guest').ok).toBe(false);
     expect(canShareInvite({
       mode: 'pvp', inRoom: true, started: false, isHost: true, hasOpponent: false,
     })).toBe(true);
+    expect(joinedMatchRoomId({ joiningRoomId: 'room_host', joining: true, myId: 'guest' })).toBe('room_host');
+    expect(joinedMatchRoomId({ joining: true, myId: 'guest' })).toBe('');
+    expect(joinedMatchRoomId({ joining: false, myId: 'host' })).toBe('room_host');
+    expect(shouldKeepInviteShare({
+      mode: 'pvp',
+      inRoom: true,
+      started: false,
+      isHost: true,
+      myId: 'host',
+      roomId: 'room_host',
+      users: [
+        { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'room_host' },
+        { userId: 'guest', status: 'lobby', mode: null, roomId: null },
+      ],
+    })).toBe(true);
+    expect(shouldKeepInviteShare({
+      mode: 'pvp',
+      inRoom: true,
+      started: false,
+      isHost: true,
+      myId: 'host',
+      roomId: 'room_host',
+      users: [
+        { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'room_host' },
+        { userId: 'guest', status: 'playing', mode: 'pvp', roomId: 'room_host' },
+      ],
+    })).toBe(false);
     expect(canShareInvite({
       mode: 'solo', inRoom: true, started: false, isHost: true, hasOpponent: false,
     })).toBe(false);

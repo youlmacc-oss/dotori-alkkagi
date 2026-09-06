@@ -55,14 +55,53 @@ export function shouldApplyMatchSync(payload, {
   return spectating === true || inPvp === true;
 }
 
-export function canApplyRemoteBoard({ localPhase, remotePhase } = {}) {
-  if (localPhase === PHASE.AIMING && (remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE)) {
-    return false;
-  }
-  if (localPhase === PHASE.RESOLVING && remotePhase === PHASE.RESOLVING) {
+export function shouldPublishMatchSync({
+  inPvp = false,
+  isHost = false,
+  force = false,
+  event = '',
+} = {}) {
+  if (!inPvp) return false;
+  if (isHost) return true;
+  return force === true && (event === 'launch' || event === 'turnEnd' || event === 'gameOver');
+}
+
+export function canApplyRemoteBoard({
+  localPhase,
+  remotePhase,
+  localTurn,
+  remoteTurn,
+} = {}) {
+  if (
+    localPhase === PHASE.AIMING
+    && (remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE)
+  ) {
+    if (remoteTurn && localTurn && remoteTurn !== localTurn) return true;
     return false;
   }
   return true;
+}
+
+export function remoteStonesNeedRebuild(localStones, remoteStones) {
+  if (!Array.isArray(remoteStones) || remoteStones.length === 0) return false;
+  const local = Array.isArray(localStones) ? localStones : [];
+  if (local.length !== remoteStones.length) return true;
+  return remoteStones.some((data, index) => {
+    const stone = findRemoteStone(local, data, index);
+    if (!stone) return true;
+    if (data.color && stone.color && data.color !== stone.color) return true;
+    return false;
+  });
+}
+
+export function ownCampFacesSeat(myColor, stones = [], midY = 360) {
+  const mine = (Array.isArray(stones) ? stones : [])
+    .filter((stone) => stone?.color === myColor)
+    .map((stone) => Number(stone.y ?? stone.position?.y))
+    .filter(Number.isFinite);
+  if (!mine.length) return false;
+  const avg = mine.reduce((sum, y) => sum + y, 0) / mine.length;
+  return myColor === 'white' ? avg < midY : avg > midY;
 }
 
 export function findRemoteStone(stones, data, index) {

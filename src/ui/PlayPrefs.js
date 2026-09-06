@@ -35,6 +35,12 @@ export function isRearrangeAskEnabled(storage = globalThis.localStorage) {
   return readEnabledPref(REARRANGE_ASK_KEY, storage);
 }
 
+export const SETTINGS_APPLY_BLOCK = '대국 중에는 적용할 수 없습니다';
+
+export function shouldBlockSettingsToLobby({ inRoom, started, spectating } = {}) {
+  return inRoom === true && started === true && spectating !== true;
+}
+
 export function setRearrangeAskEnabled(on, storage = globalThis.localStorage) {
   return writeEnabledPref(REARRANGE_ASK_KEY, on, storage);
 }

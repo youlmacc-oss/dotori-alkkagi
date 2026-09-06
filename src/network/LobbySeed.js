@@ -23,6 +23,7 @@ export function seedPlayingGuests(count = VIRTUAL_GUEST_COUNT) {
       status: PRESENCE_STATUS.PLAYING,
       mode,
       roomId: `room_virt_${i + 1}`,
+      started: mode === 'pvp' && i === 2,
       acorns: 3 + (i % 8),
       lastSeen: now,
       joinedAt: now,

@@ -696,12 +696,32 @@ export class ThreeRenderer {
     this.camera.updateMatrixWorld();
   }
 
+  snapSeat(snapshot) {
+    const yaw = seatYawFor(snapshot?.gameMode, snapshot?.currentTurn, snapshot?.myColor);
+    this.boardYaw = yaw;
+    this.boardYawTarget = yaw;
+    this.yawFrom = yaw;
+    this.yawTo = yaw;
+    this.yawT = 1;
+    this._applySeatCamera(true);
+    return yaw;
+  }
+
   syncSeat(snapshot, dt) {
     if (this.killCam) return;
     const rotating = snapshot?.phase !== 'resolving' && snapshot?.phase !== 'gameOver';
     const target = rotating
       ? seatYawFor(snapshot?.gameMode, snapshot?.currentTurn, snapshot?.myColor)
       : this.boardYawTarget;
+    if (snapshot?.gameMode === GAME_MODE.PVP) {
+      this.boardYaw = target;
+      this.boardYawTarget = target;
+      this.yawFrom = target;
+      this.yawTo = target;
+      this.yawT = 1;
+      this._applySeatCamera(!this.killCam);
+      return;
+    }
     if (target !== this.boardYawTarget) {
       this.yawFrom = this.boardYaw;
       this.yawTo = target;

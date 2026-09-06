@@ -24,6 +24,9 @@ import {
   roomsFromPresence,
   canJoinPvpFromLobby,
   canJoinPvpRoom,
+  canSpectatePvpRoom,
+  isLobbyFullStatus,
+  ROOM_ENDED_HINT,
   mergePresenceList,
   lobbyGuideLine,
   lobbyPvpWaitGuide,
@@ -46,6 +49,8 @@ function user(id, extra = {}) {
     status: extra.status ?? 'playing',
     mode: extra.mode ?? 'ai',
     roomId: extra.roomId ?? `room_${id}`,
+    started: extra.started,
+    ended: extra.ended,
   };
 }
 
@@ -70,9 +75,20 @@ describe('대기실 게임방', () => {
     expect(rooms.find((r) => r.mode === 'pvp').status).toBe('waiting');
     expect(roomStatusLabel(rooms.find((r) => r.mode === 'pvp'))).toBe(PVP_WAIT_ROOM_HINT);
     expect(lobbyPvpWaitGuide(rooms)).toBe(PVP_WAIT_GUIDE);
-    expect(PVP_WAIT_GUIDE).toContain('초대');
-    expect(PVP_WAIT_ROOM_HINT).toContain('초대 대전중');
+    expect(PVP_WAIT_GUIDE).toContain('초대 대전');
+    expect(PVP_WAIT_GUIDE).toContain('초대손님을 기다리는 중');
+    expect(PVP_WAIT_ROOM_HINT).toContain('초대 대전');
+    expect(PVP_WAIT_ROOM_HINT).toContain('초대손님을 기다리는 중');
     expect(canJoinPvpRoom(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(true);
+    expect(canJoinPvpRoom({
+      ...rooms.find((r) => r.mode === 'pvp'),
+      started: true,
+    }, 'guest')).toBe(false);
+    const startedAlone = roomsFromPresence([
+      user('host', { mode: 'pvp', nickname: '호치', started: true }),
+    ]);
+    expect(startedAlone[0].status).toBe('playing');
+    expect(canJoinPvpRoom(startedAlone[0], 'guest')).toBe(false);
     expect(canJoinPvpFromLobby(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(true);
     expect(lobbySeatUsers([
       user('a', { mode: 'solo', nickname: '호치' }),
@@ -111,6 +127,15 @@ describe('대기실 게임방', () => {
     expect(roomTitle(rooms[0])).toBe('호치 vs 달이');
     expect(rooms[0].status).toBe('playing');
     expect(roomStatusLabel(rooms[0])).toBe('대국 중');
+    expect(canSpectatePvpRoom(rooms[0])).toBe(true);
+    expect(canSpectatePvpRoom({ mode: 'ai', status: 'playing' })).toBe(false);
+    expect(isLobbyFullStatus('FULL')).toBe(true);
+    const ended = roomsFromPresence([
+      user('a', { mode: 'pvp', nickname: '호치', roomId: 'room_end', ended: true }),
+      user('b', { mode: 'pvp', nickname: '달이', roomId: 'room_end', ended: true }),
+    ]);
+    expect(ended[0].status).toBe('ended');
+    expect(roomStatusLabel(ended[0])).toBe(ROOM_ENDED_HINT);
     expect(canJoinPvpRoom(rooms[0], 'guest')).toBe(false);
     expect(lobbyPvpWaitGuide(rooms)).toBe('');
     expect(lobbyGuideLine(rooms, '접속된 게이머의 위치는 항상 공개됩니다')).toEqual({

@@ -6,6 +6,7 @@
 import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, isSparsePresenceSnapshot, mergePresenceWithHints, preferNewerPresence, presenceViewKey, retainKnownPeers, shouldReplacePresenceHint, usersFromPresenceState } from './LobbyRooms.js';
 import { MATCH_SYNC_EVENT, packMatchSync } from './MatchSync.js';
 import { PVP_INVITE_EVENT } from './PvpInvite.js';
+import { ROOM_STATE_EVENT } from './RoomState.js';
 import {
   defaultNickname,
   NICKNAME_LOCKED_HINT,
@@ -80,6 +81,7 @@ export class RealtimeManager {
     this.onStaleLeave = options.onStaleLeave || (() => {});
     this.onSweepLeave = options.onSweepLeave || (() => {});
     this.onPvpInvite = options.onPvpInvite || (() => {});
+    this.onRoomState = options.onRoomState || (() => {});
     this.keepNickname = options.keepNickname || null;
     this._disconnectedAt = null;
     this._staleTimer = 0;
@@ -201,6 +203,9 @@ export class RealtimeManager {
         })
         .on('broadcast', { event: LOBBY_STATE_EVENT }, ({ payload }) => {
           this._handleLobbyState(payload);
+        })
+        .on('broadcast', { event: ROOM_STATE_EVENT }, ({ payload }) => {
+          this.onRoomState?.(payload);
         });
 
       await new Promise((resolve, reject) => {
@@ -401,6 +406,11 @@ export class RealtimeManager {
   async broadcastPvpInvite(payload) {
     if (!this.channel || !payload?.targetId || !payload?.roomId) return false;
     return this._sendBroadcast(PVP_INVITE_EVENT, payload);
+  }
+
+  async broadcastRoomState(payload) {
+    if (!this.channel || !payload?.roomId || !payload?.hostId) return false;
+    return this._sendBroadcast(ROOM_STATE_EVENT, payload);
   }
 
   async broadcastSpectatorData(gameState) {
@@ -649,10 +659,11 @@ export class RealtimeManager {
 }
 
 // 임시 Mock 클라이언트 (실제 Supabase 없이 테스트용)
-export function bindPresenceUnload(manager, target = globalThis) {
+export function bindPresenceUnload(manager, target = globalThis, onLeave) {
   if (!manager || !target?.addEventListener) return () => {};
   const leave = (event) => {
     if (event?.type === 'pagehide' && event.persisted) return;
+    try { onLeave?.(); } catch { /* ignore */ }
     manager._unloading = true;
     void manager.disconnect();
   };

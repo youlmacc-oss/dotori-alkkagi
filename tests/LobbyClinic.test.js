@@ -20,14 +20,20 @@ import {
 import {
   BOOK_SEEN_KEY,
   GUIDE_PAGES,
+  INVITE_ONLY_NOTICE,
+  INVITE_ONLY_OK,
+  INVITE_ONLY_SEEN_KEY,
   guidePageAt,
   guidePageCount,
   BOOK_SKIP_KEY,
   hasSeenGuideBook,
+  hasSeenInviteOnlyNotice,
   hasSkipGuideOnConnect,
   markGuideBookSeen,
+  markInviteOnlyNoticeSeen,
   setSkipGuideOnConnect,
   shouldAutoOpenGuideBook,
+  shouldOfferInviteOnlyNotice,
   renderClinicList,
   renderGuidePage,
 } from '../src/ui/GuideBook.js';
@@ -68,6 +74,7 @@ describe('대기실 자가진단', () => {
       hasInviteNick: true,
       hasLobbyInvite: true,
       hasLobbyInviteModal: true,
+      hasInviteOnlyNotice: true,
       hasBookSkip: true,
       hasBookPlay: true,
     });
@@ -99,6 +106,14 @@ describe('대기실 자가진단', () => {
     expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.points.some((line) => line.includes('둘째 선'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.points.some((line) => line.includes('10부터'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('참가하기'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.lead).toContain('초대에 의해서만');
+    expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('거절'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'leave')?.points.some((line) => line.includes('다시하기'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'leave')?.lead).toContain('기권');
+    expect(GUIDE_PAGES.find((page) => page.id === 'room')?.points.some((line) => line.includes('대국 종료'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'room')?.points.some((line) => line.includes('관람할 수 없습니다'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'sound')?.points.some((line) => line.includes('대국 중'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'cover')?.points.some((line) => line.includes('초대만'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('참가하기는 없고'))).toBe(false);
     expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.title).toContain('다시 놓기');
     expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.title).toContain('먼저');
@@ -112,6 +127,7 @@ describe('대기실 자가진단', () => {
     expect(renderGuidePage(guidePageAt(3))).toContain('재배치');
     expect(renderClinicList(report)).toContain('clinic-row');
     expect(renderClinicList(report)).toContain('액션캠');
+    expect(renderClinicList(report)).toContain('기권');
     expect(pvpJoinClinicOk()).toBe(true);
     expect(pvpInviteAcceptClinicOk()).toBe(true);
     expect(pvpPresenceClinicOk()).toBe(true);
@@ -121,12 +137,29 @@ describe('대기실 자가진단', () => {
     expect(nickClinicOk()).toBe(true);
     expect(pvpExpireClinicOk()).toBe(true);
     expect(bookSkipClinicOk({ hasBookSkip: true, hasBookPlay: true })).toBe(true);
+    expect(INVITE_ONLY_NOTICE).toContain('초대에 의해서만');
+    expect(INVITE_ONLY_NOTICE).toContain('대전방 개설후');
+    expect(INVITE_ONLY_OK).toBe('확인');
+    expect(shouldOfferInviteOnlyNotice({ guidebookClosed: true })).toBe(true);
+    expect(shouldOfferInviteOnlyNotice({ tutorialEnded: true })).toBe(true);
+    expect(shouldOfferInviteOnlyNotice({ tutorialSkipped: true })).toBe(true);
+    expect(shouldOfferInviteOnlyNotice({ guidebookSkippedOnConnect: true })).toBe(true);
+    expect(shouldOfferInviteOnlyNotice({ guidebookClosed: true, alreadyShown: true })).toBe(false);
+    expect(shouldOfferInviteOnlyNotice({ tutorialSkipped: true, inviteJoin: true })).toBe(false);
+    expect(shouldOfferInviteOnlyNotice({})).toBe(false);
     expect(lobbyInviteClinicOk({
       hasInviteCopy: true,
       hasInviteNick: true,
       hasLobbyInvite: true,
       hasLobbyInviteModal: true,
+      hasInviteOnlyNotice: true,
     })).toBe(true);
+    expect(lobbyInviteClinicOk({
+      hasInviteCopy: true,
+      hasInviteNick: true,
+      hasLobbyInvite: true,
+      hasLobbyInviteModal: true,
+    })).toBe(false);
     expect(actionCamClinicOk({ hasActionCam: true, killCamOffSkips: true })).toBe(true);
     expect(actionCamClinicOk({ hasActionCam: true, killCamOffSkips: false })).toBe(false);
     expect(pullClinicOk({
@@ -155,5 +188,9 @@ describe('대기실 자가진단', () => {
     expect(shouldAutoOpenGuideBook({ session: fresh, local: fresh })).toBe(false);
     setSkipGuideOnConnect(false, fresh);
     expect(shouldAutoOpenGuideBook({ session: fresh, local: fresh })).toBe(true);
+    expect(hasSeenInviteOnlyNotice(storage)).toBe(false);
+    markInviteOnlyNoticeSeen(storage);
+    expect(hasSeenInviteOnlyNotice(storage)).toBe(true);
+    expect(store[INVITE_ONLY_SEEN_KEY]).toBe('1');
   });
 });

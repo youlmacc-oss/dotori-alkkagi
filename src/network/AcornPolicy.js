@@ -39,6 +39,13 @@ export function shouldForfeitOnLeave(state = {}) {
   return true;
 }
 
+/** 시작된 1:1에서 상대가 사라지면 남은 사람은 기권승을 받는다. */
+export function shouldForfeitOnOpponentGone(state = {}) {
+  return shouldForfeitOnLeave(state)
+    && state.hadOpponent === true
+    && state.hasOpponent !== true;
+}
+
 export function settleSessionAcorns(current, result = {}) {
   const now = parseAcorn(current);
   if (!shouldSettleAcorns(result)) return now;

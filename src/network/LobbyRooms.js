@@ -44,6 +44,7 @@ export function presenceViewKey(users) {
       user?.seat ?? '',
       user?.rearranging ? '1' : '0',
       user?.started ? '1' : '0',
+      user?.ended ? '1' : '0',
       user?.inviteTargetId ?? '',
       user?.inviteAt ?? '',
       user?.pvpOpenedAt ?? '',
@@ -91,6 +92,7 @@ export function presenceFromMatch(input = {}) {
     acorns: Number.isFinite(Number(input.acorns)) ? Math.floor(Number(input.acorns)) : 10,
     rearranging: Boolean(input.rearranging),
     started: Boolean(playing && input.started),
+    ended: Boolean(playing && (input.ended || input.phase === 'gameOver')),
     inviteTargetId: playing && input.inviteTargetId ? String(input.inviteTargetId) : null,
     inviteAt: playing && Number(input.inviteAt) > 0 ? Math.floor(Number(input.inviteAt)) : null,
     pvpOpenedAt: Number(input.pvpOpenedAt) > 0 ? Math.floor(Number(input.pvpOpenedAt)) : null,
@@ -144,7 +146,9 @@ export function roomsFromPresence(users) {
   return Array.from(byRoom.values()).map((room) => {
     const first = room.players[0];
     const second = room.players[1];
-    const waiting = room.mode === 'pvp' && room.players.length < 2;
+    const started = room.players.some((p) => p.started);
+    const ended = room.players.some((p) => p.ended);
+    const waiting = room.mode === 'pvp' && room.players.length < 2 && !started && !ended;
     return {
       id: room.id,
       hostId: room.hostId,
@@ -153,7 +157,9 @@ export function roomsFromPresence(users) {
       players: room.players,
       playerA: first?.nickname || room.hostName,
       playerB: second?.nickname || opponentLabel(room.mode),
-      status: waiting ? 'waiting' : 'playing',
+      status: waiting ? 'waiting' : ended ? 'ended' : 'playing',
+      started,
+      ended,
       watchers: watchersForRoom(users, room.id),
     };
   });
@@ -184,7 +190,18 @@ export function roomTitle(room) {
 }
 
 export function isPvpWaiting(room) {
-  return Boolean(room && room.mode === 'pvp' && room.status === 'waiting');
+  return Boolean(room && room.mode === 'pvp' && room.status === 'waiting' && room.started !== true && room.ended !== true);
+}
+
+export const SPECTATE_LOCAL_HINT = '1인·AI 대국은 관람할 수 없습니다';
+export const ROOM_ENDED_HINT = '대국 종료';
+
+export function canSpectatePvpRoom(room) {
+  return Boolean(room && room.mode === 'pvp' && room.status !== 'waiting');
+}
+
+export function isLobbyFullStatus(status) {
+  return status === 'FULL';
 }
 
 export function canJoinPvpRoom(room, userId) {
@@ -197,8 +214,8 @@ export function canJoinPvpFromLobby(room, userId) {
   return canJoinPvpRoom(room, userId);
 }
 
-export const PVP_WAIT_GUIDE = '1:1 초대 대전 중입니다';
-export const PVP_WAIT_ROOM_HINT = '초대 대전중';
+export const PVP_WAIT_GUIDE = '1:1 초대 대전 · 초대손님을 기다리는 중';
+export const PVP_WAIT_ROOM_HINT = '초대 대전 · 초대손님을 기다리는 중';
 export const LOBBY_MODE_HINT = '1인 연습 · AI 대국 · 1:1은 참가 또는 초대';
 
 export function waitingPvpRooms(rooms) {
@@ -220,6 +237,7 @@ export function lobbyGuideLine(rooms, locationGuide = '') {
 
 export function roomStatusLabel(room) {
   if (isPvpWaiting(room)) return PVP_WAIT_ROOM_HINT;
+  if (room?.status === 'ended' || room?.ended) return ROOM_ENDED_HINT;
   return watcherLine(room?.watchers) || '대국 중';
 }
 

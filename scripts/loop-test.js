@@ -42,6 +42,7 @@ const browser = await chromium.launch({ headless: true });
 async function measure(page) {
   await page.goto('http://127.0.0.1:4179/?loop=1', { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForSelector('#board', { state: 'attached', timeout: 30000 });
+  await page.waitForFunction(() => Boolean(globalThis.__dotori?.settingsModal), null, { timeout: 30000 });
   await page.waitForTimeout(1400);
     return page.evaluate(() => {
       const api = globalThis.__dotori;
@@ -149,6 +150,25 @@ try {
       throw new Error(`${device.name} lobby clinic missing: ${JSON.stringify(clinic)}`);
     }
     await page.evaluate(() => document.getElementById('lobby-book-close')?.click());
+    const inviteOnly = await page.evaluate(() => {
+      const root = document.getElementById('invite-only-notice');
+      const text = document.getElementById('invite-only-text');
+      const ok = document.getElementById('invite-only-ok');
+      return {
+        ok: Boolean(
+          root && !root.hidden
+          && text?.textContent.includes('초대에 의해서만')
+          && text?.textContent.includes('대전방 개설후')
+          && ok && ok.textContent.includes('확인')
+        ),
+        text: text?.textContent,
+      };
+    });
+    if (!inviteOnly.ok) {
+      throw new Error(`${device.name} invite-only notice missing: ${JSON.stringify(inviteOnly)}`);
+    }
+    await page.evaluate(() => document.getElementById('invite-only-ok')?.click());
+    await page.waitForFunction(() => document.getElementById('invite-only-notice')?.hidden === true, null, { timeout: 3000 });
     const pvpInvite = await page.evaluate(() => {
       const btn = document.getElementById('lobby-mode-pvp');
       const empty = document.querySelector('.lobby-empty');
@@ -174,8 +194,27 @@ try {
     if (device.name === 'iPhone 14 Pro') {
       await page.screenshot({ path: outFile, timeout: 60000 });
     }
-    await page.evaluate(() => document.getElementById('lobby-mode-ai')?.click());
-    await page.waitForTimeout(350);
+    const entered = await page.evaluate(() => {
+      document.getElementById('lobby-mode-ai')?.click();
+      const visible = () => {
+        const box = document.getElementById('ready-ask-box');
+        return Boolean(box && !box.hidden);
+      };
+      if (!visible()) {
+        globalThis.__dotori?.settingsModal?.setGameMode('ai', { startMatch: true });
+      }
+      return {
+        ok: visible(),
+        lobbyHidden: document.getElementById('lobby-users')?.hidden,
+        gateHidden: document.getElementById('match-start-gate')?.hidden,
+        askHidden: document.getElementById('ready-ask-box')?.hidden,
+        mode: globalThis.__dotori?.engine?.gameMode,
+        phase: globalThis.__dotori?.engine?.phase,
+      };
+    });
+    if (!entered.ok) {
+      throw new Error(`${device.name} ready-ask missing: ${JSON.stringify(entered)}`);
+    }
     const readyAsk = await page.evaluate(() => {
       const box = document.getElementById('ready-ask-box');
       const ask = document.getElementById('ready-ask');
@@ -386,7 +425,18 @@ try {
     if (!lobbyPanel.ok) {
       throw new Error(`${device.name} lobby rooms missing: ${JSON.stringify(lobbyPanel)}`);
     }
-    await page.locator('.spectate-btn').first().click({ force: true });
+    const spectateClick = await page.evaluate(() => {
+      const row = [...document.querySelectorAll('.lobby-room')].find((el) => {
+        const name = el.querySelector('.lobby-room-name')?.textContent || '';
+        const btn = el.querySelector('.spectate-btn');
+        return Boolean(btn?.textContent.includes('관람하기') && name.includes('1:1'));
+      });
+      row?.querySelector('.spectate-btn')?.click();
+      return Boolean(row);
+    });
+    if (!spectateClick) {
+      throw new Error(`${device.name} pvp spectate button missing`);
+    }
     await page.waitForTimeout(300);
     const spectateHud = await page.evaluate(() => {
       const bar = document.getElementById('spectate-bar');

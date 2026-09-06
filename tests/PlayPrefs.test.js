@@ -4,8 +4,10 @@ import {
   REARRANGE_ASK_KEY,
   isActionCamEnabled,
   isRearrangeAskEnabled,
+  SETTINGS_APPLY_BLOCK,
   setActionCamEnabled,
   setRearrangeAskEnabled,
+  shouldBlockSettingsToLobby,
 } from '../src/ui/PlayPrefs.js';
 
 function mem(seed = {}) {
@@ -31,5 +33,9 @@ describe('환경설정 액션캠·재배치 토글', () => {
     expect(storage.getItem(REARRANGE_ASK_KEY)).toBe('0');
     expect(isActionCamEnabled(storage)).toBe(false);
     expect(isRearrangeAskEnabled(storage)).toBe(false);
+    expect(shouldBlockSettingsToLobby({ inRoom: true, started: true })).toBe(true);
+    expect(shouldBlockSettingsToLobby({ inRoom: true, started: false })).toBe(false);
+    expect(shouldBlockSettingsToLobby({ inRoom: true, started: true, spectating: true })).toBe(false);
+    expect(SETTINGS_APPLY_BLOCK).toContain('대국 중');
   });
 });

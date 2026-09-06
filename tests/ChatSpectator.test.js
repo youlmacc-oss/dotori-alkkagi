@@ -2,7 +2,8 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import { PHASE, GAME_MODE, GameEngine, STONE_COLOR } from '../src/physics/GameEngine.js';
 import { RealtimeManager, MockSupabaseClient, bindPresenceUnload, channelSendOk } from '../src/network/RealtimeManager.js';
 import { canJoinPvpFromLobby, roomsFromPresence } from '../src/network/LobbyRooms.js';
-import { idleLobbyInvitees, shouldOpenPresenceInvite } from '../src/network/PvpInvite.js';
+import { idleLobbyInvitees, shouldKeepInviteShare, shouldOpenPresenceInvite } from '../src/network/PvpInvite.js';
+import { applyRoomGuest, createRoomState, mergeRoomState, shouldKeepInviteShareFromRoom } from '../src/network/RoomState.js';
 import { hasPvpOpponent, matchPlayersFromPresence } from '../src/network/MatchStart.js';
 
 describe('관전 모드 (Spectator Mode)', () => {
@@ -468,6 +469,36 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     expect(shouldOpenPresenceInvite(hostRow, 'guest_live')).toBe(true);
   });
 
+  test('수락 방 상태는 새로고침 없이 호스트 초대를 접는다', async () => {
+    const client = new MockSupabaseClient();
+    const rooms = [];
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'room-auth',
+      userId: 'host_room',
+      userNickname: '호치',
+      onRoomState: (payload) => { rooms.push(payload); },
+    });
+    const guest = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'room-auth',
+      userId: 'guest_room',
+      userNickname: '달이',
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    expect(await guest.connect()).toBe('SUBSCRIBED');
+    const opened = createRoomState({ roomId: 'room_host_room', hostId: 'host_room', hostName: '호치' });
+    expect(await host.broadcastRoomState(opened)).toBe(true);
+    const joined = applyRoomGuest(opened, { guestId: 'guest_room', guestName: '달이' });
+    expect(await guest.broadcastRoomState(joined)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const live = mergeRoomState(opened, rooms.at(-1));
+    expect(live.guestId).toBe('guest_room');
+    expect(shouldKeepInviteShareFromRoom(live, {
+      myId: 'host_room', inRoom: true, mode: 'pvp',
+    })).toBe(false);
+  });
+
   test('broadcast는 send가 ok일 때만 성공하고 error면 한 번 더 보낸다', async () => {
     expect(channelSendOk('ok')).toBe(true);
     expect(channelSendOk('error')).toBe(false);
@@ -534,6 +565,15 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
       mode: 'pvp',
       roomId: 'room_host_inv',
     }))).toBe(true);
+    expect(shouldKeepInviteShare({
+      mode: 'pvp',
+      inRoom: true,
+      started: false,
+      isHost: true,
+      myId: 'host_inv',
+      roomId: 'room_host_inv',
+      users: live,
+    })).toBe(false);
   });
 
   test('빈 Presence 동기화가 다른 접속자를 지우지 않는다', async () => {

@@ -13,9 +13,12 @@ describe('가상 대기실 시드', () => {
     const types = virtualRoomTypes(guests);
     expect(types).toEqual({ solo: 3, ai: 3, pvp: 3 });
     expect(openRoomCount(guests)).toBe(9);
-    expect(roomsFromPresence(guests).map((r) => r.mode).sort()).toEqual([
+    const rooms = roomsFromPresence(guests);
+    expect(rooms.map((r) => r.mode).sort()).toEqual([
       'ai', 'ai', 'ai', 'pvp', 'pvp', 'pvp', 'solo', 'solo', 'solo',
     ]);
+    expect(rooms.filter((r) => r.mode === 'pvp' && r.status === 'playing')).toHaveLength(1);
+    expect(rooms.filter((r) => r.mode === 'pvp' && r.status === 'waiting')).toHaveLength(2);
   });
 
   it('대기 중인 본인을 합치면 정원 10명·대국 9방이다', () => {

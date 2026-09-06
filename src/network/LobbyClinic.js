@@ -8,11 +8,14 @@ import {
   PVP_WAIT_GUIDE,
   canJoinPvpFromLobby,
   canJoinPvpRoom,
+  canSpectatePvpRoom,
+  isLobbyFullStatus,
   preferNewerPresence,
+  ROOM_ENDED_HINT,
   lobbySeatUsers,
   roomsFromPresence,
 } from './LobbyRooms.js';
-import { SESSION_ACORNS, shouldForfeitOnLeave, shouldSettleAcorns } from './AcornPolicy.js';
+import { SESSION_ACORNS, shouldForfeitOnLeave, shouldForfeitOnOpponentGone, shouldSettleAcorns } from './AcornPolicy.js';
 import { RESULT_BEAT_MS, RESULT_FALL_HOLD_MS } from '../physics/ResultBeat.js';
 import {
   BOARD,
@@ -27,6 +30,7 @@ import {
   finalizeStartedMode,
 } from '../physics/GameEngine.js';
 import { MY_NICK_LABEL, NICKNAME_MAX } from './Nickname.js';
+import { INVITE_ONLY_NOTICE, shouldOfferInviteOnlyNotice } from '../ui/GuideBook.js';
 import {
   PVP_START_HINT,
   PVP_WAIT_HINT,
@@ -39,17 +43,42 @@ import {
 import {
   canInviteLobbyUser,
   canShareInvite,
+  joinedMatchRoomId,
+  shouldKeepInviteShare,
   evaluateInviteJoin,
   evaluateLobbyInvite,
+  guestClaimHeld,
+  incomingRejectsMyGuestSeat,
   idleLobbyInvitees,
+  shouldApplyInviteDecline,
+  shouldDismissInviteModal,
   shouldOpenPresenceInvite,
   sentInviteFields,
   shouldRepublishOpenRoom,
   PVP_WAIT_EXPIRE_MS,
 } from './PvpInvite.js';
-import { MATCH_SYNC_EVENT } from './MatchSync.js';
+import {
+  MATCH_SYNC_EVENT,
+  canApplyRemoteBoard,
+  shouldApplyMatchSync,
+  shouldFollowRemoteStart,
+  shouldPublishMatchSync,
+} from './MatchSync.js';
+import {
+  applyRoomGuest,
+  applyRoomLeave,
+  applyRoomStart,
+  createRoomState,
+  incomingClearsOpponent,
+  ROOM_STATE_EVENT,
+  pvpSeatColor,
+  incomingResetsForRematch,
+  shouldKeepInviteShareFromRoom,
+  shouldKeepPvpRematch,
+  shouldReturnToPvpWait,
+} from './RoomState.js';
+import { shouldBlockSettingsToLobby } from '../ui/PlayPrefs.js';
 import { LOBBY_STATE_EVENT, channelSendOk } from './RealtimeManager.js';
-import { shouldApplyMatchSync, shouldFollowRemoteStart } from './MatchSync.js';
 import { BOOK_PLAY_LABEL, BOOK_SKIP_LABEL } from '../ui/GuideBook.js';
 import { seatYawFor } from '../ui/ThreeRenderer.js';
 import {
@@ -116,7 +145,15 @@ export function pvpJoinClinicOk() {
   return canJoinPvpRoom(waiting, 'guest')
     && canJoinPvpFromLobby(waiting, 'guest')
     && !canJoinPvpRoom(waiting, 'host')
-    && evaluateInviteJoin(waiting, 'guest').ok === true;
+    && !canJoinPvpRoom({ ...waiting, started: true }, 'guest')
+    && evaluateInviteJoin(waiting, 'guest').ok === true
+    && evaluateInviteJoin({ ...waiting, started: true }, 'guest').ok === false
+    && guestClaimHeld({ guestId: 'guest' }, 'guest')
+    && incomingRejectsMyGuestSeat(
+      { roomId: 'room_host', guestId: 'late' },
+      { roomId: 'room_host', hostId: 'host', guestId: 'guest' },
+      'late',
+    );
 }
 
 export function pvpInviteAcceptClinicOk() {
@@ -147,6 +184,25 @@ export function pvpInviteAcceptClinicOk() {
       isHost: true,
       hasOpponent: true,
     })
+    && !shouldKeepInviteShare({
+      mode: GAME_MODE.PVP,
+      inRoom: true,
+      started: false,
+      isHost: true,
+      myId: 'host',
+      roomId: 'room_host',
+      users: [
+        { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'room_host' },
+        { userId: 'guest', status: 'playing', mode: 'pvp', roomId: 'room_host' },
+      ],
+    })
+    && joinedMatchRoomId({ joiningRoomId: 'room_host', joining: true, myId: 'guest' }) === 'room_host'
+    && !shouldKeepInviteShareFromRoom(
+      applyRoomGuest(createRoomState({ roomId: 'room_host', hostId: 'host' }), { guestId: 'guest' }),
+      { myId: 'host', inRoom: true, mode: GAME_MODE.PVP },
+    )
+    && ROOM_STATE_EVENT === 'room_state'
+    && joinedMatchRoomId({ joining: false, myId: 'host' }) === 'room_host'
     && shouldFollowPeerStart({
       awaitingStart: true,
       started: false,
@@ -163,6 +219,16 @@ export function pvpInviteAcceptClinicOk() {
       mode: 'pvp',
     })
     && !shouldHoldPvpStartGate({ started: true, hasOpponent: false })
+    && incomingClearsOpponent(
+      applyRoomStart(applyRoomGuest(createRoomState({ roomId: 'room_host', hostId: 'host' }), { guestId: 'guest' })),
+      applyRoomLeave(applyRoomStart(applyRoomGuest(createRoomState({ roomId: 'room_host', hostId: 'host' }), { guestId: 'guest' })), { leaverId: 'guest' }),
+    )
+    && shouldReturnToPvpWait({
+      inRoom: true, mode: GAME_MODE.PVP, hadOpponent: true, hasOpponent: false,
+    })
+    && !shouldReturnToPvpWait({
+      inRoom: true, mode: GAME_MODE.PVP, hadOpponent: true, hasOpponent: true,
+    })
     && shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp' })
     && sentInviteFields({
       inRoom: true, started: false, mode: 'pvp', hasOpponent: false,
@@ -194,7 +260,21 @@ export function pvpInviteAcceptClinicOk() {
     && shouldApplyMatchSync({
       senderId: 'host', roomId: 'room_host', timestamp: 2,
     }, { myId: 'guest', roomId: 'room_host', inPvp: true })
+    && pvpSeatColor({ myId: 'guest', hostId: 'host' }) === STONE_COLOR.WHITE
     && seatYawFor(GAME_MODE.PVP, STONE_COLOR.BLACK, STONE_COLOR.WHITE) === Math.PI
+    && shouldPublishMatchSync({ inPvp: true, isHost: true })
+    && !shouldPublishMatchSync({ inPvp: true, isHost: false })
+    && shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'launch' })
+    && canApplyRemoteBoard({ localPhase: PHASE.RESOLVING, remotePhase: PHASE.RESOLVING })
+    && shouldApplyInviteDecline(
+      { action: 'decline', hostId: 'host', targetId: 'guest' },
+      { myId: 'host', sentTargetId: 'guest' },
+    )
+    && shouldDismissInviteModal(
+      { hostId: 'host', targetId: 'guest' },
+      { action: 'cancel', hostId: 'host', targetId: 'guest' },
+      'guest',
+    )
     && channelSendOk('ok')
     && !channelSendOk('error')
     && !channelSendOk('timed out');
@@ -218,7 +298,11 @@ export function pvpPresenceClinicOk() {
     && roomsFromPresence([playing]).length === 1
     && seats.map((u) => u.userId).join() === 'idle'
     && LOBBY_STATE_EVENT === 'lobby_state'
-    && MATCH_SYNC_EVENT === 'spectator_update';
+    && MATCH_SYNC_EVENT === 'spectator_update'
+    && canSpectatePvpRoom({ mode: 'pvp', status: 'playing' })
+    && !canSpectatePvpRoom({ mode: 'ai', status: 'playing' })
+    && isLobbyFullStatus('FULL')
+    && ROOM_ENDED_HINT.includes('종료');
 }
 
 export function pvpRearrangeClinicOk() {
@@ -259,11 +343,19 @@ export function nickClinicOk() {
 export function bookSkipClinicOk(input = {}) {
   return Boolean(input.hasBookSkip && input.hasBookPlay)
     && BOOK_SKIP_LABEL.includes('띄우지')
-    && BOOK_PLAY_LABEL.includes('바로시작');
+    && BOOK_PLAY_LABEL.includes('바로시작')
+    && INVITE_ONLY_NOTICE.includes('초대에 의해서만')
+    && shouldOfferInviteOnlyNotice({ tutorialSkipped: true })
+    && !shouldOfferInviteOnlyNotice({ tutorialSkipped: true, inviteJoin: true });
 }
 
 export function lobbyInviteClinicOk(input = {}) {
-  return Boolean(input.hasInviteCopy && input.hasInviteNick && input.hasLobbyInvite && input.hasLobbyInviteModal)
+  return Boolean(input.hasInviteCopy && input.hasInviteNick && input.hasLobbyInvite && input.hasLobbyInviteModal && input.hasInviteOnlyNotice)
+    && INVITE_ONLY_NOTICE.includes('초대에 의해서만')
+    && shouldApplyInviteDecline(
+      { action: 'decline', hostId: 'host', targetId: 'guest' },
+      { myId: 'host', sentTargetId: 'guest' },
+    )
     && canInviteLobbyUser({
       mode: GAME_MODE.PVP,
       inRoom: true,
@@ -319,9 +411,10 @@ export function runLobbyClinic(input = {}) {
       'pvpWait',
       '1:1 상대 대기',
       String(input.pvpWaitHint || PVP_WAIT_HINT).includes('상대')
-        && String(PVP_WAIT_GUIDE).includes('초대')
+        && String(PVP_WAIT_GUIDE).includes('초대 대전')
+        && String(PVP_WAIT_GUIDE).includes('초대손님을 기다리는 중')
         && pvpHoldClinicOk(),
-      pvpHoldClinicOk() ? '사람이 올 때까지 대기 · AI로 바뀌지 않음' : '1:1 방이 AI로 덮일 수 있음',
+      pvpHoldClinicOk() ? '초대손님을 기다리는 중 · AI로 바뀌지 않음' : '1:1 방이 AI로 덮일 수 있음',
     ),
     item(
       'pvpHold',
@@ -345,7 +438,7 @@ export function runLobbyClinic(input = {}) {
       'bookSkip',
       '가이드 바로시작',
       bookSkipClinicOk(input),
-      bookSkipClinicOk(input) ? '바로시작 · 다음 접속 숨김' : '바로시작/숨김 UI 없음',
+      bookSkipClinicOk(input) ? '바로시작 · 다음 접속 숨김 · 닫으면 초대 안내' : '바로시작/숨김 UI 없음',
     ),
     item(
       'first',
@@ -365,8 +458,24 @@ export function runLobbyClinic(input = {}) {
       'forfeit',
       '시작 후 나가기=패',
       shouldForfeitOnLeave({ mode: 'pvp', started: true, phase: 'idle' })
-        && !shouldForfeitOnLeave({ mode: 'pvp', started: false, phase: 'idle' }),
-      '대기 중 나가기는 정산 없음',
+        && !shouldForfeitOnLeave({ mode: 'pvp', started: false, phase: 'idle' })
+        && shouldForfeitOnOpponentGone({
+          mode: 'pvp', started: true, phase: 'idle', hadOpponent: true, hasOpponent: false,
+        })
+        && !shouldReturnToPvpWait({
+          inRoom: true, mode: 'pvp', hadOpponent: true, hasOpponent: false, started: true, phase: 'idle',
+        })
+        && shouldReturnToPvpWait({
+          inRoom: true, mode: 'pvp', hadOpponent: true, hasOpponent: false, started: false,
+        })
+        && shouldKeepPvpRematch({
+          mode: 'pvp', inRoom: true, roomId: 'room_h', hostId: 'h', guestId: 'g',
+        })
+        && incomingResetsForRematch(
+          { roomId: 'room_h', guestId: 'g', started: true },
+          { roomId: 'room_h', guestId: 'g', started: false },
+        ),
+      '시작된 판 이탈은 기권 · 대기는 상대 대기 · 다시하기는 같은 방',
     ),
     item(
       'result',
@@ -391,19 +500,19 @@ export function runLobbyClinic(input = {}) {
       'pvpJoin',
       '1:1 참가',
       pvpJoinClinicOk(),
-      pvpJoinClinicOk() ? '대기 1:1은 참가하기 · 호스트는 불가' : '1:1 참가 규칙 오류',
+      pvpJoinClinicOk() ? '대기 1:1 참가 · 시작된 방 불가 · 늦은 참가 거절' : '1:1 참가 규칙 오류',
     ),
     item(
       'pvpAccept',
       '1:1 초대 수락',
       pvpInviteAcceptClinicOk(),
-      pvpInviteAcceptClinicOk() ? '수락하면 호스트 방에 붙고 초대는 새로고침 없이 뜬다' : '초대 수락·시작 동기 오류',
+      pvpInviteAcceptClinicOk() ? '수락·거절·재초대 무효 · 호스트 방에 붙음' : '초대 수락·시작 동기 오류',
     ),
     item(
       'pvpPresence',
       '1:1 실시간 입장',
       pvpPresenceClinicOk(),
-      pvpPresenceClinicOk() ? '방 개설은 대기실에 보이고 좌석에서는 빠짐' : '입장 동기화 오류',
+      pvpPresenceClinicOk() ? '방 개설 표시 · 대국 종료 · 1인·AI 관람 없음' : '입장 동기화 오류',
     ),
     item(
       'pvpPlace',
@@ -427,7 +536,12 @@ export function runLobbyClinic(input = {}) {
       pullClinicOk(input),
       pullClinicOk(input) ? '돌 위·밀착 축은 당길 수 없음' : '당김 금지 문구 없음',
     ),
-    item('cap', '대기실 정원', LOBBY_CAP === 10 && Number(input.lobbyCap ?? 10) === 10, `${LOBBY_CAP}명`),
+    item(
+      'cap',
+      '대기실 정원',
+      LOBBY_CAP === 10 && Number(input.lobbyCap ?? 10) === 10 && isLobbyFullStatus('FULL'),
+      `${LOBBY_CAP}명 · 11번째는 접속 거부`,
+    ),
     item(
       'gate',
       '시작 게이트',
@@ -443,16 +557,18 @@ export function runLobbyClinic(input = {}) {
     item(
       'volume',
       '환경설정',
-      Boolean(input.hasVolume && input.hasActionCam && input.hasRearrangeAsk),
+      Boolean(input.hasVolume && input.hasActionCam && input.hasRearrangeAsk)
+        && shouldBlockSettingsToLobby({ inRoom: true, started: true })
+        && !shouldBlockSettingsToLobby({ inRoom: true, started: false }),
       input.hasVolume && input.hasActionCam && input.hasRearrangeAsk
-        ? `음량 · 액션캠 ${input.actionCamOn === false ? '꺼짐' : '켜짐'} · 재배치 ${input.rearrangeAskOn === false ? '꺼짐' : '켜짐'}`
+        ? `음량 · 액션캠 ${input.actionCamOn === false ? '꺼짐' : '켜짐'} · 재배치 ${input.rearrangeAskOn === false ? '꺼짐' : '켜짐'} · 대국 중 적용 불가`
         : '음량/액션캠/재배치 설정 누락',
     ),
     item(
       'invite',
       '초대 · 대기방',
       lobbyInviteClinicOk(input),
-      lobbyInviteClinicOk(input) ? '링크 · 대기방 초대 · 수락/거절' : '초대 UI 없음',
+      lobbyInviteClinicOk(input) ? '링크 · 대기방 초대 · 거절 해제 · 초대만 안내' : '초대 UI 없음',
     ),
     item(
       'realtime',

@@ -12,7 +12,7 @@
     <meta property="og:description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
     <meta property="og:type" content="website" />
     <meta name="description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
-    <link rel="stylesheet" href="/src/style.css?v=20260906al" />
+    <link rel="stylesheet" href="/src/style.css?v=20260906au" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -234,6 +234,7 @@
         pointer-events: auto;
       }
       #stage .lobby-invite-modal[hidden] { display: none !important; }
+      #stage #invite-only-notice { z-index: 62; }
       #stage .lobby-invite-card {
         width: min(280px, calc(100% - 32px));
         padding: 16px;
@@ -1408,10 +1409,16 @@
               <button type="button" id="lobby-invite-decline">거절</button>
             </div>
           </div>
+          <div class="lobby-invite-modal" id="invite-only-notice" hidden>
+            <div class="lobby-invite-card">
+              <p class="lobby-invite-ask" id="invite-only-text">도토리 알까기 게임은 초대에 의해서만 게임을 할 수 있습니다. 대전방 개설후 게임상대를 초대하세요</p>
+              <button type="button" id="invite-only-ok">확인</button>
+            </div>
+          </div>
 
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260906al"></script>
+    <script type="module" src="/src/main.js?v=20260906au"></script>
   </body>
 </html>

@@ -12,6 +12,10 @@ describe('1인 좌석 회전', () => {
     expect(seatYawFor(GAME_MODE.PVP, STONE_COLOR.BLACK, STONE_COLOR.WHITE)).toBeCloseTo(Math.PI);
     expect(seatYawFor(GAME_MODE.PVP, STONE_COLOR.WHITE, STONE_COLOR.BLACK)).toBe(0);
     expect(seatYawFor(GAME_MODE.AI, STONE_COLOR.WHITE, STONE_COLOR.WHITE)).toBe(0);
+    const whiteSeat = playSeatPose({ yaw: Math.PI, radius: 640, height: 780 });
+    const blackSeat = playSeatPose({ yaw: 0, radius: 640, height: 780 });
+    expect(whiteSeat.cam.z).toBeLessThan(0);
+    expect(blackSeat.cam.z).toBeGreaterThan(0);
   });
 
   it('축은 그대로 두고 카메라만 반대편으로 돈다', () => {

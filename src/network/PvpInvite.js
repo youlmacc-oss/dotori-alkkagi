@@ -3,6 +3,7 @@
  */
 
 import { PRESENCE_STATUS, canJoinPvpRoom, isPlayableLobbyMode, roomsFromPresence } from './LobbyRooms.js';
+import { hasPvpOpponent, matchPlayersFromPresence } from './MatchStart.js';
 import {
   NICKNAME_MAX,
   NICKNAME_STORAGE_KEY,
@@ -105,10 +106,12 @@ export function resolveInviteRoom(users, roomId) {
     return playing && (user?.roomId === id || (uid && `room_${uid}` === id && user?.mode === 'pvp'));
   });
   if (!host || (host.mode && host.mode !== 'pvp')) return null;
+  const started = host.started === true;
   return {
     id,
     mode: 'pvp',
-    status: 'waiting',
+    status: started ? 'playing' : 'waiting',
+    started,
     hostId: host.userId ?? host.id,
     hostName: host.nickname,
     players: [host],
@@ -140,6 +143,39 @@ export function canShareInvite({
     && !started
     && Boolean(isHost)
     && !hasOpponent;
+}
+
+/** 수락으로 들어가는 방 id. joining 중에는 내 방으로 덮지 않는다. */
+export function joinedMatchRoomId({ joiningRoomId, joining, myId } = {}) {
+  const join = String(joiningRoomId || '').trim();
+  if (join) return join;
+  if (joining) return '';
+  return myId ? `room_${myId}` : '';
+}
+
+/** 같은 방에 상대가 붙으면 초대 시트는 바로 접는다. */
+export function shouldKeepInviteShare({
+  mode,
+  inRoom,
+  started,
+  isHost,
+  users,
+  myId,
+  roomId,
+  myAcorns,
+} = {}) {
+  return canShareInvite({
+    mode,
+    inRoom,
+    started,
+    isHost,
+    hasOpponent: hasPvpOpponent(matchPlayersFromPresence(users, {
+      myId,
+      myAcorns,
+      mode,
+      roomId,
+    })),
+  });
 }
 
 export function isIdleLobbyUser(user) {
@@ -205,6 +241,9 @@ export async function attemptInviteJoin({
 
 export function evaluateLobbyInvite(payload, myId) {
   const invite = buildLobbyInvite(payload || {});
+  if (isInviteReply(payload)) {
+    return { ok: false, invite, hint: '', action: payload.action };
+  }
   if (!invite.roomId || !invite.hostId || !invite.targetId) {
     return { ok: false, invite, hint: INVITE_ROOM_GONE_HINT };
   }
@@ -212,6 +251,48 @@ export function evaluateLobbyInvite(payload, myId) {
     return { ok: false, invite, hint: '' };
   }
   return { ok: true, invite, hint: '' };
+}
+
+export const INVITE_ACTION_DECLINE = 'decline';
+export const INVITE_ACTION_CANCEL = 'cancel';
+
+export function isInviteReply(payload) {
+  const action = String(payload?.action || '');
+  return action === INVITE_ACTION_DECLINE || action === INVITE_ACTION_CANCEL;
+}
+
+export function buildInviteReply(invite, action) {
+  return {
+    ...buildLobbyInvite(invite || {}),
+    action: String(action || ''),
+  };
+}
+
+export function shouldApplyInviteDecline(payload, { myId, sentTargetId } = {}) {
+  return payload?.action === INVITE_ACTION_DECLINE
+    && Boolean(myId)
+    && String(payload.hostId) === String(myId)
+    && (!sentTargetId || String(payload.targetId) === String(sentTargetId));
+}
+
+export function shouldDismissInviteModal(openInvite, payload, myId) {
+  if (!openInvite || !payload) return false;
+  if (payload.action !== INVITE_ACTION_CANCEL) return false;
+  if (String(payload.hostId) !== String(openInvite.hostId)) return false;
+  return String(payload.targetId) === String(myId || openInvite.targetId);
+}
+
+export function guestClaimHeld(state, myId) {
+  return Boolean(state?.guestId && myId && String(state.guestId) === String(myId));
+}
+
+export function incomingRejectsMyGuestSeat(current, incoming, myId) {
+  if (!incoming?.roomId || !incoming?.guestId || !myId) return false;
+  if (String(incoming.hostId) === String(myId)) return false;
+  if (String(incoming.guestId) === String(myId)) return false;
+  if (current?.roomId && String(current.roomId) !== String(incoming.roomId)) return false;
+  return String(current?.guestId) === String(myId)
+    || Boolean(current?.roomId && String(current.roomId) === String(incoming.roomId));
 }
 
 /** Presence에 올릴 초대. selfPresence 안에서 matchPlayers를 부르면 순환한다. */
