@@ -5,6 +5,7 @@ import {
   isMockRealtimeClient,
   lobbyChannelConfig,
   readSupabaseConfig,
+  readViteSupabaseEnv,
 } from '../src/network/RealtimeClient.js';
 import { MockSupabaseClient } from '../src/network/RealtimeManager.js';
 
@@ -25,5 +26,11 @@ describe('동시접속 Realtime 클라이언트', () => {
     expect(cfg.url).toContain('supabase.co');
     expect(LOBBY_CHANNEL).toBe('dotori-lobby');
     expect(lobbyChannelConfig('user_1').config.presence.key).toBe('user_1');
+  });
+
+  it('Vite 환경키는 import.meta.env에서 직접 꺼낸다', () => {
+    const env = readViteSupabaseEnv();
+    expect(env).toHaveProperty('VITE_SUPABASE_URL');
+    expect(env).toHaveProperty('VITE_SUPABASE_ANON_KEY');
   });
 });

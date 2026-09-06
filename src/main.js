@@ -19,7 +19,7 @@ import { exitGame, shouldQuitFromLobbyClose } from './ui/GameExit.js';
 import { resultSubLine } from './physics/ResultBeat.js';
 import { soundEngine } from './audio/SoundEngine.js';
 import { RealtimeManager, bindPresenceUnload } from './network/RealtimeManager.js';
-import { createRealtimeClient, readSupabaseConfig } from './network/RealtimeClient.js';
+import { createRealtimeClient, readSupabaseConfig, readViteSupabaseEnv } from './network/RealtimeClient.js';
 import {
   LOBBY_CAP,
   dedupePresenceUsers,
@@ -199,7 +199,7 @@ const turnManager = new TurnManager({ engine });
 
 let nightClaim = takeNightUserId({ makeId: newNightUserId });
 const realtimeManager = new RealtimeManager({
-  supabaseClient: createRealtimeClient(import.meta.env),
+  supabaseClient: createRealtimeClient(readViteSupabaseEnv()),
   channelName: 'dotori-lobby',
   userId: nightClaim.userId,
   presenceKey: nightClaim.userId,
@@ -748,7 +748,7 @@ function clinicSnapshot() {
     killCamSlowMo: KILL_CAM.SLOW_MO_S,
     killCamOffSkips: shouldAttachKillCam(false, null) === false
       && shouldAttachKillCam(true, null) === true,
-    liveConfigured: readSupabaseConfig(import.meta.env).live,
+    liveConfigured: readSupabaseConfig(readViteSupabaseEnv()).live,
     realtimeLive: isLiveRealtime(realtimeManager.supabaseClient),
     connected: Boolean(realtimeManager.isConnected),
     lobbyCap: LOBBY_CAP,
