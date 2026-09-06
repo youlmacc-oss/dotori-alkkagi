@@ -128,6 +128,14 @@ body {
   background: rgba(255, 209, 59, 0.16);
 }
 
+/* [PVP 공개 중단] 자리만 남기고 숨김. 재개 시 클래스 제거 */
+.hud-mode-btn.is-pvp-shelved,
+.formation-tab.is-pvp-shelved,
+.lobby-mode-btn.is-pvp-shelved {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .hud-bottom {
   bottom: 0;
   height: var(--hud-bottom-h);

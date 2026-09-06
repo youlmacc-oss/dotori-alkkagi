@@ -520,6 +520,14 @@ export class RealtimeManager {
       timestamp: gameState.timestamp,
       started: gameState.started === true,
       stones: gameState.stones,
+      event: gameState.event,
+      kind: gameState.kind,
+      launch: gameState.launch,
+      stoneId: gameState.stoneId,
+      velocity: gameState.velocity,
+      force: gameState.force,
+      power: gameState.power,
+      color: gameState.color,
     }));
   }
 

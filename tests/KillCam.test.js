@@ -116,4 +116,8 @@ describe('킬링캠 클로즈업', () => {
     expect(shouldAttachKillCam(false, null)).toBe(false);
     expect(shouldAttachKillCam(true, { stoneId: 1 })).toBe(false);
   });
+
+  it('1:1에서도 액션캠이 켜져 있으면 킬캠을 붙인다', () => {
+    expect(shouldAttachKillCam(true, null)).toBe(true);
+  });
 });

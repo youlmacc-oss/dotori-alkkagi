@@ -14,6 +14,7 @@ import {
   aimErrorDeg,
   calculateShot,
   findDoubleShot,
+  bestKnockoutPair,
   pointerFromAim,
 } from '../src/ai/AIBot.js';
 import { TurnManager } from '../src/ai/TurnManager.js';
@@ -110,6 +111,22 @@ describe('calculateShot 3/5/7/9알', () => {
       expect(shot.shooterId).not.toBe(10);
       expect(shot.shooterId === 10 && shot.targetId === 1).toBe(false);
     }
+  });
+
+  it('고급은 가장자리로 밀어내기 쉬운 수를 고른다', () => {
+    const ai = [{ id: 10, x: 360, y: 400 }];
+    const player = [
+      { id: 1, x: 360, y: 500 },
+      { id: 2, x: 108, y: 400 },
+    ];
+    const mid = calculateShot(ai, player, AI_DIFFICULTY.INTERMEDIATE, { rng: () => 0.5, board: BOARD });
+    const expert = calculateShot(ai, player, AI_DIFFICULTY.EXPERT, { rng: () => 0.5, board: BOARD });
+    expect(mid.targetId).toBe(1);
+    expect(bestKnockoutPair(ai, player, BOARD.inner).target.id).toBe(2);
+    expect(expert.targetId).toBe(2);
+    expect(expert.kind).toBe('knockout');
+    expect(expert.errorDeg).toBe(0);
+    expect(expert.power).toBeGreaterThanOrEqual(mid.power);
   });
 
   it('고급은 일직선 연쇄를 더블 샷으로 고르고 오차가 0이다', () => {

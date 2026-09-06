@@ -240,6 +240,43 @@ function knockoutPower(shooter, target, inner, conservative) {
   return clamp(power, 0.46, 0.9);
 }
 
+function expertPower(shooter, target, inner) {
+  const d = dist(shooter, target);
+  const angle = launchAngle(shooter, target);
+  const dir = { x: Math.cos(angle), y: Math.sin(angle) };
+  const targetExit = rayRoom(target, dir, inner);
+  const shooterExit = rayRoom(shooter, dir, inner);
+  let power = 0.54 + Math.min(0.44, d / 700);
+  if (targetExit < 110) power = Math.max(power, 0.78);
+  if (shooterExit < d + 48) power = Math.min(power, 0.58);
+  return clamp(power, 0.52, 0.98);
+}
+
+export function scoreKnockoutShot(shooter, target, inner) {
+  const d = dist(shooter, target);
+  const angle = launchAngle(shooter, target);
+  const dir = { x: Math.cos(angle), y: Math.sin(angle) };
+  const targetExit = rayRoom(target, dir, inner);
+  const shooterExit = rayRoom(shooter, dir, inner);
+  let score = Math.max(0, 240 - targetExit) * 2.4 + Math.max(0, 420 - d);
+  if (shooterExit < d + 40) score -= 480;
+  return score;
+}
+
+export function bestKnockoutPair(aiStones, playerStones, inner) {
+  const pool = eligibleShotPairs(aiStones, playerStones);
+  let best = null;
+  let bestScore = -Infinity;
+  for (const pair of pool) {
+    const score = scoreKnockoutShot(pair.shooter, pair.target, inner);
+    if (score > bestScore) {
+      bestScore = score;
+      best = pair;
+    }
+  }
+  return best ?? nearestPair(aiStones, playerStones);
+}
+
 function beginnerPower(rng) {
   const r = rng01(rng);
   if (r < 0.32) return 0.22 + rng01(rng) * 0.2;
@@ -292,18 +329,16 @@ export function calculateShot(aiStones, playerStones, difficulty = AI_DIFFICULTY
     if (dbl) {
       shooter = dbl.shooter;
       target = dbl.target;
-      const aimed = safeLaunchAngle(shooter, target, inner);
-      baseAngle = aimed.angle;
+      baseAngle = launchAngle(shooter, target);
       kind = 'double';
     } else {
-      const pair = nearestPair(ai, player);
+      const pair = bestKnockoutPair(ai, player, inner);
       shooter = pair.shooter;
       target = pair.target;
-      const aimed = safeLaunchAngle(shooter, target, inner);
-      baseAngle = aimed.angle;
-      kind = aimed.kind;
+      baseAngle = launchAngle(shooter, target);
+      kind = 'knockout';
     }
-    power = knockoutPower(shooter, target, inner, true);
+    power = expertPower(shooter, target, inner);
   }
 
   const errorDeg = aimErrorDeg(level, rng);
@@ -335,4 +370,15 @@ export function calculateShot(aiStones, playerStones, difficulty = AI_DIFFICULTY
   };
 }
 
-export default { calculateShot, aimErrorDeg, findDoubleShot, eligibleShotPairs, stonesInContact, pointerFromAim, AI_THINK, AI_ERROR_DEG };
+export default {
+  calculateShot,
+  aimErrorDeg,
+  findDoubleShot,
+  bestKnockoutPair,
+  scoreKnockoutShot,
+  eligibleShotPairs,
+  stonesInContact,
+  pointerFromAim,
+  AI_THINK,
+  AI_ERROR_DEG,
+};

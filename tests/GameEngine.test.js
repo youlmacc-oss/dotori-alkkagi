@@ -904,6 +904,30 @@ describe('진형 프리셋·구역·겹침', () => {
     expect(hits[0]).toBeGreaterThan(0);
   });
 
+  it('모드를 바꾸거나 다시 시작하면 설정 알 수 일자로 깐다', () => {
+    engine = createEngine();
+    engine.setupFormation(7, FORMATION_MODE.PRESET, FORMATION_SHAPE.WEDGE);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.WEDGE);
+    engine.setMatchConfig({ mode: GAME_MODE.SOLO });
+    expect(engine.formation.count).toBe(7);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.LINE);
+    expect(engine.formation.mode).toBe(FORMATION_MODE.PRESET);
+    const line = createPresetLayout(7, FORMATION_SHAPE.LINE);
+    const xs = engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)
+      .map((s) => s.body.position.x)
+      .sort((a, b) => a - b);
+    const lineXs = line.filter((s) => s.color === STONE_COLOR.BLACK)
+      .map((s) => s.x)
+      .sort((a, b) => a - b);
+    xs.forEach((x, i) => expect(x).toBeCloseTo(lineXs[i], 5));
+    engine.applyDefaultMatchFormation(3);
+    expect(engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)).toHaveLength(3);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.LINE);
+    engine.setMatchConfig({ mode: GAME_MODE.PVP });
+    expect(engine.formation.count).toBe(3);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.LINE);
+  });
+
   it('resetBoard는 기존 바디를 제거하고 같은 진형으로 재생성한다', () => {
     engine = createEngine();
     engine.setupFormation(3, FORMATION_MODE.PRESET, FORMATION_SHAPE.WEDGE);

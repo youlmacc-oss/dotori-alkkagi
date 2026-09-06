@@ -995,6 +995,17 @@ export function createDefaultStoneLayout(board = BOARD) {
   return createPresetLayout(STONES_PER_SIDE, FORMATION_SHAPE.LINE, board);
 }
 
+/** 모든 대전(1인·AI·1:1, 첫판·다시하기) 시작 기본: 설정 알 수 일자. */
+export function defaultMatchLayout(stoneCount = STONES_PER_SIDE, board = BOARD) {
+  const count = resolveFormationCount(stoneCount);
+  return enforceOwnCamps(
+    createPresetLayout(count, FORMATION_SHAPE.LINE, board),
+    board,
+    FORMATION_ZONE.PRESET,
+    count,
+  );
+}
+
 export function createRandomFormationLayout(stoneCount = STONES_PER_SIDE, board = BOARD, rng = Math.random) {
   const count = resolveFormationCount(stoneCount);
   const zones = getFormationZones(board, FORMATION_ZONE.CUSTOM);
@@ -1235,6 +1246,10 @@ export class GameEngine {
     this.formation = { count, mode: resolvedMode, shape, layout };
     this.resetBoard(layout);
     return { ok: true, reason: null, layout, formation: this.formation };
+  }
+
+  applyDefaultMatchFormation(stoneCount = this.formation?.count) {
+    return this.setupFormation(stoneCount, FORMATION_MODE.PRESET, FORMATION_SHAPE.LINE);
   }
 
   /**
@@ -1553,7 +1568,7 @@ export class GameEngine {
       this.spectatorData = null;
     }
     this.inputLocked = false;
-    this.reset();
+    this.applyDefaultMatchFormation(this.formation?.count);
     return this.getSnapshot();
   }
 
@@ -1626,8 +1641,12 @@ export class GameEngine {
     ) {
       return false;
     }
+    const restAuthority = gameState.event === 'turnEnd'
+      || gameState.event === 'gameOver'
+      || gameState.event === 'start';
     if (
-      (localPhase === PHASE.RESOLVING || localPhase === PHASE.AIMING)
+      !restAuthority
+      && (localPhase === PHASE.RESOLVING || localPhase === PHASE.AIMING)
       && (remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE)
       && !(remoteTurn && localTurn && remoteTurn !== localTurn)
     ) {
@@ -1680,6 +1699,40 @@ export class GameEngine {
 
   updateSpectatorState(gameState) {
     return this.applyRemoteMatchState(gameState, { asSpectator: true });
+  }
+
+  applyRemoteLaunch(shot = {}) {
+    if (
+      this.phase === PHASE.GAME_OVER
+      || this.phase === PHASE.SPECTATING
+      || this.phase === PHASE.RESOLVING
+    ) return false;
+    const stone = this.stones.find((s) => String(s.id) === String(shot.stoneId) && !s.fallen);
+    if (!stone?.body) return false;
+    const force = shot.force;
+    const vel = shot.velocity;
+    const hasForce = Number.isFinite(force?.x) && Number.isFinite(force?.y);
+    const hasVel = Number.isFinite(vel?.x) && Number.isFinite(vel?.y);
+    if (!hasForce && !hasVel) return false;
+    this._cancelAim();
+    Sleeping.set(stone.body, false);
+    Body.setVelocity(stone.body, { x: 0, y: 0 });
+    Body.setAngularVelocity(stone.body, 0);
+    if (hasForce) Body.applyForce(stone.body, stone.body.position, { x: force.x, y: force.y });
+    else Body.setVelocity(stone.body, { x: vel.x, y: vel.y });
+    this.aim = null;
+    this.phase = PHASE.RESOLVING;
+    this.restFrames = 0;
+    if (shot.currentTurn) this.currentTurn = shot.currentTurn;
+    this.emit('launch', {
+      stoneId: stone.id,
+      color: stone.color,
+      velocity: hasVel ? { x: vel.x, y: vel.y } : { x: 0, y: 0 },
+      force: hasForce ? { x: force.x, y: force.y } : { x: 0, y: 0 },
+      power: Number(shot.power) || 0,
+      remote: true,
+    });
+    return true;
   }
 
   beginAiAim(shot) {

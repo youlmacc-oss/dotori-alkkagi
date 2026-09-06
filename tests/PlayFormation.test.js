@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   FORMATION_MODE,
+  FORMATION_SHAPE,
   FORMATION_ZONE,
   GameEngine,
   STONE_COLOR,
   campsAreSegregated,
   commitPlayLayout,
+  createPresetLayout,
 } from '../src/physics/GameEngine.js';
 import { loadPlayFormation, savePlayFormation } from '../src/ui/FormationModal.js';
 
@@ -46,6 +48,18 @@ describe('설정 저장 → 본판 진형', () => {
     expect(again.ok).toBe(true);
     expect(engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)).toHaveLength(7);
     expect(engine.stones.filter((s) => s.color === STONE_COLOR.WHITE)).toHaveLength(7);
+    const started = engine.applyDefaultMatchFormation(loaded.count);
+    expect(started.ok).toBe(true);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.LINE);
+    expect(engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)).toHaveLength(7);
+    const lineXs = createPresetLayout(7, FORMATION_SHAPE.LINE)
+      .filter((s) => s.color === STONE_COLOR.BLACK)
+      .map((s) => s.x)
+      .sort((a, b) => a - b);
+    const liveXs = engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)
+      .map((s) => s.body.position.x)
+      .sort((a, b) => a - b);
+    liveXs.forEach((x, i) => expect(x).toBeCloseTo(lineXs[i], 5));
     engine.destroy();
   });
 

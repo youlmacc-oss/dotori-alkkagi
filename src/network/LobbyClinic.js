@@ -273,11 +273,12 @@ export function pvpInviteAcceptClinicOk() {
     }, { myId: 'guest', roomId: 'room_host', inPvp: true })
     && pvpSeatColor({ myId: 'guest', hostId: 'host' }) === STONE_COLOR.WHITE
     && seatYawFor(GAME_MODE.PVP, STONE_COLOR.BLACK, STONE_COLOR.WHITE) === Math.PI
-    && shouldPublishMatchSync({ inPvp: true, isHost: true })
+    && !shouldPublishMatchSync({ inPvp: true, isHost: true })
     && !shouldPublishMatchSync({ inPvp: true, isHost: false })
     && shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'launch' })
-    && shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })
-    && shouldPulseMatchSync({ inPvp: true, started: true })
+    && shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'turnEnd' })
+    && !shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })
+    && !shouldPulseMatchSync({ inPvp: true, started: true })
     && mergeRoomState(
       { roomId: 'room_h', hostId: 'h', guestId: 'g', started: true, phase: 'playing' },
       { roomId: 'room_h', hostId: 'h', guestId: 'g', started: false, phase: 'ready' },
@@ -304,6 +305,7 @@ export function pvpInviteAcceptClinicOk() {
       hostId: 'h', guestId: 'g', hostAcorns: 11, guestAcorns: 9,
     }, { myId: 'h', myAcorns: 11 }).length === 2
     && !shouldPulseMatchSync({ inPvp: true, started: false })
+    && shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'launch' })
     && shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp', started: false })
     && !shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp', started: true })
     && canApplyRemoteBoard({ localPhase: PHASE.RESOLVING, remotePhase: PHASE.RESOLVING })

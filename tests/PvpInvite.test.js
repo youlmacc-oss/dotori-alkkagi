@@ -49,6 +49,7 @@ import {
   roomOpenedAt,
   shouldExpirePvpWait,
   PVP_GUIDE_ASK,
+  PVP_PUBLIC_ENABLED,
   PVP_ROOM_HINT,
   readInvitePrefill,
   readInviteRoomId,
@@ -67,6 +68,7 @@ describe('대기실 1:1 안내', () => {
     expect(shouldInvitePvp(3)).toBe(true);
     expect(PVP_ROOM_HINT).toContain('대국방');
     expect(PVP_ROOM_HINT).toContain('시작');
+    expect(PVP_PUBLIC_ENABLED).toBe(false);
   });
 
   it('가이드선 사용·미사용을 가린다', () => {

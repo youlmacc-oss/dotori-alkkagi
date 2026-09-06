@@ -77,6 +77,7 @@ import {
 } from './network/MatchStart.js';
 import {
   canApplyRemoteBoard,
+  isLaunchSync,
   isStaleEndedMatchSync,
   shouldApplyMatchSync,
   shouldFollowRemoteStart,
@@ -185,6 +186,7 @@ import {
   shareViaKakaoTalk,
   shouldExpirePvpWait,
   shouldInvitePvp,
+  PVP_PUBLIC_ENABLED,
 } from './network/PvpInvite.js';
 import {
   BOOK_SKIP_LABEL,
@@ -870,11 +872,11 @@ function applyMatchStarted() {
   renderer.snapSeat(engine.getSnapshot());
   publishPresence();
   publishRoomState();
-  publishMatchSync({ force: true });
+  publishMatchSync({ force: true, event: 'start' });
   return true;
 }
 
-function publishMatchSync({ force = false, event = '' } = {}) {
+function publishMatchSync({ force = false, event = '', launch = null } = {}) {
   const watching = engine.phase === PHASE.SPECTATING;
   const pvpLive = engine.gameMode === GAME_MODE.PVP && inMatchRoom && !watching;
   if (!shouldPublishMatchSync({
@@ -895,6 +897,14 @@ function publishMatchSync({ force = false, event = '' } = {}) {
     senderId: realtimeManager.userId,
     started: matchStarted,
     timestamp: now,
+    event,
+    kind: event === 'launch' ? 'launch' : 'board',
+    launch,
+    stoneId: launch?.stoneId,
+    velocity: launch?.velocity,
+    force: launch?.force,
+    power: launch?.power,
+    color: launch?.color,
   });
 }
 
@@ -923,11 +933,19 @@ function applyIncomingMatchSync(payload) {
   })) {
     applyMatchStarted();
   }
+  if (isLaunchSync(payload)) {
+    lastMatchSyncTs = Number(payload?.timestamp) || lastMatchSyncTs;
+    if (spectating) return false;
+    const launched = engine.applyRemoteLaunch(payload);
+    if (launched) flushMatchView();
+    return launched;
+  }
   if (!spectating && !canApplyRemoteBoard({
     localPhase: engine.phase,
     remotePhase: payload?.phase,
     localTurn: engine.currentTurn,
     remoteTurn: payload?.currentTurn,
+    remoteEvent: payload?.event,
   })) return false;
   lastMatchSyncTs = Number(payload?.timestamp) || lastMatchSyncTs;
   const applied = spectating
@@ -981,12 +999,23 @@ function syncLobbyWaitGuide(rooms = lobbyRooms()) {
   const guide = document.getElementById('lobby-location-guide');
   if (!guide) return;
   const line = lobbyGuideLine(rooms, LOCATION_GUIDE);
+  // [PVP 공개 중단] 1:1 대기 점멸 안내. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED && line.blink) {
+    guide.textContent = rooms.length ? LOCATION_GUIDE : line.text;
+    guide.classList.remove('is-wait-blink');
+    return;
+  }
   guide.textContent = line.text;
   guide.classList.toggle('is-wait-blink', line.blink);
 }
 
 function syncPvpInvite() {
   const pvpBtn = document.getElementById('lobby-mode-pvp');
+  // [PVP 공개 중단] 1:1 버튼 점멸. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) {
+    pvpBtn?.classList.remove('is-invite-blink');
+    return;
+  }
   const invite = shouldInvitePvp(lobbyRoomsUsers().length);
   pvpBtn?.classList.toggle('is-invite-blink', invite);
 }
@@ -997,6 +1026,8 @@ function closePvpGuidePick() {
 }
 
 function openPvpGuidePick() {
+  // [PVP 공개 중단] 가이드선 선택 팝업. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) return;
   const pick = document.getElementById('pvp-guide-pick');
   const ask = document.getElementById('pvp-guide-ask');
   if (ask) ask.textContent = PVP_GUIDE_ASK;
@@ -1010,6 +1041,8 @@ function confirmPvpGuide(enabled) {
 }
 
 function startOwnPvpRoom() {
+  // [PVP 공개 중단] 1:1 방 개설. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) return;
   startingPvp = true;
   try {
     settingsModal?.setGameMode(GAME_MODE.PVP, { startMatch: true });
@@ -1042,7 +1075,8 @@ function showLobby() {
     openLobbyBookSheet('guide');
     return;
   }
-  offerInviteOnlyNotice({ guidebookSkippedOnConnect: hasSkipGuideOnConnect() });
+  // [PVP 공개 중단] 초대만 안내 팝업. 재개 시 아래 가드를 제거
+  if (PVP_PUBLIC_ENABLED) offerInviteOnlyNotice({ guidebookSkippedOnConnect: hasSkipGuideOnConnect() });
 }
 
 function hideLobby({ force = false } = {}) {
@@ -1178,7 +1212,10 @@ function closeLobbyBook({ offerNotice = false } = {}) {
   const book = document.getElementById('lobby-book');
   const wasOpen = Boolean(book && !book.hidden);
   if (book) book.hidden = true;
-  if (offerNotice && wasOpen) offerInviteOnlyNotice({ guidebookClosed: bookOpenedByConnect });
+  // [PVP 공개 중단] 가이드 닫힘 후 초대만 안내. 재개 시 아래 가드를 제거
+  if (PVP_PUBLIC_ENABLED && offerNotice && wasOpen) {
+    offerInviteOnlyNotice({ guidebookClosed: bookOpenedByConnect });
+  }
 }
 
 function closeInviteOnlyNotice() {
@@ -1188,6 +1225,8 @@ function closeInviteOnlyNotice() {
 }
 
 function offerInviteOnlyNotice(reason = {}) {
+  // [PVP 공개 중단] 초대만 안내 팝업. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) return false;
   if (!shouldOfferInviteOnlyNotice({
     alreadyShown: inviteOnlyNoticeShown || hasSeenInviteOnlyNotice(),
     inviteJoin: Boolean(pendingInviteRoom),
@@ -1696,6 +1735,8 @@ function bounceRejectedJoin() {
 }
 
 function joinPvpRoom(room, invite) {
+  // [PVP 공개 중단] 대기실 참가. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) return false;
   let live = resolveJoinablePvp(room, invite);
   if (!canJoinPvpRoom(live, realtimeManager.userId)) {
     refreshLobbyPresence({ reconnect: false });
@@ -1816,6 +1857,8 @@ function renderLobbyInviteList({ refresh = false } = {}) {
 }
 
 function openInviteShareSheet() {
+  // [PVP 공개 중단] 초대 링크 시트. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) return;
   if (!hostWaitingForInvite() || !inviteShareSheet) return;
   refreshLobbyPresence({ reconnect: true });
   renderLobbyInviteList({ refresh: true });
@@ -1827,6 +1870,8 @@ function closeInviteShareSheet() {
 }
 
 function openInviteNickModal(roomId) {
+  // [PVP 공개 중단] 초대 링크 닉 입력. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) return;
   pendingInviteRoom = roomId;
   writeStoredInviteRoom(roomId);
   if (inviteNickDesc) {
@@ -1854,6 +1899,8 @@ function closeLobbyInviteModal() {
 }
 
 function openLobbyInviteModal(invite) {
+  // [PVP 공개 중단] 수락/거절 팝업. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) return;
   pendingLobbyInvite = invite;
   const modal = document.getElementById('lobby-invite-modal');
   const ask = document.getElementById('lobby-invite-ask');
@@ -1877,6 +1924,8 @@ function receiveLobbyInvite(payload) {
 }
 
 async function sendLobbyInvite(target) {
+  // [PVP 공개 중단] 대기실 초대 전송. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) return;
   if (!canInviteLobbyUser({ ...inviteHostState(), target })) return;
   const payload = buildLobbyInvite({
     roomId: currentMatchRoomId(),
@@ -1930,6 +1979,8 @@ async function acceptLobbyInvite() {
 }
 
 function joinRoom(roomId, extras = {}) {
+  // [PVP 공개 중단] 초대 방 입장. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) return false;
   if (extras.nickname != null) {
     const named = guestInviteNickname(
       extras.nickname,
@@ -1958,6 +2009,8 @@ function joinRoom(roomId, extras = {}) {
 }
 
 async function enterInviteRoom() {
+  // [PVP 공개 중단] 초대 링크 입장. 재개 시 아래 가드를 제거
+  if (!PVP_PUBLIC_ENABLED) return false;
   const roomId = pendingInviteRoom || readStoredInviteRoom() || readInviteRoomId(window.location.search);
   if (!roomId) return false;
   pendingInviteRoom = roomId;
@@ -2147,7 +2200,7 @@ function renderLobby() {
     name.className = 'lobby-room-name';
     name.textContent = roomTitle(room);
     const status = document.createElement('div');
-    status.className = isPvpWaiting(room) ? 'lobby-room-status is-wait-blink' : 'lobby-room-status';
+    status.className = (PVP_PUBLIC_ENABLED && isPvpWaiting(room)) ? 'lobby-room-status is-wait-blink' : 'lobby-room-status';
     status.textContent = roomStatusLabel(room);
     info.appendChild(name);
     info.appendChild(status);
@@ -2155,7 +2208,7 @@ function renderLobby() {
     const watch = document.createElement('button');
     watch.type = 'button';
     watch.className = 'spectate-btn';
-    if (canJoinPvpFromLobby(room, realtimeManager.userId)) {
+    if (PVP_PUBLIC_ENABLED && canJoinPvpFromLobby(room, realtimeManager.userId)) {
       watch.textContent = '참가하기';
       const enter = () => joinPvpRoom(room);
       watch.addEventListener('click', (event) => {
@@ -2277,7 +2330,8 @@ engine.on('launch', (payload) => {
   soundEngine.playFlick(payload?.power ?? 0.5);
   noteTutorial('launch');
   if (!tutorial.active) setTicker('발사!');
-  publishMatchSync({ force: true, event: 'launch' });
+  if (payload?.remote) return;
+  publishMatchSync({ force: true, event: 'launch', launch: payload });
 });
 
 engine.on('clash', (payload) => {
@@ -2439,8 +2493,26 @@ try {
 
 turnManager.attach();
 syncSceneMode();
-if (pendingInviteRoom) openInviteNickModal(pendingInviteRoom);
-else showLobby();
+function shelvePvpPublicUi() {
+  // [PVP 공개 중단] 1:1 버튼 숨김. 재개 시 PVP_PUBLIC_ENABLED = true
+  if (PVP_PUBLIC_ENABLED) return;
+  document.querySelectorAll('[data-mode="pvp"]').forEach((el) => {
+    el.classList.add('is-pvp-shelved');
+    el.setAttribute('aria-hidden', 'true');
+    el.tabIndex = -1;
+  });
+}
+
+shelvePvpPublicUi();
+if (PVP_PUBLIC_ENABLED && pendingInviteRoom) openInviteNickModal(pendingInviteRoom);
+else {
+  if (!PVP_PUBLIC_ENABLED) {
+    pendingInviteRoom = '';
+    writeStoredInviteRoom('');
+    clearInviteQuery(window);
+  }
+  showLobby();
+}
 
 document.getElementById('match-start')?.addEventListener('click', () => {
   beginMatchIfAllowed();

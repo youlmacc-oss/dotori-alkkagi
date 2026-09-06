@@ -44,6 +44,7 @@ import {
   shiftBoardHex,
 } from './ThreeRenderer.js';
 import { soundEngine } from '../audio/SoundEngine.js';
+import { PVP_PUBLIC_ENABLED } from '../network/PvpInvite.js';
 import {
   isActionCamEnabled,
   isRearrangeAskEnabled,
@@ -123,7 +124,7 @@ function loadMatchConfig() {
   try {
     const rawMode = localStorage.getItem(GAME_MODE_KEY);
     const mode = rawMode === GAME_MODE.PVP
-      ? GAME_MODE.PVP
+      ? (PVP_PUBLIC_ENABLED ? GAME_MODE.PVP : GAME_MODE.AI)
       : rawMode === GAME_MODE.SOLO
         ? GAME_MODE.SOLO
         : GAME_MODE.AI;
@@ -268,9 +269,13 @@ export class SettingsModal {
 
     for (const btn of root.querySelectorAll('[data-mode]')) {
       btn.addEventListener('click', () => {
-        if (btn.id === 'lobby-mode-pvp' && this.onPvpPick) {
-          this.onPvpPick();
-          return;
+        if (btn.dataset.mode === 'pvp' || btn.id === 'lobby-mode-pvp') {
+          // [PVP 공개 중단] 1:1 모드 선택. 재개 시 아래 가드를 제거
+          if (!PVP_PUBLIC_ENABLED) return;
+          if (this.onPvpPick) {
+            this.onPvpPick();
+            return;
+          }
         }
         this.setGameMode(btn.dataset.mode, { startMatch: Boolean(btn.id?.startsWith('lobby-mode')) });
       });
@@ -298,13 +303,12 @@ export class SettingsModal {
     this.renderer.setBoardColor(this.resolvedColor());
     engine.setMatchConfig({ mode: this.gameMode, difficulty: this.aiDifficulty });
     const play = loadPlayFormation();
-    if (play) {
-      this.count = play.count;
-      this.shape = play.shape ?? this.shape;
-      this.mode = play.mode;
-      this.draft = play.positions;
-      this.engine.setupFormation(play.count, FORMATION_MODE.CUSTOM, play.positions);
-    }
+    if (play?.count) this.count = play.count;
+    this.shape = FORMATION_SHAPE.LINE;
+    this.mode = FORMATION_MODE.PRESET;
+    this.usingMine = false;
+    const started = this.engine.applyDefaultMatchFormation(this.count);
+    this.draft = started.layout ?? createPresetLayout(this.count, FORMATION_SHAPE.LINE);
     this.syncChrome();
     this.drawPreview();
   }
@@ -527,6 +531,16 @@ export class SettingsModal {
     this.syncChrome();
     this.drawPreview();
     if (options.startMatch) {
+      this.shape = FORMATION_SHAPE.LINE;
+      this.mode = FORMATION_MODE.PRESET;
+      const started = this.engine.applyDefaultMatchFormation(this.count);
+      this.draft = started.layout ?? createPresetLayout(this.count, FORMATION_SHAPE.LINE);
+      savePlayFormation({
+        count: this.count,
+        mode: FORMATION_MODE.PRESET,
+        shape: FORMATION_SHAPE.LINE,
+        positions: this.draft,
+      });
       this.onApply?.({ mode: kept, difficulty: this.aiDifficulty, reset: true, toLobby: false });
     }
   }
@@ -628,23 +642,19 @@ export class SettingsModal {
       this.setStatus(SETTINGS_APPLY_BLOCK);
       return;
     }
-    this.draft = commitPlayLayout(this.count, this.draft, undefined, FORMATION_ZONE.CUSTOM);
-    if (!validateFormationLayout(this.draft, undefined, FORMATION_ZONE.CUSTOM).ok) {
-      this.draft = [
-        ...packCampGrid(this.count, STONE_COLOR.BLACK, undefined, FORMATION_ZONE.CUSTOM),
-        ...packCampGrid(this.count, STONE_COLOR.WHITE, undefined, FORMATION_ZONE.CUSTOM),
-      ];
-    }
-    const result = this.engine.setupFormation(this.count, FORMATION_MODE.CUSTOM, this.draft);
+    this.shape = FORMATION_SHAPE.LINE;
+    this.mode = FORMATION_MODE.PRESET;
+    this.usingMine = false;
+    const result = this.engine.applyDefaultMatchFormation(this.count);
     if (!result.ok) {
       this.setStatus('적용에 실패했습니다');
       return;
     }
-    this.draft = result.layout ?? this.draft;
+    this.draft = result.layout ?? createPresetLayout(this.count, FORMATION_SHAPE.LINE);
     savePlayFormation({
       count: this.count,
-      mode: this.mode,
-      shape: this.shape,
+      mode: FORMATION_MODE.PRESET,
+      shape: FORMATION_SHAPE.LINE,
       positions: this.draft,
     });
     saveMatchConfig(this.gameMode, this.aiDifficulty);

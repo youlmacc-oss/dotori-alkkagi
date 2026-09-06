@@ -25,7 +25,11 @@ export function packStoneSync(stone) {
 
 export function packMatchSync(snapshot, extras = {}) {
   const stones = extras.stones || snapshot?.stones || [];
+  const event = extras.event || snapshot?.event || '';
+  const launch = extras.launch || snapshot?.launch || null;
   return {
+    kind: extras.kind || snapshot?.kind || (event === 'launch' ? 'launch' : 'board'),
+    event,
     matchId: extras.roomId || extras.matchId || snapshot?.matchId || '',
     roomId: extras.roomId || extras.matchId || '',
     senderId: extras.senderId || '',
@@ -36,8 +40,27 @@ export function packMatchSync(snapshot, extras = {}) {
     turnRemainingMs: snapshot?.timer?.remainingMs ?? snapshot?.turnRemainingMs,
     winner: snapshot?.winner ?? null,
     scores: snapshot?.scores || extras.scores || null,
-    stones: stones.map(packStoneSync).filter(Boolean),
+    stones: event === 'launch' ? [] : stones.map(packStoneSync).filter(Boolean),
+    stoneId: launch?.stoneId ?? extras.stoneId ?? snapshot?.stoneId ?? null,
+    velocity: launch?.velocity ?? extras.velocity ?? snapshot?.velocity ?? null,
+    force: launch?.force ?? extras.force ?? snapshot?.force ?? null,
+    power: launch?.power ?? extras.power ?? snapshot?.power ?? 0,
+    color: launch?.color ?? extras.color ?? snapshot?.color ?? null,
   };
+}
+
+export function packLaunchSync(launch, extras = {}) {
+  return packMatchSync({ phase: PHASE.RESOLVING, currentTurn: extras.currentTurn || launch?.color }, {
+    ...extras,
+    event: 'launch',
+    kind: 'launch',
+    launch,
+    stones: [],
+  });
+}
+
+export function isLaunchSync(payload) {
+  return payload?.kind === 'launch' || payload?.event === 'launch';
 }
 
 export function shouldApplyMatchSync(payload, {
@@ -61,20 +84,19 @@ export function shouldPublishMatchSync({
   force = false,
   event = '',
 } = {}) {
-  if (!inPvp) return false;
-  if (isHost) return true;
-  return force === true && (
-    event === 'launch' || event === 'turnEnd' || event === 'gameOver' || event === 'pulse'
-  );
+  if (!inPvp || force !== true) return false;
+  if (event === 'launch') return true;
+  if (event === 'turnEnd' || event === 'gameOver' || event === 'start') return isHost === true;
+  return false;
 }
 
-/** 시작된 1:1은 Presence 대신 호스트 판을 짧게 다시 보낸다. */
+/** 플레이 중 풀판 pulse는 끈다. 샷·정지 스냅샷만 보낸다. */
 export function shouldPulseMatchSync({
-  inPvp = false,
-  started = false,
-  spectating = false,
+  inPvp: _inPvp = false,
+  started: _started = false,
+  spectating: _spectating = false,
 } = {}) {
-  return Boolean(inPvp && started && !spectating);
+  return false;
 }
 
 export function canApplyRemoteBoard({
@@ -82,8 +104,12 @@ export function canApplyRemoteBoard({
   remotePhase,
   localTurn,
   remoteTurn,
+  remoteEvent = '',
 } = {}) {
   if (shouldHoldEndedBoard({ localPhase, remotePhase })) return false;
+  if (remoteEvent === 'turnEnd' || remoteEvent === 'gameOver' || remoteEvent === 'start') {
+    return true;
+  }
   const remoteBehind = remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE;
   const turnMoved = Boolean(remoteTurn && localTurn && remoteTurn !== localTurn);
   if (localPhase === PHASE.RESOLVING && remoteBehind && !turnMoved) return false;

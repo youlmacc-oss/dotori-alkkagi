@@ -12,6 +12,9 @@ import {
   writeStoredNickname,
 } from './Nickname.js';
 
+/** 1:1 공개 진입. false면 버튼 숨김·안내 팝업 중단. 재개 시 true. */
+export const PVP_PUBLIC_ENABLED = false;
+
 export const PVP_ROOM_HINT = '대국방을 선택하면 게임이 시작됩니다';
 export const PVP_GUIDE_ASK = '가이드선을 사용하시겠습니까?';
 export const INVITE_SHARE_TITLE = '도토리 알까기 대전 초대';

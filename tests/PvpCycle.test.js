@@ -23,7 +23,9 @@ import {
 } from '../src/network/RoomState.js';
 import {
   canApplyRemoteBoard,
+  isLaunchSync,
   isStaleEndedMatchSync,
+  packLaunchSync,
   packMatchSync,
   shouldApplyMatchSync,
   shouldFollowRemoteStart,
@@ -99,30 +101,31 @@ describe('1:1 한 바퀴', () => {
       awaitingStart: true, started: false, remoteStarted: true, mode: 'pvp',
     })).toBe(true);
     expect(shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp', started: true })).toBe(false);
-    expect(shouldPulseMatchSync({ inPvp: true, started: true })).toBe(true);
+    expect(shouldPulseMatchSync({ inPvp: true, started: true })).toBe(false);
 
-    hostEngine.phase = PHASE.RESOLVING;
-    const moved = hostEngine.stones[0];
-    const shot = packMatchSync({
-      phase: PHASE.RESOLVING,
+    const shooter = hostEngine.stones[0];
+    const launch = packLaunchSync({
+      stoneId: shooter.id,
+      color: shooter.color,
+      velocity: { x: 8, y: -12 },
+      force: { x: 0.03, y: -0.04 },
+      power: 0.8,
+    }, {
+      roomId: 'room_host',
+      senderId: 'host',
+      started: true,
+      timestamp: 20,
       currentTurn: STONE_COLOR.BLACK,
-      stones: hostEngine.stones.map((stone, index) => ({
-        id: stone.id,
-        color: stone.color,
-        fallen: false,
-        position: {
-          x: stone.body.position.x + (index === 0 ? 24 : 0),
-          y: stone.body.position.y,
-        },
-      })),
-    }, { roomId: 'room_host', senderId: 'host', started: true, timestamp: 20 });
-    expect(shouldPublishMatchSync({ inPvp: true, isHost: true })).toBe(true);
-    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })).toBe(true);
-    expect(shouldApplyMatchSync(shot, {
+    });
+    expect(isLaunchSync(launch)).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: true })).toBe(false);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'launch' })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })).toBe(false);
+    expect(shouldApplyMatchSync(launch, {
       myId: 'guest', roomId: 'room_host', inPvp: true,
     })).toBe(true);
-    expect(guestEngine.applyRemoteMatchState(shot)).toBe(true);
-    expect(guestEngine.stones[0].body.position.x).toBeCloseTo(moved.body.position.x + 24);
+    expect(guestEngine.applyRemoteLaunch(launch)).toBe(true);
+    expect(guestEngine.phase).toBe(PHASE.RESOLVING);
 
     guestEngine.phase = PHASE.RESOLVING;
     guestEngine.currentTurn = STONE_COLOR.WHITE;
@@ -142,7 +145,12 @@ describe('1:1 한 바퀴', () => {
       remoteTurn: hostPulse.currentTurn,
     })).toBe(false);
     expect(guestEngine.applyRemoteMatchState(hostPulse)).toBe(false);
-    expect(guestEngine.stones[0].body.position.x).toBeCloseTo(moved.body.position.x + 24);
+    expect(guestEngine.phase).toBe(PHASE.RESOLVING);
+    expect(canApplyRemoteBoard({
+      localPhase: guestEngine.phase,
+      remotePhase: PHASE.IDLE,
+      remoteEvent: 'turnEnd',
+    })).toBe(true);
 
     const win = {
       mode: 'pvp', started: true, winner: STONE_COLOR.BLACK, myColor: STONE_COLOR.BLACK,

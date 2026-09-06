@@ -150,46 +150,32 @@ try {
       throw new Error(`${device.name} lobby clinic missing: ${JSON.stringify(clinic)}`);
     }
     await page.evaluate(() => document.getElementById('lobby-book-close')?.click());
-    const inviteOnly = await page.evaluate(() => {
+    // [PVP 공개 중단] 초대만 안내·1:1 점멸. 재개 시 아래를 원래 검사로 되돌린다
+    const pvpShelved = await page.evaluate(() => {
       const root = document.getElementById('invite-only-notice');
-      const text = document.getElementById('invite-only-text');
-      const ok = document.getElementById('invite-only-ok');
-      return {
-        ok: Boolean(
-          root && !root.hidden
-          && text?.textContent.includes('초대에 의해서만')
-          && text?.textContent.includes('대전방 개설후')
-          && ok && ok.textContent.includes('확인')
-        ),
-        text: text?.textContent,
-      };
-    });
-    if (!inviteOnly.ok) {
-      throw new Error(`${device.name} invite-only notice missing: ${JSON.stringify(inviteOnly)}`);
-    }
-    await page.evaluate(() => document.getElementById('invite-only-ok')?.click());
-    await page.waitForFunction(() => document.getElementById('invite-only-notice')?.hidden === true, null, { timeout: 3000 });
-    const pvpInvite = await page.evaluate(() => {
       const btn = document.getElementById('lobby-mode-pvp');
       const empty = document.querySelector('.lobby-empty');
       const hint = document.getElementById('lobby-pvp-hint');
       const balloon = document.getElementById('lobby-pvp-balloon');
-      const anim = btn ? getComputedStyle(btn).animationName : '';
+      const vis = btn ? getComputedStyle(btn).visibility : '';
       return {
         ok: Boolean(
-          btn?.classList.contains('is-invite-blink')
-          && anim.includes('blink')
+          root?.hidden === true
+          && btn?.textContent.includes('1:1')
+          && btn?.classList.contains('is-pvp-shelved')
+          && vis === 'hidden'
+          && !btn.classList.contains('is-invite-blink')
           && empty?.textContent.includes('개설된 대국')
           && hint?.textContent.includes('대국방')
           && hint?.textContent.includes('시작')
           && !balloon
         ),
-        text: hint?.textContent,
-        anim,
+        hidden: root?.hidden,
+        vis,
       };
     });
-    if (!pvpInvite.ok) {
-      throw new Error(`${device.name} pvp invite line missing: ${JSON.stringify(pvpInvite)}`);
+    if (!pvpShelved.ok) {
+      throw new Error(`${device.name} pvp shelved ui missing: ${JSON.stringify(pvpShelved)}`);
     }
     if (device.name === 'iPhone 14 Pro') {
       await page.screenshot({ path: outFile, timeout: 60000 });
@@ -467,111 +453,25 @@ try {
     }
     await page.locator('#spectate-leave').click({ force: true });
     await page.waitForSelector('#lobby-users:not([hidden])', { timeout: 8000 });
-    const pvpWaitGuide = await page.evaluate(() => {
+    // [PVP 공개 중단] 1:1 대기 점멸·개설 팝업. 재개 시 아래를 원래 검사로 되돌린다
+    const pvpEntryClosed = await page.evaluate(() => {
       const guide = document.getElementById('lobby-location-guide');
-      const blinking = [...document.querySelectorAll('.lobby-room-status.is-wait-blink')];
-      const anim = guide ? getComputedStyle(guide).animationName : '';
-      return {
-        ok: Boolean(
-          guide?.classList.contains('is-wait-blink')
-          && guide.textContent.includes('초대 대전')
-          && anim.includes('blink')
-          && blinking.length >= 1
-          && blinking.every((el) => el.textContent.includes('초대 대전')),
-        ),
-        text: guide?.textContent,
-        blinks: blinking.length,
-        anim,
-      };
-    });
-    if (!pvpWaitGuide.ok) {
-      throw new Error(`${device.name} pvp wait blink missing: ${JSON.stringify(pvpWaitGuide)}`);
-    }
-    const stillInviting = await page.evaluate(() => {
       const btn = document.getElementById('lobby-mode-pvp');
+      const pick = document.getElementById('pvp-guide-pick');
       const hint = document.getElementById('lobby-pvp-hint');
       const balloon = document.getElementById('lobby-pvp-balloon');
       return Boolean(
-        btn?.classList.contains('is-invite-blink')
+        !guide?.classList.contains('is-wait-blink')
+        && btn?.classList.contains('is-pvp-shelved')
+        && !btn.classList.contains('is-invite-blink')
+        && pick?.hidden !== false
         && hint?.textContent.includes('대국방')
         && !balloon
       );
     });
-    if (!stillInviting) {
-      throw new Error(`${device.name} pvp invite lost after seed`);
+    if (!pvpEntryClosed) {
+      throw new Error(`${device.name} pvp entry still open after seed`);
     }
-    await page.evaluate(() => document.getElementById('lobby-mode-pvp')?.click());
-    await page.waitForTimeout(200);
-    const guidePick = await page.evaluate(() => {
-      const pick = document.getElementById('pvp-guide-pick');
-      const ask = document.getElementById('pvp-guide-ask');
-      const on = document.getElementById('pvp-guide-on');
-      const off = document.getElementById('pvp-guide-off');
-      return {
-        ok: Boolean(
-          pick && !pick.hidden
-          && ask?.textContent.includes('가이드선')
-          && on?.textContent.includes('사용')
-          && off?.textContent.includes('미사용')
-        ),
-        ask: ask?.textContent,
-      };
-    });
-    if (!guidePick.ok) {
-      throw new Error(`${device.name} pvp guide pick missing: ${JSON.stringify(guidePick)}`);
-    }
-    await page.evaluate(() => document.getElementById('pvp-guide-on')?.click());
-    await page.waitForTimeout(350);
-    const guideApplied = await page.evaluate(() => globalThis.__dotori?.renderer?.guideEnabled === true);
-    if (!guideApplied) {
-      throw new Error(`${device.name} pvp guide on not applied`);
-    }
-    await page.evaluate(() => globalThis.__dotori?.skipReadyAsk?.());
-    await page.waitForTimeout(80);
-    const pvpHint = await page.evaluate(() => {
-      const hint = document.getElementById('pvp-start-hint');
-      const start = document.getElementById('match-start');
-      const anim = hint ? getComputedStyle(hint).animationName : '';
-      return {
-        ok: Boolean(hint && !hint.hidden
-          && hint.textContent.includes('상대')
-          && hint.textContent.includes('대기')
-          && anim.includes('blink')
-          && getComputedStyle(hint).whiteSpace.includes('nowrap')
-          && hint.scrollWidth <= hint.clientWidth + 2
-          && start && !start.hidden && start.disabled),
-        anim,
-      };
-    });
-    if (!pvpHint.ok) {
-      throw new Error(`${device.name} pvp start hint missing: ${JSON.stringify(pvpHint)}`);
-    }
-    const waitFabs = await page.evaluate(() => {
-      const sur = document.getElementById('surrender-btn');
-      const leave = document.getElementById('lobby-leave');
-      const hit = (el) => {
-        const r = el?.getBoundingClientRect();
-        if (!r || r.width < 8) return null;
-        return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      };
-      const sHit = hit(sur);
-      const lHit = hit(leave);
-      return {
-        ok: Boolean(
-          sur && leave && !leave.hidden && !sur.disabled && !leave.disabled
-          && (sHit === sur || sur.contains(sHit))
-          && (lHit === leave || leave.contains(lHit)),
-        ),
-        sHit: sHit?.id || sHit?.className,
-        lHit: lHit?.id || lHit?.className,
-        leaveHidden: leave?.hidden,
-      };
-    });
-    if (!waitFabs.ok) {
-      throw new Error(`${device.name} pvp-wait fabs blocked: ${JSON.stringify(waitFabs)}`);
-    }
-    await page.evaluate(() => document.getElementById('lobby-leave')?.click());
-    await page.waitForSelector('#lobby-users:not([hidden])', { timeout: 8000 });
     await page.evaluate(() => {
       document.getElementById('lobby-settings')?.click();
     });

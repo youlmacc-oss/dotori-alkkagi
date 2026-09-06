@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   canApplyRemoteBoard,
+  isLaunchSync,
   ownCampFacesSeat,
+  packLaunchSync,
   packMatchSync,
   remoteStonesNeedRebuild,
   shouldApplyMatchSync,
@@ -11,7 +13,7 @@ import {
   findRemoteStone,
 } from '../src/network/MatchSync.js';
 import { GAME_MODE, GameEngine, PHASE, STONE_COLOR } from '../src/physics/GameEngine.js';
-import { seatYawFor } from '../src/ui/ThreeRenderer.js';
+import { seatYawFor, shouldAttachKillCam } from '../src/ui/ThreeRenderer.js';
 
 describe('1:1 판 동기', () => {
   it('같은 방의 상대 패킷만 적용하고 내 패킷은 버린다', () => {
@@ -57,6 +59,11 @@ describe('1:1 판 동기', () => {
     expect(canApplyRemoteBoard({
       localPhase: PHASE.RESOLVING,
       remotePhase: PHASE.IDLE,
+      remoteEvent: 'turnEnd',
+    })).toBe(true);
+    expect(canApplyRemoteBoard({
+      localPhase: PHASE.RESOLVING,
+      remotePhase: PHASE.IDLE,
       localTurn: STONE_COLOR.BLACK,
       remoteTurn: STONE_COLOR.WHITE,
     })).toBe(true);
@@ -68,12 +75,14 @@ describe('1:1 판 동기', () => {
     })).toBe(false);
     expect(canApplyRemoteBoard({ localPhase: PHASE.GAME_OVER, remotePhase: PHASE.IDLE })).toBe(false);
     expect(canApplyRemoteBoard({ localPhase: PHASE.GAME_OVER, remotePhase: PHASE.AIMING })).toBe(false);
-    expect(shouldPublishMatchSync({ inPvp: true, isHost: true })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: true })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'launch' })).toBe(true);
-    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })).toBe(true);
-    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'start' })).toBe(false);
-    expect(shouldPulseMatchSync({ inPvp: true, started: true })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'turnEnd' })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(false);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })).toBe(false);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'start' })).toBe(true);
+    expect(shouldPulseMatchSync({ inPvp: true, started: true })).toBe(false);
     expect(shouldPulseMatchSync({ inPvp: true, started: false })).toBe(false);
     expect(shouldPulseMatchSync({ inPvp: true, started: true, spectating: true })).toBe(false);
     expect(shouldFollowRemoteStart({
@@ -179,5 +188,39 @@ describe('1:1 판 동기', () => {
         position: stone.body.position,
       })),
     })).toBe(false);
+  });
+
+  it('상대 샷은 로컬에서 같이 굴리고 킬캠 경로는 그대로다', () => {
+    const guest = new GameEngine({ autoStart: false });
+    guest.setMatchConfig({ mode: GAME_MODE.PVP });
+    guest.setHost(false);
+    const stone = guest.stones.find((s) => s.color === STONE_COLOR.BLACK);
+    const launches = [];
+    guest.on('launch', (payload) => launches.push(payload));
+    const packet = packLaunchSync({
+      stoneId: stone.id,
+      color: stone.color,
+      velocity: { x: 10, y: -14 },
+      force: { x: 0.04, y: -0.05 },
+      power: 0.7,
+    }, { currentTurn: STONE_COLOR.BLACK, roomId: 'room_h', senderId: 'host', started: true, timestamp: 80 });
+    expect(isLaunchSync(packet)).toBe(true);
+    expect(packet.stones).toEqual([]);
+    expect(guest.applyRemoteLaunch(packet)).toBe(true);
+    expect(guest.phase).toBe(PHASE.RESOLVING);
+    expect(launches[0]?.remote).toBe(true);
+    expect(guest.applyRemoteLaunch(packet)).toBe(false);
+    expect(guest.applyRemoteMatchState({
+      event: 'turnEnd',
+      phase: PHASE.IDLE,
+      currentTurn: STONE_COLOR.WHITE,
+      stones: guest.stones.map((s) => ({
+        id: s.id,
+        color: s.color,
+        position: s.body.position,
+      })),
+    })).toBe(true);
+    expect(guest.phase).toBe(PHASE.IDLE);
+    expect(shouldAttachKillCam(true, null)).toBe(true);
   });
 });
