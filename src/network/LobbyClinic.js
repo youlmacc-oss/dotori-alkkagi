@@ -47,7 +47,8 @@ import {
   shouldRepublishOpenRoom,
   PVP_WAIT_EXPIRE_MS,
 } from './PvpInvite.js';
-import { LOBBY_STATE_EVENT } from './RealtimeManager.js';
+import { MATCH_SYNC_EVENT } from './MatchSync.js';
+import { LOBBY_STATE_EVENT, channelSendOk } from './RealtimeManager.js';
 import { shouldApplyMatchSync, shouldFollowRemoteStart } from './MatchSync.js';
 import { BOOK_PLAY_LABEL, BOOK_SKIP_LABEL } from '../ui/GuideBook.js';
 import { seatYawFor } from '../ui/ThreeRenderer.js';
@@ -193,22 +194,31 @@ export function pvpInviteAcceptClinicOk() {
     && shouldApplyMatchSync({
       senderId: 'host', roomId: 'room_host', timestamp: 2,
     }, { myId: 'guest', roomId: 'room_host', inPvp: true })
-    && seatYawFor(GAME_MODE.PVP, STONE_COLOR.BLACK, STONE_COLOR.WHITE) === Math.PI;
+    && seatYawFor(GAME_MODE.PVP, STONE_COLOR.BLACK, STONE_COLOR.WHITE) === Math.PI
+    && channelSendOk('ok')
+    && !channelSendOk('error')
+    && !channelSendOk('timed out');
 }
 
 export function pvpPresenceClinicOk() {
   const playing = { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 0 };
   const staleLobby = { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 100 };
   const kept = preferNewerPresence(playing, staleLobby);
+  const invited = preferNewerPresence(
+    { userId: 'h', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 10, inviteTargetId: null },
+    { userId: 'h', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 10, inviteTargetId: 'g', inviteAt: 10 },
+  );
   const seats = lobbySeatUsers([
     playing,
     { userId: 'idle', status: 'lobby', mode: null, roomId: null },
   ]);
   return kept.status === 'playing'
     && kept.roomId === 'room_h'
+    && invited.inviteTargetId === 'g'
     && roomsFromPresence([playing]).length === 1
     && seats.map((u) => u.userId).join() === 'idle'
-    && LOBBY_STATE_EVENT === 'lobby_state';
+    && LOBBY_STATE_EVENT === 'lobby_state'
+    && MATCH_SYNC_EVENT === 'spectator_update';
 }
 
 export function pvpRearrangeClinicOk() {

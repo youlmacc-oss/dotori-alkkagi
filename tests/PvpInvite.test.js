@@ -21,6 +21,7 @@ import {
   canInviteLobbyUser,
   buildLobbyInvite,
   evaluateLobbyInvite,
+  attemptInviteJoin,
   lobbyInviteAsk,
   presenceInvitePayload,
   shouldOpenPresenceInvite,
@@ -178,6 +179,33 @@ describe('대기실 1:1 안내', () => {
       hostId: 'host',
       targetId: 'guest',
     });
+  });
+
+  it('수락은 방이 잠깐 없어도 Presence를 다시 보고 붙는다', async () => {
+    const rooms = {};
+    let refresh = 0;
+    const missed = await attemptInviteJoin({
+      roomId: 'room_h',
+      join: (id) => Boolean(rooms[id]),
+      refresh: () => { refresh += 1; rooms.room_h = true; },
+      wait: async () => {},
+    });
+    expect(refresh).toBe(1);
+    expect(missed).toEqual({ ok: true, joined: true });
+    const gone = await attemptInviteJoin({
+      roomId: 'room_gone',
+      join: () => false,
+      refresh: () => {},
+      wait: async () => {},
+    });
+    expect(gone).toEqual({ ok: false, joined: false });
+    const first = await attemptInviteJoin({
+      roomId: 'room_ready',
+      join: () => true,
+      refresh: () => { refresh += 1; },
+    });
+    expect(first).toEqual({ ok: true, joined: true });
+    expect(refresh).toBe(1);
   });
 
   it('1:1 개설 후 10분이면 대기실로 보낸다', () => {

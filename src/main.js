@@ -106,6 +106,7 @@ import { STALE_LEAVE_HINT, SWEEP_LEAVE_HINT } from './network/PresencePolicy.js'
 import {
   INVITE_NICK_PLACEHOLDER,
   INVITE_ROOM_GONE_HINT,
+  attemptInviteJoin,
   LOBBY_INVITE_ACCEPT,
   LOBBY_INVITE_BTN,
   LOBBY_INVITE_DECLINE,
@@ -756,8 +757,18 @@ function applyIncomingMatchSync(payload) {
   })) {
     applyMatchStarted();
   }
-  if (spectating) return engine.updateSpectatorState(payload);
-  return engine.applyRemoteMatchState(payload);
+  const applied = spectating
+    ? engine.updateSpectatorState(payload)
+    : engine.applyRemoteMatchState(payload);
+  if (applied) flushMatchView();
+  return applied;
+}
+
+function flushMatchView() {
+  const snap = engine.getSnapshot();
+  renderer.draw(snap);
+  syncHud(snap);
+  syncStartGate();
 }
 
 function beginMatchIfAllowed() {
@@ -1408,18 +1419,21 @@ async function sendLobbyInvite(target) {
     targetId: target.userId ?? target.id,
   });
   sentLobbyInvite = { inviteTargetId: payload.targetId, inviteAt: Date.now() };
-  publishPresence();
+  await publishPresence();
   let ok = await realtimeManager.broadcastPvpInvite(payload);
   if (!ok) ok = await realtimeManager.broadcastPvpInvite(payload);
   if (ok) setTicker(LOBBY_INVITE_SENT);
 }
 
-function acceptLobbyInvite() {
+async function acceptLobbyInvite() {
   const invite = pendingLobbyInvite;
+  const result = await attemptInviteJoin({
+    roomId: invite?.roomId,
+    join: (roomId) => joinRoom(roomId),
+    refresh: () => refreshLobbyPresence({ reconnect: true, publish: true }),
+  });
   closeLobbyInviteModal();
-  if (!invite?.roomId) return;
-  if (joinRoom(invite.roomId)) return;
-  setTicker(INVITE_ROOM_GONE_HINT);
+  if (!result.ok) setTicker(INVITE_ROOM_GONE_HINT);
 }
 
 function joinRoom(roomId, extras = {}) {
@@ -1540,8 +1554,9 @@ function selfPresence() {
 
 function publishPresence() {
   const next = selfPresence();
-  realtimeManager.updatePresence(next);
+  const tracked = realtimeManager.updatePresence(next);
   updateLobbyUserList(mergeSelfPresence(lobbyUserList, next));
+  return tracked;
 }
 
 function publishIdleLobby() {
@@ -1585,6 +1600,11 @@ function updateLobbyUserList(users) {
   if (same) {
     beginMatchFromPeer();
     syncStartGate();
+    if (lobbyVisible) {
+      syncLobbyRoomCount();
+      syncLobbyWaitGuide();
+      syncPvpInvite();
+    }
     return;
   }
   noteRoomMates(true);

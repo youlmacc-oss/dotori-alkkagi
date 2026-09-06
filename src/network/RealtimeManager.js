@@ -4,6 +4,7 @@
  */
 
 import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, isSparsePresenceSnapshot, mergePresenceWithHints, preferNewerPresence, presenceViewKey, retainKnownPeers, shouldReplacePresenceHint, usersFromPresenceState } from './LobbyRooms.js';
+import { MATCH_SYNC_EVENT, packMatchSync } from './MatchSync.js';
 import { PVP_INVITE_EVENT } from './PvpInvite.js';
 import {
   defaultNickname,
@@ -31,6 +32,11 @@ export const LOBBY_SWEEP_EVENT = 'lobby_sweep';
 export const LOBBY_STATE_EVENT = 'lobby_state';
 
 export const LOBBY_CHANNEL = 'dotori-lobby';
+
+/** Supabase channel.send는 예외 없이 'ok' | 'timed out' | 'error'를 돌려준다. */
+export function channelSendOk(result) {
+  return result === 'ok';
+}
 
 export function lobbyChannelConfig(userId) {
   return {
@@ -184,7 +190,7 @@ export class RealtimeManager {
         .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
           this._handlePresenceLeave(key, leftPresences);
         })
-        .on('broadcast', { event: 'spectator_update' }, ({ payload }) => {
+        .on('broadcast', { event: MATCH_SYNC_EVENT }, ({ payload }) => {
           this._handleSpectatorUpdate(payload);
         })
         .on('broadcast', { event: LOBBY_SWEEP_EVENT }, ({ payload }) => {
@@ -324,18 +330,26 @@ export class RealtimeManager {
     return true;
   }
 
+  async _sendBroadcast(event, payload, retries = 1) {
+    if (!this.channel) return false;
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        const result = await this.channel.send({
+          type: 'broadcast',
+          event,
+          payload,
+        });
+        if (channelSendOk(result)) return true;
+      } catch {
+        /* retry */
+      }
+    }
+    return false;
+  }
+
   async _broadcastLobbySweep() {
     if (!this.keepNickname || this._shouldSelfEvict() || !this.channel || !this.isConnected) return false;
-    try {
-      await this.channel.send({
-        type: 'broadcast',
-        event: LOBBY_SWEEP_EVENT,
-        payload: { keep: this.keepNickname },
-      });
-      return true;
-    } catch {
-      return false;
-    }
+    return this._sendBroadcast(LOBBY_SWEEP_EVENT, { keep: this.keepNickname });
   }
 
   _applyVisiblePresence(raw, { force = false } = {}) {
@@ -386,55 +400,20 @@ export class RealtimeManager {
    */
   async broadcastPvpInvite(payload) {
     if (!this.channel || !payload?.targetId || !payload?.roomId) return false;
-    try {
-      await this.channel.send({
-        type: 'broadcast',
-        event: PVP_INVITE_EVENT,
-        payload,
-      });
-      return true;
-    } catch {
-      return false;
-    }
+    return this._sendBroadcast(PVP_INVITE_EVENT, payload);
   }
 
   async broadcastSpectatorData(gameState) {
     if (!this.isConnected || !this.channel || !gameState) return false;
 
-    const spectatorUpdate = {
+    return this._sendBroadcast(MATCH_SYNC_EVENT, packMatchSync(gameState, {
       matchId: gameState.matchId || gameState.roomId || `match_${Date.now()}`,
       roomId: gameState.roomId || gameState.matchId || '',
       senderId: gameState.senderId || '',
-      timestamp: Number(gameState.timestamp) > 0 ? Number(gameState.timestamp) : Date.now(),
+      timestamp: gameState.timestamp,
       started: gameState.started === true,
-      phase: gameState.phase,
-      currentTurn: gameState.currentTurn,
-      turnRemainingMs: gameState.turnRemainingMs ?? gameState.timer?.remainingMs,
-      stones: gameState.stones?.map((stone) => ({
-        id: stone.id,
-        position: stone.body
-          ? { x: stone.body.position.x, y: stone.body.position.y }
-          : (stone.position || { x: stone.x, y: stone.y }),
-        velocity: stone.body
-          ? { x: stone.body.velocity.x, y: stone.body.velocity.y }
-          : (stone.velocity || { x: 0, y: 0 }),
-        fallen: stone.fallen,
-        color: stone.color,
-      })) || [],
-      winner: gameState.winner,
-    };
-
-    try {
-      await this.channel.send({
-        type: 'broadcast',
-        event: 'spectator_update',
-        payload: spectatorUpdate
-      });
-      return true;
-    } catch (error) {
-      console.error('관전 데이터 브로드캐스트 실패:', error);
-      return false;
-    }
+      stones: gameState.stones,
+    }));
   }
 
   /**
@@ -539,16 +518,7 @@ export class RealtimeManager {
 
   async _broadcastLobbyState(user, left = false) {
     if (!this.channel) return false;
-    try {
-      await this.channel.send({
-        type: 'broadcast',
-        event: LOBBY_STATE_EVENT,
-        payload: { user, left: Boolean(left) },
-      });
-      return true;
-    } catch {
-      return false;
-    }
+    return this._sendBroadcast(LOBBY_STATE_EVENT, { user, left: Boolean(left) });
   }
 
   _handleLobbyState(payload = {}) {
@@ -599,7 +569,7 @@ export class RealtimeManager {
   }
 
   _handlePresenceSync() {
-    this.resyncPresence();
+    this.resyncPresence({ force: true });
   }
 
   /**
@@ -771,10 +741,10 @@ class MockChannel {
   }
 
   async send({ type, event, payload }) {
-    // Mock 브로드캐스트 - 실제로는 다른 클라이언트에게 전달됨
     setTimeout(() => {
       this._emitBroadcast(event, payload);
     }, 50);
+    return 'ok';
   }
 
   presenceState() {

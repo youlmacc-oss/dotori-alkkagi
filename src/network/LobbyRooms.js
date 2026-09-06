@@ -262,13 +262,22 @@ export function preferNewerPresence(current, incoming) {
     newer = incomingPlay ? incoming : current;
   }
   const older = newer === incoming ? current : incoming;
-  return {
+  const merged = {
     ...older,
     ...newer,
     userId: current.userId || incoming.userId,
     id: current.id || incoming.id,
     presenceKey: current.presenceKey || incoming.presenceKey || current.userId || incoming.userId,
   };
+  if (nextAt === curAt && incomingPlay && currentPlay) {
+    const newerInv = Number(newer.inviteAt) || 0;
+    const olderInv = Number(older.inviteAt) || 0;
+    if (olderInv > newerInv && older.inviteTargetId) {
+      merged.inviteTargetId = older.inviteTargetId;
+      merged.inviteAt = older.inviteAt;
+    }
+  }
+  return merged;
 }
 
 /** 방 개설 힌트는 더 오래된 대기 스냅샷에 지우지 않는다. */

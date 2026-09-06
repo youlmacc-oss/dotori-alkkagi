@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { PHASE, GAME_MODE, GameEngine, STONE_COLOR } from '../src/physics/GameEngine.js';
-import { RealtimeManager, MockSupabaseClient, bindPresenceUnload } from '../src/network/RealtimeManager.js';
+import { RealtimeManager, MockSupabaseClient, bindPresenceUnload, channelSendOk } from '../src/network/RealtimeManager.js';
 import { canJoinPvpFromLobby, roomsFromPresence } from '../src/network/LobbyRooms.js';
-import { idleLobbyInvitees } from '../src/network/PvpInvite.js';
+import { idleLobbyInvitees, shouldOpenPresenceInvite } from '../src/network/PvpInvite.js';
 import { hasPvpOpponent, matchPlayersFromPresence } from '../src/network/MatchStart.js';
 
 describe('관전 모드 (Spectator Mode)', () => {
@@ -398,6 +398,103 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     expect(canJoinPvpFromLobby(rooms.find((r) => r.id === 'room_host_pvp'), 'guest_pvp')).toBe(true);
     const invitees = idleLobbyInvitees(Array.from(host.onlineUsers.values()), 'host_pvp');
     expect(invitees.some((u) => (u.userId ?? u.id) === 'guest_pvp')).toBe(true);
+  });
+
+  test('presence sync는 보기가 같아도 목록을 다시 돌려 새로고침 없이 그린다', async () => {
+    const client = new MockSupabaseClient();
+    const seen = [];
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'sync-force',
+      userId: 'host_force',
+      userNickname: '호치',
+    });
+    const guest = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'sync-force',
+      userId: 'guest_force',
+      userNickname: '달이',
+      onPresenceUpdate: (users) => { seen.push(users.map((u) => u.userId).sort().join(',')); },
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    expect(await guest.connect()).toBe('SUBSCRIBED');
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const before = seen.length;
+    expect(before).toBeGreaterThan(0);
+    guest._handlePresenceSync();
+    expect(seen.length).toBeGreaterThan(before);
+    expect(seen.at(-1)).toContain('host_force');
+  });
+
+  test('호스트 초대는 새로고침 없이 상대에게 방송되고 Presence에도 남는다', async () => {
+    const client = new MockSupabaseClient();
+    const invites = [];
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'invite-live',
+      userId: 'host_live',
+      userNickname: '호치',
+    });
+    const guest = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'invite-live',
+      userId: 'guest_live',
+      userNickname: '달이',
+      onPvpInvite: (payload) => { invites.push(payload); },
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    expect(await guest.connect()).toBe('SUBSCRIBED');
+    await host.updatePresence({
+      status: 'playing',
+      mode: 'pvp',
+      roomId: 'room_host_live',
+      inviteTargetId: 'guest_live',
+      inviteAt: 99,
+    });
+    const sent = await host.broadcastPvpInvite({
+      roomId: 'room_host_live',
+      hostId: 'host_live',
+      hostName: '호치',
+      targetId: 'guest_live',
+    });
+    expect(sent).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(invites).toEqual([expect.objectContaining({
+      roomId: 'room_host_live',
+      targetId: 'guest_live',
+    })]);
+    const hostRow = Array.from(guest.onlineUsers.values()).find((u) => u.userId === 'host_live');
+    expect(hostRow?.inviteTargetId).toBe('guest_live');
+    expect(shouldOpenPresenceInvite(hostRow, 'guest_live')).toBe(true);
+  });
+
+  test('broadcast는 send가 ok일 때만 성공하고 error면 한 번 더 보낸다', async () => {
+    expect(channelSendOk('ok')).toBe(true);
+    expect(channelSendOk('error')).toBe(false);
+    expect(channelSendOk('timed out')).toBe(false);
+    const client = new MockSupabaseClient();
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'invite-ack',
+      userId: 'host_ack',
+      userNickname: '호치',
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    host.channel.send = async () => 'error';
+    expect(await host.broadcastPvpInvite({
+      roomId: 'room_host_ack',
+      targetId: 'guest_ack',
+    })).toBe(false);
+    let n = 0;
+    host.channel.send = async () => {
+      n += 1;
+      return n >= 2 ? 'ok' : 'timed out';
+    };
+    expect(await host.broadcastPvpInvite({
+      roomId: 'room_host_ack',
+      targetId: 'guest_ack',
+    })).toBe(true);
+    expect(n).toBe(2);
   });
 
   test('초대 수락 후 오래된 대기 힌트가 호스트의 상대 입장을 덮지 않는다', async () => {

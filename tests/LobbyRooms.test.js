@@ -261,6 +261,14 @@ describe('대기실 게임방', () => {
       { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_h' },
       { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 100 },
     )).toMatchObject({ status: 'playing', roomId: 'room_h' });
+    expect(preferNewerPresence(
+      { userId: 'h', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 10, inviteTargetId: null },
+      { userId: 'h', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 10, inviteTargetId: 'g', inviteAt: 10 },
+    )).toMatchObject({ inviteTargetId: 'g', inviteAt: 10, status: 'playing' });
+    expect(mergePresenceWithHints(
+      [{ userId: 'h', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 10, inviteTargetId: null }],
+      [{ userId: 'h', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 10, inviteTargetId: 'g', inviteAt: 10 }],
+    )[0]).toMatchObject({ inviteTargetId: 'g', inviteAt: 10 });
     expect(dedupePresenceUsers([
       { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 80 },
       { userId: 'g', status: 'playing', mode: 'ai', roomId: 'room_g' },

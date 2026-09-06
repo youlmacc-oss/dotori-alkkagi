@@ -184,6 +184,25 @@ export function buildLobbyInvite({
   };
 }
 
+export const INVITE_ACCEPT_RETRY_MS = 200;
+
+/** 수락 직후 방 목록이 비어 있으면 Presence를 한 번 다시 보고 붙는다. */
+export async function attemptInviteJoin({
+  roomId,
+  join,
+  refresh,
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  retryMs = INVITE_ACCEPT_RETRY_MS,
+} = {}) {
+  const id = String(roomId || '').trim();
+  if (!id || typeof join !== 'function') return { ok: false, joined: false };
+  if (join(id)) return { ok: true, joined: true };
+  refresh?.();
+  await wait(retryMs);
+  if (join(id)) return { ok: true, joined: true };
+  return { ok: false, joined: false };
+}
+
 export function evaluateLobbyInvite(payload, myId) {
   const invite = buildLobbyInvite(payload || {});
   if (!invite.roomId || !invite.hostId || !invite.targetId) {

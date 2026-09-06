@@ -35,6 +35,7 @@ export function packMatchSync(snapshot, extras = {}) {
     currentTurn: snapshot?.currentTurn,
     turnRemainingMs: snapshot?.timer?.remainingMs ?? snapshot?.turnRemainingMs,
     winner: snapshot?.winner ?? null,
+    scores: snapshot?.scores || extras.scores || null,
     stones: stones.map(packStoneSync).filter(Boolean),
   };
 }

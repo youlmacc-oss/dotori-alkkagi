@@ -18,6 +18,9 @@ describe('1:1 판 동기', () => {
     }, { roomId: 'room_h', senderId: 'host', started: true, timestamp: 50 });
     expect(payload.roomId).toBe('room_h');
     expect(payload.started).toBe(true);
+    expect(payload.phase).toBe(PHASE.RESOLVING);
+    expect(payload.currentTurn).toBe(STONE_COLOR.WHITE);
+    expect(payload.stones).toHaveLength(1);
     expect(shouldApplyMatchSync(payload, {
       myId: 'guest', roomId: 'room_h', inPvp: true,
     })).toBe(true);
@@ -65,5 +68,7 @@ describe('1:1 판 동기', () => {
     engine.currentTurn = STONE_COLOR.WHITE;
     expect(engine.isHumanInputBlocked()).toBe(false);
     expect(findRemoteStone(engine.stones, { id: first.id }, 9)).toBe(first);
+    expect(packMatchSync(engine.getSnapshot(), { roomId: 'room_h', senderId: 'g' }).scores)
+      .toEqual(engine.getSnapshot().scores);
   });
 });
