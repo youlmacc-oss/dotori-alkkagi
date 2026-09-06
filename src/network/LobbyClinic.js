@@ -176,6 +176,12 @@ export function runLobbyClinic(input = {}) {
         : '음량/액션캠/재배치 설정 누락',
     ),
     item(
+      'invite',
+      '초대 링크',
+      Boolean(input.hasInviteCopy && input.hasInviteNick),
+      input.hasInviteCopy && input.hasInviteNick ? '대기 중 복사 · 게스트 닉 입장' : '초대 링크 UI 없음',
+    ),
+    item(
       'realtime',
       '실시간 접속',
       true,

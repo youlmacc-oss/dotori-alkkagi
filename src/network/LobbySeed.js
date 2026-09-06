@@ -28,14 +28,20 @@ export function seedPlayingGuests(count = VIRTUAL_GUEST_COUNT) {
 }
 
 export function applySeededPresence(manager, guests) {
-  const channel = manager?.channel;
-  if (!channel?._presenceState || !Array.isArray(guests)) return 0;
-  for (const user of guests) {
-    if (!user?.userId) continue;
-    channel._presenceState.set(user.userId, [user]);
+  const list = (Array.isArray(guests) ? guests : []).filter((user) => user?.userId);
+  if (!manager || !list.length) return 0;
+  manager.rememberLocalPresence?.(list);
+  const channel = manager.channel;
+  if (channel?._presenceState) {
+    for (const user of list) channel._presenceState.set(user.userId, [user]);
+    manager._handlePresenceSync?.();
+    return list.length;
   }
-  manager._handlePresenceSync?.();
-  return guests.filter((u) => u?.userId).length;
+  if (!manager.onlineUsers) manager.onlineUsers = new Map();
+  for (const user of list) manager.onlineUsers.set(user.userId, user);
+  const users = Array.from(manager.onlineUsers.values());
+  manager.onPresenceUpdate?.(users);
+  return list.length;
 }
 
 export function virtualRoomTypes(guests) {

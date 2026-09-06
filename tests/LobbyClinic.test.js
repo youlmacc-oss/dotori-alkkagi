@@ -51,10 +51,12 @@ describe('대기실 자가진단', () => {
       realtimeLive: false,
       connected: false,
       lobbyCap: 10,
+      hasInviteCopy: true,
+      hasInviteNick: true,
     });
     expect(report.ok).toBe(true);
     expect(report.fails).toBe(0);
-    expect(report.total).toBe(19);
+    expect(report.total).toBe(20);
     expect(report.items.find((row) => row.id === 'realtime')?.status).toBe(CLINIC_WARN);
     expect(report.items.find((row) => row.id === 'actionCam')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'ready')?.ok).toBe(true);

@@ -8,7 +8,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>도토리 알까기</title>
-    <link rel="stylesheet" href="/src/style.css?v=20260906f" />
+    <link rel="stylesheet" href="/src/style.css?v=20260906h" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -134,6 +134,85 @@
         pointer-events: auto;
       }
       #stage .pvp-guide-pick[hidden] { display: none !important; }
+      #stage #invite-copy {
+        position: absolute;
+        left: var(--board-cx, 50%);
+        top: calc(var(--board-cy, 50%) + 56px);
+        transform: translate(-50%, 0);
+        z-index: 46;
+        height: 36px;
+        padding: 0 16px;
+        border-radius: 18px;
+        border: 1.5px solid #f4c06e;
+        background: rgba(22, 13, 10, 0.92);
+        color: #fff3c8;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+        pointer-events: auto;
+        white-space: nowrap;
+      }
+      #stage #invite-copy[hidden] { display: none !important; }
+      #stage .invite-nick-modal {
+        position: absolute;
+        inset: 0;
+        z-index: 55;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(8, 4, 3, 0.55);
+        backdrop-filter: blur(8px);
+        pointer-events: auto;
+      }
+      #stage .invite-nick-modal[hidden] { display: none !important; }
+      #stage .invite-nick-card {
+        width: min(320px, calc(100% - 32px));
+        padding: 22px 20px 18px;
+        border-radius: 18px;
+        border: 1.5px solid rgba(244, 192, 110, 0.55);
+        background: rgba(22, 13, 10, 0.78);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+      }
+      #stage .invite-nick-title {
+        margin: 0 0 8px;
+        color: #f4c06e;
+        font-size: 17px;
+        font-weight: 900;
+        text-align: center;
+      }
+      #stage .invite-nick-desc {
+        margin: 0 0 14px;
+        color: #fff3c8;
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.45;
+        text-align: center;
+      }
+      #stage #guest-nickname-input {
+        display: block;
+        width: 100%;
+        height: 42px;
+        margin: 0 0 12px;
+        padding: 0 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(244, 192, 110, 0.45);
+        background: rgba(16, 10, 8, 0.75);
+        color: #fff3c8;
+        font-size: 15px;
+        font-weight: 800;
+        box-sizing: border-box;
+      }
+      #stage #btn-enter-room {
+        width: 100%;
+        height: 42px;
+        border-radius: 14px;
+        border: 1.5px solid #f4c06e;
+        background: #f4c06e;
+        color: #160d0a;
+        font-size: 15px;
+        font-weight: 900;
+        cursor: pointer;
+      }
       #stage .match-start-gate {
         position: absolute; inset: 0; z-index: 45;
         display: block;
@@ -872,6 +951,7 @@
               </div>
             </div>
             <button type="button" id="match-start" hidden aria-label="시작">시작</button>
+            <button type="button" id="invite-copy" hidden>초대 링크 복사</button>
           </div>
           <div class="pull-block-toast" id="pull-block-toast" hidden role="status">붙어 있는 돌 방향으로는 당길 수 없습니다.</div>
           <div class="tutorial-coach" id="tutorial-coach" hidden>
@@ -1103,10 +1183,18 @@
               <button type="button" class="book-tutorial-btn is-dock" id="lobby-book-tutorial">튜토리얼 시작</button>
             </div>
           </section>
+          <div class="invite-nick-modal" id="invite-nick-modal" hidden>
+            <div class="invite-nick-card">
+              <p class="invite-nick-title" id="invite-nick-title">도토리 알까기 대전 초대</p>
+              <p class="invite-nick-desc" id="invite-nick-desc">방으로 입장합니다. 사용할 닉네임을 입력해 주세요.</p>
+              <input type="text" id="guest-nickname-input" maxlength="5" autocomplete="off" spellcheck="false" placeholder="닉네임 (5글자 이내)" />
+              <button type="button" id="btn-enter-room">대전 입장하기</button>
+            </div>
+          </div>
 
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260906f"></script>
+    <script type="module" src="/src/main.js?v=20260906h"></script>
   </body>
 </html>

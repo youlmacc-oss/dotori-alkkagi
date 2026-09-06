@@ -54,6 +54,7 @@ export function presenceFromMatch(input = {}) {
         : null,
     acorns: Number.isFinite(Number(input.acorns)) ? Math.floor(Number(input.acorns)) : 10,
     rearranging: Boolean(input.rearranging),
+    pvpOpenedAt: Number(input.pvpOpenedAt) > 0 ? Math.floor(Number(input.pvpOpenedAt)) : null,
   };
 }
 

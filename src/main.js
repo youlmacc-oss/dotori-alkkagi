@@ -81,8 +81,28 @@ import {
   writeNightAcorns,
 } from './network/NightSession.js';
 import { isLiveRealtime, runLobbyClinic } from './network/LobbyClinic.js';
-import { KEEP_CONNECTED_NICKNAME, STALE_LEAVE_HINT, SWEEP_LEAVE_HINT } from './network/PresencePolicy.js';
-import { PVP_GUIDE_ASK, PVP_ROOM_HINT, shouldInvitePvp } from './network/PvpInvite.js';
+import { STALE_LEAVE_HINT, SWEEP_LEAVE_HINT } from './network/PresencePolicy.js';
+import {
+  INVITE_NICK_PLACEHOLDER,
+  INVITE_ROOM_GONE_HINT,
+  canShareInvite,
+  clearInviteQuery,
+  evaluateInviteJoin,
+  findInviteRoom,
+  guestInviteNickname,
+  inviteUrlFor,
+  persistInviteNickname,
+  PVP_GUIDE_ASK,
+  PVP_ROOM_HINT,
+  PVP_WAIT_EXPIRE_HINT,
+  PVP_WAIT_EXPIRE_MS,
+  readInvitePrefill,
+  readInviteRoomId,
+  roomOpenedAt,
+  shareOrCopyInvite,
+  shouldExpirePvpWait,
+  shouldInvitePvp,
+} from './network/PvpInvite.js';
 import {
   guidePageAt,
   guidePageCount,
@@ -121,6 +141,11 @@ const userCount = document.getElementById('user-count');
 const nickInput = document.getElementById('lobby-nick-input');
 const nickHint = document.getElementById('lobby-nick-hint');
 const nickSave = document.getElementById('lobby-nick-save');
+const inviteCopyBtn = document.getElementById('invite-copy');
+const inviteModal = document.getElementById('invite-nick-modal');
+const guestNickInput = document.getElementById('guest-nickname-input');
+const inviteEnterBtn = document.getElementById('btn-enter-room');
+const inviteNickDesc = document.getElementById('invite-nick-desc');
 const seatNameBlack = document.getElementById('seat-name-black');
 const seatNameWhite = document.getElementById('seat-name-white');
 const spectateBar = document.getElementById('spectate-bar');
@@ -144,7 +169,6 @@ const realtimeManager = new RealtimeManager({
   userId: ensureNightUserId(),
   userCharacter: '🐶',
   nicknameStorage: globalThis.sessionStorage,
-  keepNickname: KEEP_CONNECTED_NICKNAME,
   onPresenceUpdate: (users) => {
     updateLobbyUserList(users.map((u) => ({
       id: u.userId,
@@ -157,6 +181,7 @@ const realtimeManager = new RealtimeManager({
       roomId: u.roomId,
       acorns: u.acorns,
       rearranging: Boolean(u.rearranging),
+      pvpOpenedAt: u.pvpOpenedAt,
       isOwner: u.userId === realtimeManager.userId,
     })));
     syncNickField();
@@ -194,6 +219,9 @@ let matchReady = null;
 let lastPublishedRearranging = false;
 let activeRoomId = null;
 let joiningRoom = false;
+let pvpOpenedAt = null;
+let pvpExpireTimer = 0;
+let pendingInviteRoom = readInviteRoomId(window.location.search);
 let lastRoomMates = new Set();
 let lastTimerSec = -1;
 
@@ -489,7 +517,10 @@ function syncStartGate() {
   const noBtn = document.getElementById('ready-ask-no');
   const show = inMatchRoom && awaitingStart && engine.phase !== PHASE.SPECTATING;
   if (gate) gate.hidden = !show;
-  if (!show) return;
+  if (!show) {
+    if (inviteCopyBtn) inviteCopyBtn.hidden = true;
+    return;
+  }
   const view = currentReadyView();
   const pvp = engine.gameMode === GAME_MODE.PVP;
   const ready = hasPvpOpponent(matchPlayers());
@@ -521,12 +552,15 @@ function syncStartGate() {
     hint.hidden = !hintShow;
     if (hintShow) hint.textContent = hintText;
   }
+  syncInviteShare();
 }
 
 function beginMatchIfAllowed() {
   if (!awaitingStart || !canStartNow()) return false;
   awaitingStart = false;
   matchStarted = true;
+  pvpOpenedAt = null;
+  clearPvpWaitExpire();
   clearMatchReady();
   soundEngine.playStart();
   syncStartGate();
@@ -642,6 +676,8 @@ function clinicSnapshot() {
     realtimeLive: isLiveRealtime(realtimeManager.supabaseClient),
     connected: Boolean(realtimeManager.isConnected),
     lobbyCap: LOBBY_CAP,
+    hasInviteCopy: Boolean(inviteCopyBtn),
+    hasInviteNick: Boolean(inviteModal && guestNickInput && inviteEnterBtn),
   };
 }
 
@@ -799,6 +835,9 @@ function enterMatchRoom() {
   syncSceneMode();
   soundEngine.playDoor('enter');
   noteRoomMates(false);
+  markPvpRoomOpened();
+  armPvpWaitExpire();
+  publishPresence();
 }
 
 function handleSweepLeave() {
@@ -811,6 +850,8 @@ function handleSweepLeave() {
   activeRoomId = null;
   lastRoomMates = new Set();
   lobbyUserList = [];
+  pvpOpenedAt = null;
+  clearPvpWaitExpire();
   setTicker(SWEEP_LEAVE_HINT);
   showLobby();
   syncNickField();
@@ -826,6 +867,8 @@ function handleStaleLeave() {
   activeRoomId = null;
   lastRoomMates = new Set();
   lobbyUserList = [];
+  pvpOpenedAt = null;
+  clearPvpWaitExpire();
   setTicker(STALE_LEAVE_HINT);
   showLobby();
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
@@ -859,6 +902,8 @@ function leaveToWaitingRoom() {
   clearMatchReady();
   activeRoomId = null;
   lastRoomMates = new Set();
+  pvpOpenedAt = null;
+  clearPvpWaitExpire();
   soundEngine.playDoor('leave');
   publishPresence();
   showLobby();
@@ -903,6 +948,8 @@ function leaveWatchedRoom() {
   clearMatchReady();
   activeRoomId = null;
   lastRoomMates = new Set();
+  pvpOpenedAt = null;
+  clearPvpWaitExpire();
   soundEngine.playDoor('leave');
   exitSpectate();
   showLobby();
@@ -919,6 +966,127 @@ function joinPvpRoom(room) {
   }
 }
 
+function hostWaitingForInvite() {
+  return canShareInvite({
+    mode: engine.gameMode,
+    inRoom: inMatchRoom && engine.phase !== PHASE.SPECTATING,
+    started: matchStarted,
+    isHost: currentMatchRoomId() === `room_${realtimeManager.userId}`,
+    hasOpponent: hasPvpOpponent(matchPlayers()),
+  });
+}
+
+function currentPvpOpenedAt() {
+  return roomOpenedAt(lobbyUserList, currentMatchRoomId(), pvpOpenedAt);
+}
+
+function clearPvpWaitExpire() {
+  if (pvpExpireTimer) clearTimeout(pvpExpireTimer);
+  pvpExpireTimer = 0;
+}
+
+function markPvpRoomOpened() {
+  if (engine.gameMode !== GAME_MODE.PVP || !inMatchRoom || matchStarted) {
+    if (matchStarted || engine.gameMode !== GAME_MODE.PVP) pvpOpenedAt = null;
+    return;
+  }
+  pvpOpenedAt = currentPvpOpenedAt() || pvpOpenedAt || Date.now();
+}
+
+function armPvpWaitExpire() {
+  clearPvpWaitExpire();
+  if (engine.gameMode !== GAME_MODE.PVP || !inMatchRoom || matchStarted) return;
+  markPvpRoomOpened();
+  const opened = currentPvpOpenedAt();
+  if (!opened) return;
+  const wait = Math.max(0, PVP_WAIT_EXPIRE_MS - (Date.now() - opened));
+  pvpExpireTimer = setTimeout(() => expirePvpWait(), wait);
+}
+
+function expirePvpWait() {
+  if (!shouldExpirePvpWait({
+    mode: engine.gameMode,
+    openedAt: currentPvpOpenedAt(),
+    started: matchStarted,
+  })) return;
+  leaveToWaitingRoom();
+  setTicker(PVP_WAIT_EXPIRE_HINT);
+}
+
+function syncInviteShare() {
+  if (!inviteCopyBtn) return;
+  inviteCopyBtn.hidden = !hostWaitingForInvite();
+}
+
+function openInviteNickModal(roomId) {
+  pendingInviteRoom = roomId;
+  if (inviteNickDesc) {
+    inviteNickDesc.textContent = `[방 코드: ${roomId}] 방으로 입장합니다. 사용할 닉네임을 입력해 주세요.`;
+  }
+  if (guestNickInput) {
+    guestNickInput.placeholder = INVITE_NICK_PLACEHOLDER;
+    guestNickInput.value = String(readInvitePrefill(realtimeManager.nicknameStorage) || '').slice(0, 5);
+  }
+  if (inviteModal) inviteModal.hidden = false;
+  hideLobby({ force: true });
+  queueMicrotask(() => guestNickInput?.focus());
+}
+
+function closeInviteNickModal() {
+  if (inviteModal) inviteModal.hidden = true;
+}
+
+function joinRoom(roomId, extras = {}) {
+  if (extras.nickname != null) {
+    const named = guestInviteNickname(
+      extras.nickname,
+      lobbyUserList.filter((u) => (u.userId ?? u.id) !== realtimeManager.userId),
+      realtimeManager.userId,
+    );
+    realtimeManager.setDisplayNickname(named.nickname);
+    persistInviteNickname(named.nickname, realtimeManager.nicknameStorage);
+    syncNickField();
+  }
+  const verdict = evaluateInviteJoin(findInviteRoom(lobbyRooms(), roomId), realtimeManager.userId);
+  if (!verdict.ok) return false;
+  joinPvpRoom(verdict.room);
+  return true;
+}
+
+async function enterInviteRoom() {
+  const roomId = pendingInviteRoom;
+  if (!roomId || !inviteEnterBtn) return false;
+  const named = guestInviteNickname(
+    guestNickInput?.value,
+    lobbyUserList.filter((u) => (u.userId ?? u.id) !== realtimeManager.userId),
+    realtimeManager.userId,
+  );
+  persistInviteNickname(named.nickname, realtimeManager.nicknameStorage);
+  realtimeManager.setDisplayNickname(named.nickname);
+  syncNickField();
+  closeInviteNickModal();
+  const started = Date.now();
+  while (Date.now() - started < 8000) {
+    if (realtimeManager.isConnected && joinRoom(roomId, { nickname: named.nickname, role: 'guest' })) {
+      clearInviteQuery(window);
+      pendingInviteRoom = '';
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  setTicker(INVITE_ROOM_GONE_HINT);
+  clearInviteQuery(window);
+  pendingInviteRoom = '';
+  showLobby();
+  return false;
+}
+
+async function copyInviteLink() {
+  if (!hostWaitingForInvite()) return;
+  const result = await shareOrCopyInvite(inviteUrlFor(currentMatchRoomId(), window.location));
+  if (result.hint) setTicker(result.hint);
+}
+
 function selfPresence() {
   const snap = engine.getSnapshot();
   const watching = snap.phase === PHASE.SPECTATING;
@@ -933,6 +1101,9 @@ function selfPresence() {
     inRoom: inMatchRoom,
     acorns: myAcorns(),
     rearranging: Boolean(engine.placementOnly && awaitingStart),
+    pvpOpenedAt: snap.gameMode === GAME_MODE.PVP && inMatchRoom && !matchStarted
+      ? currentPvpOpenedAt()
+      : null,
   });
 }
 
@@ -954,6 +1125,11 @@ function updateLobbyUserList(users) {
   else syncLobbyRoomCount();
   applyLobbyDefaultMode(lobbyUserList.length);
   syncStartGate();
+  if (inMatchRoom && engine.gameMode === GAME_MODE.PVP && !matchStarted) {
+    const shared = currentPvpOpenedAt();
+    if (shared && shared !== pvpOpenedAt) pvpOpenedAt = shared;
+    armPvpWaitExpire();
+  }
 }
 
 function syncLobbyRoomCount() {
@@ -1238,7 +1414,8 @@ try {
 
 turnManager.attach();
 syncSceneMode();
-showLobby();
+if (pendingInviteRoom) openInviteNickModal(pendingInviteRoom);
+else showLobby();
 
 document.getElementById('match-start')?.addEventListener('click', () => {
   beginMatchIfAllowed();
@@ -1336,6 +1513,18 @@ document.getElementById('spectate-stop')?.addEventListener('click', () => {
 });
 document.getElementById('spectate-leave')?.addEventListener('click', leaveWatchedRoom);
 
+inviteCopyBtn?.addEventListener('click', () => {
+  copyInviteLink();
+});
+inviteEnterBtn?.addEventListener('click', () => {
+  enterInviteRoom();
+});
+guestNickInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    enterInviteRoom();
+  }
+});
 nickSave?.addEventListener('click', saveNickname);
 nickInput?.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
@@ -1393,6 +1582,7 @@ globalThis.__dotori = {
   closeLobbyBook,
   startTutorialPlay,
   skipReadyAsk: skipReadyAskNow,
+  joinRoom,
   runLobbyClinic: () => runLobbyClinic(clinicSnapshot()),
 };
 

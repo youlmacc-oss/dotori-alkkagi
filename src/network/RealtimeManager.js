@@ -78,6 +78,14 @@ export class RealtimeManager {
     this._sweeping = false;
     this._lobbySwept = false;
     this._nickAssigned = Boolean(this._fixedNickname && this.userNickname);
+    this._localSeeds = new Map();
+  }
+
+  rememberLocalPresence(users) {
+    for (const user of users || []) {
+      if (user?.userId) this._localSeeds.set(user.userId, user);
+    }
+    return this._localSeeds.size;
   }
 
   _presenceUsers() {
@@ -91,8 +99,16 @@ export class RealtimeManager {
     return canAdmitUser(this._visibleUsers(pool), this.userId, this.lobbyCap);
   }
 
+  _mergeLocalSeeds(users) {
+    const next = Array.isArray(users) ? users.slice() : [];
+    for (const seed of this._localSeeds.values()) {
+      if (!next.some((u) => (u.userId ?? u.id) === seed.userId)) next.push(seed);
+    }
+    return next;
+  }
+
   _visibleUsers(users) {
-    return keepConnectedUsers(activeLobbyUsers(users), this.keepNickname);
+    return keepConnectedUsers(activeLobbyUsers(this._mergeLocalSeeds(users)), this.keepNickname);
   }
 
   _shouldSelfEvict() {
@@ -269,7 +285,7 @@ export class RealtimeManager {
   }
 
   _applyVisiblePresence(raw) {
-    const users = keepConnectedUsers(raw, this.keepNickname);
+    const users = this._visibleUsers(raw);
     this.onlineUsers = new Map(users.map((u) => [u.userId, u]));
     if (this.isConnected) {
       this._reconcileOwnIdentity(users);

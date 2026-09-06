@@ -41,4 +41,16 @@ describe('가상 대기실 시드', () => {
     expect(state.size).toBe(9);
     expect(synced).toBe(1);
   });
+
+  it('라이브 채널에도 로컬 목록으로 가상 접속자를 심는다', () => {
+    const seen = [];
+    const manager = {
+      channel: {},
+      onlineUsers: new Map([['me', { userId: 'me', nickname: '도토리1' }]]),
+      onPresenceUpdate: (users) => { seen.push(users); },
+    };
+    expect(applySeededPresence(manager, seedPlayingGuests(9))).toBe(9);
+    expect(manager.onlineUsers.size).toBe(10);
+    expect(seen.at(-1).some((u) => u.userId === 'virt_1')).toBe(true);
+  });
 });
