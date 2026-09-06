@@ -19,12 +19,14 @@ import {
 import { parseAcorn } from './AcornPolicy.js';
 import {
   PRESENCE_HEARTBEAT_MS,
+  PRESENCE_RETRACK_GRACE_MS,
   PRESENCE_STALE_MS,
   activeLobbyUsers,
   isCustomNickname,
   isKeptConnectedNickname,
   keepConnectedUsers,
   reconcileOwnSeat,
+  shouldConfirmPresenceLeave,
   shouldEvictConnectedUser,
   shouldForceLobbyLeave,
 } from './PresencePolicy.js';
@@ -103,6 +105,84 @@ export class RealtimeManager {
     this._unloading = false;
     this._peerHints = new Map();
     this._leftKeys = new Set();
+    this._pendingLeaves = new Map();
+    this._leaveTimers = new Map();
+    this._leaveHolds = new Map();
+  }
+
+  _cancelPendingLeave(key) {
+    const id = String(key || '').trim();
+    if (!id) return;
+    const timer = this._leaveTimers.get(id);
+    if (timer) clearTimeout(timer);
+    this._leaveTimers.delete(id);
+    this._pendingLeaves.delete(id);
+    this._leaveHolds.delete(id);
+  }
+
+  _clearPendingLeaves() {
+    for (const timer of this._leaveTimers.values()) clearTimeout(timer);
+    this._leaveTimers.clear();
+    this._pendingLeaves.clear();
+    this._leaveHolds.clear();
+  }
+
+  _presenceLeaveHint(key, leftPresences = []) {
+    const id = String(key || '').trim();
+    const row = (Array.isArray(leftPresences) ? leftPresences : []).find(Boolean);
+    return this._peerHints.get(id)
+      || this._peerHints.get(String(row?.userId || row?.id || ''))
+      || null;
+  }
+
+  _armPendingLeave(key, leftPresences) {
+    const id = String(key || '').trim();
+    if (!id) return;
+    this._cancelPendingLeave(id);
+    const last = this.onlineUsers.get(id);
+    if (last) this._leaveHolds.set(id, last);
+    this._pendingLeaves.set(id, leftPresences);
+    const timer = setTimeout(() => {
+      const liveUsers = usersFromPresenceState(this.channel?.presenceState?.() || {});
+      const hint = this._peerHints.get(id);
+      if (!shouldConfirmPresenceLeave({
+        key: id,
+        leftPresences,
+        liveUsers,
+        hint,
+      })) {
+        this._pendingLeaves.delete(id);
+        this._leaveHolds.delete(id);
+        this.resyncPresence({ force: true });
+        return;
+      }
+      this._confirmPresenceLeave(id, { leftPresences });
+    }, PRESENCE_RETRACK_GRACE_MS);
+    this._leaveTimers.set(id, timer);
+  }
+
+  _confirmPresenceLeave(key, extras = {}) {
+    const id = String(key || '').trim();
+    if (!id) return;
+    this._cancelPendingLeave(id);
+    const rows = Array.isArray(extras.leftPresences) && extras.leftPresences.length
+      ? extras.leftPresences
+      : [{ userId: id, id }];
+    rows.forEach((presence) => {
+      this._leftKeys.add(id);
+      if (presence.userId) this._leftKeys.add(presence.userId);
+      this.onlineUsers.delete(id);
+      this.onlineUsers.delete(presence.userId);
+      this.onlineUsers.delete(presence.id);
+      this._localSeeds.delete(id);
+      this._localSeeds.delete(presence.userId);
+      this._peerHints.delete(id);
+      this._peerHints.delete(presence.userId);
+      this._leaveHolds.delete(id);
+      this.onUserLeave(presence);
+      console.info('[dotori-presence] leave', id, presence.nickname || '');
+    });
+    this.resyncPresence({ force: true });
   }
 
   rememberLocalPresence(users) {
@@ -136,7 +216,10 @@ export class RealtimeManager {
   }
 
   _mergePeerHints(users) {
-    return mergePresenceWithHints(users, Array.from(this._peerHints.values()));
+    return mergePresenceWithHints(users, [
+      ...this._peerHints.values(),
+      ...this._leaveHolds.values(),
+    ]);
   }
 
   _visibleUsers(users) {
@@ -186,6 +269,7 @@ export class RealtimeManager {
       this._lobbyFull = false;
       this._lobbySwept = false;
       if (this.channel || this.isConnected) {
+        this._clearPendingLeaves();
         await this._teardownChannel({ untrack: false });
       }
       this.channel = this.supabaseClient
@@ -281,6 +365,7 @@ export class RealtimeManager {
     const key = this.presenceKey || this.userId;
     await this._broadcastLobbyState({ userId: key, presenceKey: key }, true);
     await this._teardownChannel({ untrack: true });
+    this._clearPendingLeaves();
     this.onlineUsers.clear();
     this._peerHints.clear();
     this._leftKeys.clear();
@@ -550,11 +635,11 @@ export class RealtimeManager {
     const key = String(row?.presenceKey || row?.userId || row?.id || '').trim();
     if (!key || key === (this.presenceKey || this.userId)) return;
     if (payload.left) {
-      this._peerHints.delete(key);
-      this.onlineUsers.delete(key);
-      this.resyncPresence({ force: true });
+      this._confirmPresenceLeave(key, { leftPresences: [row] });
       return;
     }
+    this._cancelPendingLeave(key);
+    this._leftKeys.delete(key);
     const incoming = {
       ...row,
       userId: key,
@@ -600,6 +685,7 @@ export class RealtimeManager {
    * 사용자 입장을 처리한다.
    */
   _handlePresenceJoin(key, newPresences) {
+    this._cancelPendingLeave(key);
     this._leftKeys.delete(key);
     const presence = newPresences?.[newPresences.length - 1];
     if (presence) {
@@ -630,19 +716,18 @@ export class RealtimeManager {
     const rows = Array.isArray(leftPresences) && leftPresences.length
       ? leftPresences
       : [{ userId: key, id: key }];
-    rows.forEach((presence) => {
-      this._leftKeys.add(key);
-      if (presence.userId) this._leftKeys.add(presence.userId);
-      this.onlineUsers.delete(key);
-      this.onlineUsers.delete(presence.userId);
-      this.onlineUsers.delete(presence.id);
-      this._localSeeds.delete(key);
-      this._localSeeds.delete(presence.userId);
-      this._peerHints.delete(key);
-      this._peerHints.delete(presence.userId);
-      this.onUserLeave(presence);
-      console.info('[dotori-presence] leave', key, presence.nickname || '');
-    });
+    const liveUsers = usersFromPresenceState(this.channel?.presenceState?.() || {});
+    const hint = this._presenceLeaveHint(key, rows);
+    if (!shouldConfirmPresenceLeave({
+      key,
+      leftPresences: rows,
+      liveUsers,
+      hint,
+    })) {
+      this.resyncPresence({ force: true });
+      return;
+    }
+    this._armPendingLeave(key, rows);
     this.resyncPresence({ force: true });
   }
 
@@ -751,8 +836,13 @@ class MockChannel {
   async track(data) {
     const key = String(data?.presenceKey || data?.userId || '');
     if (!key) return data;
-    this._presenceState.set(key, [{ ...data, userId: data.userId || key, presenceKey: key }]);
-    this._emitPresence('join', { key, newPresences: this._presenceState.get(key) });
+    const prev = this._presenceState.get(key);
+    const next = [{ ...data, userId: data.userId || key, presenceKey: key }];
+    if (prev?.length) {
+      this._emitPresence('leave', { key, leftPresences: prev });
+    }
+    this._presenceState.set(key, next);
+    this._emitPresence('join', { key, newPresences: next });
     this._emitPresence('sync', {});
     return data;
   }

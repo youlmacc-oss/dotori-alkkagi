@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { PHASE, GAME_MODE, GameEngine, STONE_COLOR } from '../src/physics/GameEngine.js';
 import { RealtimeManager, MockSupabaseClient, bindPresenceUnload, channelSendOk, channelSendLaunched } from '../src/network/RealtimeManager.js';
+import { PRESENCE_RETRACK_GRACE_MS } from '../src/network/PresencePolicy.js';
 import { canJoinPvpFromLobby, roomsFromPresence } from '../src/network/LobbyRooms.js';
 import { idleLobbyInvitees, shouldKeepInviteShare, shouldOpenPresenceInvite } from '../src/network/PvpInvite.js';
 import { applyRoomGuest, createRoomState, mergeRoomState, shouldKeepInviteShareFromRoom } from '../src/network/RoomState.js';
@@ -602,6 +603,68 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     expect(Array.from(guest.onlineUsers.keys()).sort()).toEqual(['hold_a', 'hold_b']);
   });
 
+  test('닉 변경 힌트가 있으면 Presence leave를 퇴장으로 보지 않는다', async () => {
+    const client = new MockSupabaseClient();
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'nick-hint',
+      userId: 'host_h',
+      userNickname: '호치',
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    const now = Date.now();
+    host._handleLobbyState({
+      user: {
+        userId: 'guest_h',
+        presenceKey: 'guest_h',
+        nickname: '달이',
+        lastSeen: now,
+        status: 'lobby',
+      },
+      left: false,
+    });
+    expect(Array.from(host.onlineUsers.keys())).toContain('guest_h');
+    host._handlePresenceLeave('guest_h', [{
+      userId: 'guest_h',
+      nickname: '도토리2',
+      lastSeen: now - 50,
+    }]);
+    expect(Array.from(host.onlineUsers.keys())).toContain('guest_h');
+    expect(host.onlineUsers.get('guest_h')?.nickname).toBe('달이');
+    expect(host.leftPresenceKeys()).not.toContain('guest_h');
+  });
+
+  test('닉네임을 바꿔도 호스트 목록에서 사라지지 않는다', async () => {
+    const client = new MockSupabaseClient();
+    const seen = [];
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'nick-hold',
+      userId: 'host_n',
+      userNickname: '호치',
+      onPresenceUpdate: (users) => {
+        seen.push(users.map((u) => ({ id: u.userId, nick: u.nickname })));
+      },
+    });
+    const guest = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'nick-hold',
+      userId: 'guest_n',
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    expect(await guest.connect()).toBe('SUBSCRIBED');
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(seen.at(-1)?.some((u) => u.id === 'guest_n')).toBe(true);
+    const renamed = guest.setDisplayNickname('달이');
+    expect(renamed.ok).toBe(true);
+    expect(renamed.nickname).toBe('달이');
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const firstSeen = seen.findIndex((list) => list.some((u) => u.id === 'guest_n'));
+    expect(firstSeen).toBeGreaterThanOrEqual(0);
+    expect(seen.slice(firstSeen).some((list) => !list.some((u) => u.id === 'guest_n'))).toBe(false);
+    expect(seen.at(-1)?.some((u) => u.id === 'guest_n' && u.nick === '달이')).toBe(true);
+  });
+
   test('한 클라이언트가 나가면 다른 목록에서 바로 빠진다', async () => {
     const client = new MockSupabaseClient();
     const seen = [];
@@ -623,7 +686,7 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(seen.at(-1)).toEqual(['leave_a', 'leave_b']);
     await host.disconnect();
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await new Promise((resolve) => setTimeout(resolve, 80));
     expect(seen.at(-1)).toEqual(['leave_b']);
     expect(Array.from(guest.onlineUsers.keys())).toEqual(['leave_b']);
     expect(client.removed).toContain('leave-sync');
@@ -729,7 +792,7 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(roomsFromPresence(seen.at(-1)).some((r) => r.hostId === 'gone_1')).toBe(true);
     await channel.untrack('gone_1');
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, PRESENCE_RETRACK_GRACE_MS + 40));
     expect(roomsFromPresence(seen.at(-1)).some((r) => r.hostId === 'gone_1')).toBe(false);
   });
 

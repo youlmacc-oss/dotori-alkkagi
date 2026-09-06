@@ -83,6 +83,7 @@ import {
 } from './RoomState.js';
 import { shouldBlockSettingsToLobby } from '../ui/PlayPrefs.js';
 import { LOBBY_STATE_EVENT, channelSendOk, channelSendLaunched } from './RealtimeManager.js';
+import { shouldConfirmPresenceLeave } from './PresencePolicy.js';
 import { BOOK_PLAY_LABEL, BOOK_SKIP_LABEL } from '../ui/GuideBook.js';
 import { seatYawFor } from '../ui/ThreeRenderer.js';
 import {
@@ -327,7 +328,15 @@ export function pvpPresenceClinicOk() {
     && canSpectatePvpRoom({ mode: 'pvp', status: 'playing' })
     && !canSpectatePvpRoom({ mode: 'ai', status: 'playing' })
     && isLobbyFullStatus('FULL')
-    && ROOM_ENDED_HINT.includes('종료');
+    && ROOM_ENDED_HINT.includes('종료')
+    && !shouldConfirmPresenceLeave({ key: 'g', liveUsers: [playing] })
+    && !shouldConfirmPresenceLeave({
+      key: 'g',
+      liveUsers: [],
+      hint: { userId: 'g', lastSeen: 200, nickname: '달이' },
+      leftPresences: [{ userId: 'g', lastSeen: 100, nickname: '도토리2' }],
+    })
+    && shouldConfirmPresenceLeave({ key: 'g', liveUsers: [], explicitLeft: true });
 }
 
 export function pvpRearrangeClinicOk() {
@@ -537,7 +546,7 @@ export function runLobbyClinic(input = {}) {
       'pvpPresence',
       '1:1 실시간 입장',
       pvpPresenceClinicOk(),
-      pvpPresenceClinicOk() ? '방 개설 표시 · 대국 종료 · 1인·AI 관람 없음' : '입장 동기화 오류',
+      pvpPresenceClinicOk() ? '방 개설 표시 · 대국 종료 · 닉 변경은 퇴장 아님' : '입장 동기화 오류',
     ),
     item(
       'pvpPlace',

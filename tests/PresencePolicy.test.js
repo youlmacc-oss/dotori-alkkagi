@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   KEEP_CONNECTED_NICKNAME,
+  PRESENCE_RETRACK_GRACE_MS,
   PRESENCE_STALE_MS,
   STALE_LEAVE_HINT,
   SWEEP_LEAVE_HINT,
   activeLobbyUsers,
   isCustomNickname,
   isKeptConnectedNickname,
+  isRetrackPresenceLeave,
   isStalePresence,
   keepConnectedUsers,
   nicknameForSeat,
   reconcileOwnSeat,
+  shouldConfirmPresenceLeave,
   shouldEvictConnectedUser,
   shouldForceLobbyLeave,
 } from '../src/network/PresencePolicy.js';
@@ -70,5 +73,29 @@ describe('대기실 입장 순 닉네임·5분 퇴장', () => {
     ]);
     expect(kept.map((u) => u.userId)).toEqual(['dev', 'virt_3']);
     expect(keepConnectedUsers([{ userId: 'b', nickname: '달이' }], null)).toHaveLength(1);
+  });
+
+  it('닉 변경으로 track만 다시 하면 퇴장으로 보지 않는다', () => {
+    expect(PRESENCE_RETRACK_GRACE_MS).toBe(400);
+    expect(isRetrackPresenceLeave({
+      key: 'g',
+      leftPresences: [{ userId: 'g', nickname: '도토리2', lastSeen: 10 }],
+      liveUsers: [{ userId: 'g', nickname: '달이', lastSeen: 20 }],
+    })).toBe(true);
+    expect(shouldConfirmPresenceLeave({
+      key: 'g',
+      leftPresences: [{ userId: 'g', nickname: '도토리2', lastSeen: 10 }],
+      liveUsers: [],
+      hint: { userId: 'g', nickname: '달이', lastSeen: 20 },
+    })).toBe(false);
+    expect(shouldConfirmPresenceLeave({
+      key: 'g',
+      liveUsers: [],
+      explicitLeft: true,
+    })).toBe(true);
+    expect(shouldConfirmPresenceLeave({
+      key: 'g',
+      liveUsers: [],
+    })).toBe(true);
   });
 });

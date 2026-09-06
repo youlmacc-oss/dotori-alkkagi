@@ -7,6 +7,7 @@ import { defaultNickname, isCustomNickname, nextSeat, parseDefaultSeat } from '.
 
 export const PRESENCE_STALE_MS = 5 * 60 * 1000;
 export const PRESENCE_HEARTBEAT_MS = 30 * 1000;
+export const PRESENCE_RETRACK_GRACE_MS = 400;
 export const STALE_LEAVE_HINT = '접속이 5분 이상 끊겨 대기실에서 나갔습니다';
 export const KEEP_CONNECTED_NICKNAME = '도토리1';
 export const SWEEP_LEAVE_HINT = '개발자 외 접속은 대기실에서 나갔습니다';
@@ -53,6 +54,37 @@ export function shouldForceLobbyLeave(disconnectedAt, now = Date.now(), ttl = PR
   const at = Number(disconnectedAt);
   if (!Number.isFinite(at) || at <= 0) return false;
   return now - at >= ttl;
+}
+
+function presenceLeaveId(user) {
+  return String(user?.presenceKey || user?.userId || user?.id || '').trim();
+}
+
+function presenceLeaveAt(user) {
+  return Number(user?.lastSeen || user?.joinedAt) || 0;
+}
+
+/** track() 재전송으로 옛 metas만 떠난 경우는 퇴장으로 보지 않는다. */
+export function isRetrackPresenceLeave({
+  key,
+  leftPresences = [],
+  liveUsers = [],
+  hint = null,
+} = {}) {
+  const id = String(key || '').trim();
+  if (!id) return false;
+  const stillLive = (Array.isArray(liveUsers) ? liveUsers : []).some(
+    (user) => presenceLeaveId(user) === id,
+  );
+  if (stillLive) return true;
+  if (presenceLeaveId(hint) !== id) return false;
+  const leftAt = Math.max(0, ...(Array.isArray(leftPresences) ? leftPresences : []).map(presenceLeaveAt));
+  return presenceLeaveAt(hint) >= leftAt;
+}
+
+export function shouldConfirmPresenceLeave(opts = {}) {
+  if (opts.explicitLeft) return true;
+  return !isRetrackPresenceLeave(opts);
 }
 
 export function reconcileOwnSeat({
