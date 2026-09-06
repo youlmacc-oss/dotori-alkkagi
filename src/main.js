@@ -28,6 +28,7 @@ import {
   mergeSelfPresence,
   applyLivePresence,
   retainKnownPeers,
+  lobbySeatUsers,
   presenceFromMatch,
   presenceViewKey,
   roomTitle,
@@ -64,7 +65,10 @@ import {
   canStartMatch,
   firstPlayerId,
   hasPvpOpponent,
+  isPeerMatchStarted,
   matchPlayersFromPresence,
+  shouldFollowPeerStart,
+  shouldHoldPvpStartGate,
 } from './network/MatchStart.js';
 import {
   FIRST_HINT,
@@ -221,7 +225,10 @@ const realtimeManager = new RealtimeManager({
       roomId: u.roomId,
       acorns: u.acorns,
       rearranging: Boolean(u.rearranging),
+      started: Boolean(u.started),
       pvpOpenedAt: u.pvpOpenedAt,
+      lastSeen: u.lastSeen,
+      joinedAt: u.joinedAt,
       isOwner: u.userId === realtimeManager.userId,
     }));
     updateLobbyUserList(applyLivePresence(
@@ -568,6 +575,7 @@ function skipReadyAskNow() {
 }
 
 function tickMatchReady() {
+  if (beginMatchFromPeer()) return;
   if (!inMatchRoom || !awaitingStart || engine.phase === PHASE.SPECTATING) return;
   if (!matchReady) beginMatchReady();
   const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -637,8 +645,15 @@ function syncStartGate() {
   syncInviteShare();
 }
 
-function beginMatchIfAllowed() {
-  if (!awaitingStart || !canStartNow()) return false;
+function peerHasStartedMatch() {
+  return isPeerMatchStarted(livePresencePool(), {
+    myId: realtimeManager.userId,
+    roomId: currentMatchRoomId(),
+  });
+}
+
+function applyMatchStarted() {
+  if (!awaitingStart) return false;
   awaitingStart = false;
   matchStarted = true;
   pvpOpenedAt = null;
@@ -647,7 +662,23 @@ function beginMatchIfAllowed() {
   soundEngine.playStart();
   syncStartGate();
   syncSceneMode();
+  publishPresence();
   return true;
+}
+
+function beginMatchIfAllowed() {
+  if (!awaitingStart || !canStartNow()) return false;
+  return applyMatchStarted();
+}
+
+function beginMatchFromPeer() {
+  if (!shouldFollowPeerStart({
+    awaitingStart,
+    started: matchStarted,
+    peerStarted: peerHasStartedMatch(),
+    mode: engine.gameMode,
+  })) return false;
+  return applyMatchStarted();
 }
 
 function syncSceneMode() {
@@ -922,7 +953,11 @@ function noteRoomMates(playDiff) {
 
 function syncPvpWait() {
   if (engine.gameMode !== GAME_MODE.PVP || !inMatchRoom || engine.phase === PHASE.SPECTATING) return;
-  if (!hasPvpOpponent(matchPlayers())) {
+  if (beginMatchFromPeer()) return;
+  if (shouldHoldPvpStartGate({
+    started: matchStarted,
+    hasOpponent: hasPvpOpponent(matchPlayers()),
+  })) {
     awaitingStart = true;
     turnManager.cancel();
     engine.pauseMatch();
@@ -1377,6 +1412,7 @@ function selfPresence() {
     inRoom: inMatchRoom,
     acorns: myAcorns(),
     rearranging: Boolean(engine.placementOnly && awaitingStart),
+    started: matchStarted,
     pvpOpenedAt: snap.gameMode === GAME_MODE.PVP && inMatchRoom && !matchStarted
       ? currentPvpOpenedAt()
       : null,
@@ -1404,6 +1440,7 @@ function publishIdleLobby() {
     mode: null,
     roomId: null,
     rearranging: false,
+    started: false,
     pvpOpenedAt: null,
   });
   updateLobbyUserList(mergeSelfPresence(lobbyUserList, next));
@@ -1523,7 +1560,7 @@ function renderLobby() {
   hint.textContent = PVP_ROOM_HINT;
   lobbyList.appendChild(hint);
 
-  sortBySeat(lobbyUserList).forEach((user) => {
+  sortBySeat(lobbySeatUsers(lobbyUserList)).forEach((user) => {
     const userEl = document.createElement('div');
     userEl.className = `lobby-user ${user.isOwner ? 'owner' : ''}`;
 

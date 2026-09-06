@@ -78,3 +78,31 @@ export function canStartMatch({ mode, userId, players } = {}) {
   if (!hasPvpOpponent(seat)) return false;
   return firstPlayerId(seat) === mine;
 }
+
+/** 같은 1:1 방에서 상대가 이미 시작했는지. */
+export function isPeerMatchStarted(users, { myId, roomId } = {}) {
+  return (Array.isArray(users) ? users : []).some((user) => {
+    const id = user?.userId ?? user?.id;
+    if (!id || id === myId) return false;
+    if (user.status !== 'playing') return false;
+    if (roomId && user.roomId !== roomId) return false;
+    return user.started === true;
+  });
+}
+
+export function shouldFollowPeerStart({
+  awaitingStart,
+  started,
+  peerStarted,
+  mode,
+} = {}) {
+  return mode === 'pvp'
+    && awaitingStart === true
+    && started !== true
+    && peerStarted === true;
+}
+
+/** 시작된 대국은 상대 Presence가 잠깐 빠져도 시작 대기로 되돌리지 않는다. */
+export function shouldHoldPvpStartGate({ started, hasOpponent } = {}) {
+  return started !== true && hasOpponent !== true;
+}

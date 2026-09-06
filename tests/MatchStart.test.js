@@ -8,8 +8,11 @@ import {
   canStartMatch,
   firstPlayerId,
   hasPvpOpponent,
+  isPeerMatchStarted,
   matchPlayersFromPresence,
   readAcornCount,
+  shouldFollowPeerStart,
+  shouldHoldPvpStartGate,
 } from '../src/network/MatchStart.js';
 
 describe('선공·시작 권한', () => {
@@ -52,6 +55,40 @@ describe('선공·시작 권한', () => {
       { userId: 'b', acorns: 10 },
       { userId: 'a', acorns: 10 },
     ])).toBe('a');
+  });
+
+  it('선공이 시작하면 후공은 시작 버튼을 기다리지 않고 따라간다', () => {
+    const room = [
+      { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'room_host', acorns: 10 },
+      { userId: 'guest', status: 'playing', mode: 'pvp', roomId: 'room_host', acorns: 8, started: true },
+    ];
+    expect(isPeerMatchStarted(room, { myId: 'host', roomId: 'room_host' })).toBe(true);
+    expect(isPeerMatchStarted(room, { myId: 'guest', roomId: 'room_host' })).toBe(false);
+    expect(isPeerMatchStarted(room.map((p) => ({ ...p, started: false })), {
+      myId: 'host',
+      roomId: 'room_host',
+    })).toBe(false);
+    expect(shouldFollowPeerStart({
+      awaitingStart: true,
+      started: false,
+      peerStarted: true,
+      mode: 'pvp',
+    })).toBe(true);
+    expect(shouldFollowPeerStart({
+      awaitingStart: true,
+      started: false,
+      peerStarted: true,
+      mode: 'ai',
+    })).toBe(false);
+    expect(shouldFollowPeerStart({
+      awaitingStart: false,
+      started: true,
+      peerStarted: true,
+      mode: 'pvp',
+    })).toBe(false);
+    expect(shouldHoldPvpStartGate({ started: false, hasOpponent: false })).toBe(true);
+    expect(shouldHoldPvpStartGate({ started: true, hasOpponent: false })).toBe(false);
+    expect(shouldHoldPvpStartGate({ started: false, hasOpponent: true })).toBe(false);
   });
 
   it('도토리 수와 안내 문구를 읽는다', () => {

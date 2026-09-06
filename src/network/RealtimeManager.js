@@ -518,6 +518,7 @@ export class RealtimeManager {
       roomId,
       acorns: parseAcorn(this.presence.acorns),
       rearranging: Boolean(this.presence.rearranging),
+      started: Boolean(this.presence.started),
       pvpOpenedAt: Number(this.presence.pvpOpenedAt) > 0 ? this.presence.pvpOpenedAt : null,
       joinedAt: this.presence.joinedAt ?? Date.now(),
       lastSeen: Date.now(),

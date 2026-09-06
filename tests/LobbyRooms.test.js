@@ -5,6 +5,8 @@ import {
   isPlayableLobbyMode,
   applyLivePresence,
   isSparsePresenceSnapshot,
+  isMatchRoomOccupant,
+  lobbySeatUsers,
   retainKnownPeers,
   mergeSelfPresence,
   presenceFromMatch,
@@ -71,6 +73,17 @@ describe('대기실 게임방', () => {
     expect(PVP_WAIT_ROOM_HINT).toContain('초대 대전중');
     expect(canJoinPvpRoom(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(true);
     expect(canJoinPvpFromLobby(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(true);
+    expect(lobbySeatUsers([
+      user('a', { mode: 'solo', nickname: '호치' }),
+      user('b', { mode: 'ai', nickname: '달이' }),
+      user('c', { mode: 'pvp', nickname: '금동이' }),
+      user('d', { status: 'lobby', mode: null, roomId: null, nickname: '손님' }),
+      {
+        userId: 'e', nickname: '관람', status: 'spectating', mode: null, roomId: 'room_c',
+      },
+    ]).map((u) => u.userId).sort()).toEqual(['d', 'e']);
+    expect(isMatchRoomOccupant(user('c', { mode: 'pvp' }))).toBe(true);
+    expect(isMatchRoomOccupant(user('d', { status: 'lobby', mode: null, roomId: null }))).toBe(false);
     expect(canJoinPvpRoom(rooms.find((r) => r.mode === 'pvp'), 'c')).toBe(false);
     expect(presenceStatusLabel(user('c', { mode: 'pvp', nickname: '금동이' }), rooms)).toBe('상대 대기');
   });
@@ -146,6 +159,17 @@ describe('대기실 게임방', () => {
     expect(presenceFromMatch({
       userId: 'u1', mode: 'pvp', phase: 'idle', rearranging: true,
     }).rearranging).toBe(true);
+    expect(presenceFromMatch({
+      userId: 'u1', mode: 'pvp', phase: 'idle', started: true,
+    }).started).toBe(true);
+    expect(presenceFromMatch({
+      userId: 'u1', mode: 'pvp', phase: 'idle', inRoom: false, started: true,
+    }).started).toBe(false);
+    expect(presenceViewKey([
+      { userId: 'a', status: 'playing', mode: 'pvp', roomId: 'room_a', started: false },
+    ])).not.toBe(presenceViewKey([
+      { userId: 'a', status: 'playing', mode: 'pvp', roomId: 'room_a', started: true },
+    ]));
   });
 
   it('관람자가 들어오면 그 대전 방에 닉네임이 붙는다', () => {
@@ -232,6 +256,14 @@ describe('대기실 게임방', () => {
       [{ userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 200 }],
       [{ userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 100 }],
     )[0].status).toBe('playing');
+    expect(preferNewerPresence(
+      { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_h' },
+      { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 100 },
+    )).toMatchObject({ status: 'playing', roomId: 'room_h' });
+    expect(dedupePresenceUsers([
+      { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 80 },
+      { userId: 'g', status: 'playing', mode: 'ai', roomId: 'room_g' },
+    ])[0]).toMatchObject({ status: 'playing', mode: 'ai', roomId: 'room_g' });
     expect(dedupePresenceUsers([
       { userId: 'host#0', presenceKey: 'host', nickname: '도토리1' },
       { userId: 'host', presenceKey: 'host', nickname: '도토리1', lastSeen: 5 },

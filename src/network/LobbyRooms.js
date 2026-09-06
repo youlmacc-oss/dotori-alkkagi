@@ -16,6 +16,23 @@ export function isPlayableLobbyMode(mode) {
   return PLAYABLE.has(mode);
 }
 
+/** 1인·AI·1:1 방을 연 사람은 대기실 좌석이 아니라 방 목록에만 둔다. */
+export function isMatchRoomOccupant(user) {
+  return Boolean(
+    user
+    && user.status === PRESENCE_STATUS.PLAYING
+    && isPlayableLobbyMode(user.mode),
+  );
+}
+
+export function lobbySeatUsers(users) {
+  return (Array.isArray(users) ? users : []).filter((user) => !isMatchRoomOccupant(user));
+}
+
+function presenceTime(user) {
+  return Number(user?.lastSeen || user?.joinedAt) || 0;
+}
+
 export function presenceViewKey(users) {
   return (Array.isArray(users) ? users : [])
     .map((user) => [
@@ -26,6 +43,7 @@ export function presenceViewKey(users) {
       user?.roomId ?? '',
       user?.seat ?? '',
       user?.rearranging ? '1' : '0',
+      user?.started ? '1' : '0',
       user?.pvpOpenedAt ?? '',
     ].join('\t'))
     .sort()
@@ -70,6 +88,7 @@ export function presenceFromMatch(input = {}) {
         : null,
     acorns: Number.isFinite(Number(input.acorns)) ? Math.floor(Number(input.acorns)) : 10,
     rearranging: Boolean(input.rearranging),
+    started: Boolean(playing && input.started),
     pvpOpenedAt: Number(input.pvpOpenedAt) > 0 ? Math.floor(Number(input.pvpOpenedAt)) : null,
   };
 }
@@ -81,6 +100,7 @@ export function idleLobbyPresence(input = {}) {
     mode: null,
     phase: 'idle',
     rearranging: false,
+    started: false,
     pvpOpenedAt: null,
   });
 }
@@ -223,13 +243,18 @@ export function pickLatestPresence(metas) {
   });
 }
 
-/** 힌트는 없을 때이거나 더 새로울 때만 덮는다. 오래된 대기 힌트가 입장 상태를 지우지 않는다. */
+/** 힌트는 없을 때이거나 더 새로울 때만 덮는다. 시각이 비면 방 개설이 대기보다 앞선다. */
 export function preferNewerPresence(current, incoming) {
   if (!incoming) return current || null;
   if (!current) return { ...incoming };
-  const nextAt = Number(incoming.lastSeen || incoming.joinedAt) || 0;
-  const curAt = Number(current.lastSeen || current.joinedAt) || 0;
-  const newer = nextAt > curAt ? incoming : current;
+  const nextAt = presenceTime(incoming);
+  const curAt = presenceTime(current);
+  const incomingPlay = isMatchRoomOccupant(incoming);
+  const currentPlay = isMatchRoomOccupant(current);
+  let newer = nextAt > curAt ? incoming : current;
+  if (incomingPlay !== currentPlay && (!nextAt || !curAt || nextAt === curAt)) {
+    newer = incomingPlay ? incoming : current;
+  }
   const older = newer === incoming ? current : incoming;
   return {
     ...older,
@@ -283,9 +308,15 @@ export function dedupePresenceUsers(users) {
       byKey.set(key, { ...user, userId: user.userId || key, id: user.id || key, presenceKey: user.presenceKey || key });
       continue;
     }
-    const nextAt = Number(user.lastSeen || user.joinedAt) || 0;
-    const prevAt = Number(prev.lastSeen || prev.joinedAt) || 0;
-    const next = nextAt >= prevAt ? { ...prev, ...user } : { ...user, ...prev };
+    const nextAt = presenceTime(user);
+    const prevAt = presenceTime(prev);
+    const userPlay = isMatchRoomOccupant(user);
+    const prevPlay = isMatchRoomOccupant(prev);
+    let takeNext = nextAt >= prevAt;
+    if (userPlay !== prevPlay && (!nextAt || !prevAt || nextAt === prevAt)) {
+      takeNext = userPlay;
+    }
+    const next = takeNext ? { ...prev, ...user } : { ...user, ...prev };
     byKey.set(key, {
       ...next,
       userId: key,

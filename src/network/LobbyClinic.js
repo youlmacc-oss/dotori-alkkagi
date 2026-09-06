@@ -9,6 +9,8 @@ import {
   canJoinPvpFromLobby,
   canJoinPvpRoom,
   preferNewerPresence,
+  lobbySeatUsers,
+  roomsFromPresence,
 } from './LobbyRooms.js';
 import { SESSION_ACORNS, shouldForfeitOnLeave, shouldSettleAcorns } from './AcornPolicy.js';
 import { RESULT_BEAT_MS, RESULT_FALL_HOLD_MS } from '../physics/ResultBeat.js';
@@ -24,7 +26,15 @@ import {
   shouldApplyLobbyDefaultMode,
 } from '../physics/GameEngine.js';
 import { MY_NICK_LABEL, NICKNAME_MAX } from './Nickname.js';
-import { PVP_START_HINT, PVP_WAIT_HINT, hasPvpOpponent, matchPlayersFromPresence } from './MatchStart.js';
+import {
+  PVP_START_HINT,
+  PVP_WAIT_HINT,
+  hasPvpOpponent,
+  isPeerMatchStarted,
+  matchPlayersFromPresence,
+  shouldFollowPeerStart,
+  shouldHoldPvpStartGate,
+} from './MatchStart.js';
 import {
   canInviteLobbyUser,
   canShareInvite,
@@ -129,16 +139,37 @@ export function pvpInviteAcceptClinicOk() {
       started: false,
       isHost: true,
       hasOpponent: true,
-    });
+    })
+    && shouldFollowPeerStart({
+      awaitingStart: true,
+      started: false,
+      peerStarted: isPeerMatchStarted([
+        { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'room_host' },
+        { userId: 'guest', status: 'playing', mode: 'pvp', roomId: 'room_host', started: true },
+      ], { myId: 'host', roomId: 'room_host' }),
+      mode: 'pvp',
+    })
+    && !shouldFollowPeerStart({
+      awaitingStart: true,
+      started: false,
+      peerStarted: false,
+      mode: 'pvp',
+    })
+    && !shouldHoldPvpStartGate({ started: true, hasOpponent: false });
 }
 
 export function pvpPresenceClinicOk() {
-  const kept = preferNewerPresence(
-    { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 200 },
-    { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 100 },
-  );
+  const playing = { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_h', lastSeen: 0 };
+  const staleLobby = { userId: 'g', status: 'lobby', mode: null, roomId: null, lastSeen: 100 };
+  const kept = preferNewerPresence(playing, staleLobby);
+  const seats = lobbySeatUsers([
+    playing,
+    { userId: 'idle', status: 'lobby', mode: null, roomId: null },
+  ]);
   return kept.status === 'playing'
     && kept.roomId === 'room_h'
+    && roomsFromPresence([playing]).length === 1
+    && seats.map((u) => u.userId).join() === 'idle'
     && LOBBY_STATE_EVENT === 'lobby_state';
 }
 
@@ -315,13 +346,13 @@ export function runLobbyClinic(input = {}) {
       'pvpAccept',
       '1:1 초대 수락',
       pvpInviteAcceptClinicOk(),
-      pvpInviteAcceptClinicOk() ? '수락하면 호스트 방에 붙고 상대가 보인다' : '초대 수락·상대 감지 오류',
+      pvpInviteAcceptClinicOk() ? '수락하면 호스트 방에 붙고 선공 시작을 따라간다' : '초대 수락·시작 동기 오류',
     ),
     item(
       'pvpPresence',
       '1:1 실시간 입장',
       pvpPresenceClinicOk(),
-      pvpPresenceClinicOk() ? '옛 대기 힌트가 입장을 덮지 않음' : '입장 동기화 오류',
+      pvpPresenceClinicOk() ? '방 개설은 대기실에 보이고 좌석에서는 빠짐' : '입장 동기화 오류',
     ),
     item(
       'pvpPlace',
