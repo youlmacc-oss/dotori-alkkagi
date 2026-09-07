@@ -16,6 +16,7 @@ import {
   roomsFromPresence,
 } from './LobbyRooms.js';
 import { SESSION_ACORNS, acornSettleKey, shouldForfeitOnLeave, shouldForfeitOnOpponentGone, shouldSettleAcorns } from './AcornPolicy.js';
+import { AI_LOBBY_ACORNS, shouldSettleAiAcorns } from './LobbyAi.js';
 import { RESULT_BEAT_MS, RESULT_FALL_HOLD_MS } from '../physics/ResultBeat.js';
 import {
   BOARD,
@@ -531,14 +532,17 @@ export function runLobbyClinic(input = {}) {
       'acorn',
       '도토리 정산',
       shouldSettleAcorns(win)
+        && shouldSettleAiAcorns({ ...win, aiOpponent: true })
+        && !shouldSettleAiAcorns(win)
         && !shouldSettleAcorns({ ...win, mode: 'ai' })
         && !shouldSettleAcorns({ ...win, started: false })
+        && AI_LOBBY_ACORNS === SESSION_ACORNS
         && !shouldSettleAcorns({
           ...win,
           settleKey: acornSettleKey({ roomId: 'room_h', matchGen: 0, winner: 'black' }),
           lastSettledKey: acornSettleKey({ roomId: 'room_h', matchGen: 0, winner: 'black' }),
         }),
-      `시작 10 · 1:1만 ±1 · 음수 허용 (${SESSION_ACORNS})`,
+      `시작 10 · 1:1·도토리봇 ±1 · 연습 AI 제외 (${SESSION_ACORNS})`,
     ),
     item(
       'forfeit',

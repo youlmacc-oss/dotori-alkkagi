@@ -48,6 +48,7 @@ export function presenceViewKey(users) {
       user?.inviteTargetId ?? '',
       user?.inviteAt ?? '',
       user?.pvpOpenedAt ?? '',
+      user?.acorns ?? '',
     ].join('\t'))
     .sort()
     .join('\n');

@@ -119,16 +119,42 @@ export function isPeerMatchStarted(users, { myId, roomId } = {}) {
   });
 }
 
+/** 호스트가 이미 시작을 눌러 방만 started인 상태. 자기 신호를 상대 시작으로 보지 않는다. */
+export function isHostStartPending({
+  isHost = false,
+  awaitingStart = false,
+  matchStarted = false,
+  roomStarted = false,
+} = {}) {
+  return isHost === true
+    && awaitingStart === true
+    && matchStarted !== true
+    && roomStarted === true;
+}
+
 export function shouldFollowPeerStart({
   awaitingStart,
   started,
   peerStarted,
   mode,
+  isHost = false,
+  roomStarted = false,
 } = {}) {
+  if (isHostStartPending({
+    isHost,
+    awaitingStart,
+    matchStarted: started,
+    roomStarted,
+  })) return false;
   return mode === 'pvp'
     && awaitingStart === true
     && started !== true
     && peerStarted === true;
+}
+
+/** camp 대기 타이머가 있으면 매 프레임 리셋하지 않는다. */
+export function shouldArmCampWait(timerOn = false) {
+  return timerOn !== true;
 }
 
 /** 시작된 대국은 상대 Presence가 잠깐 빠져도 시작 대기로 되돌리지 않는다. */

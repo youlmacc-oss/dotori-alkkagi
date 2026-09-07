@@ -30,7 +30,7 @@ export function acornSettleKey({ roomId, matchGen, winner } = {}) {
 }
 
 export function shouldSettleAcorns(result = {}) {
-  if (result.mode !== 'pvp') return false; // 1인·AI는 증감 없음
+  if (result.mode !== 'pvp') return false; // 1인·설정 AI 연습은 증감 없음
   if (result.started !== true) return false;
   if (result.spectating) return false;
   if (result.winner == null || result.winner === 'draw') return false;

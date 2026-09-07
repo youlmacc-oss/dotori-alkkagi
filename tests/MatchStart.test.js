@@ -8,8 +8,10 @@ import {
   canStartMatch,
   firstPlayerId,
   hasPvpOpponent,
+  isHostStartPending,
   isPeerMatchStarted,
   matchPlayersFromPresence,
+  shouldArmCampWait,
   overlayRoomAcorns,
   readAcornCount,
   shouldFollowPeerStart,
@@ -93,6 +95,19 @@ describe('선공·시작 권한', () => {
       peerStarted: true,
       mode: 'pvp',
     })).toBe(false);
+    expect(isHostStartPending({
+      isHost: true, awaitingStart: true, matchStarted: false, roomStarted: true,
+    })).toBe(true);
+    expect(shouldFollowPeerStart({
+      awaitingStart: true,
+      started: false,
+      peerStarted: true,
+      mode: 'pvp',
+      isHost: true,
+      roomStarted: true,
+    })).toBe(false);
+    expect(shouldArmCampWait(false)).toBe(true);
+    expect(shouldArmCampWait(true)).toBe(false);
     expect(shouldHoldPvpStartGate({ started: false, hasOpponent: false })).toBe(true);
     expect(shouldHoldPvpStartGate({ started: true, hasOpponent: false })).toBe(false);
     expect(shouldHoldPvpStartGate({ started: false, hasOpponent: true })).toBe(false);

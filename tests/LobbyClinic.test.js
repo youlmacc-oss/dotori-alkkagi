@@ -89,6 +89,8 @@ describe('대기실 자가진단', () => {
     expect(report.items.find((row) => row.id === 'pvpHold')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'bookSkip')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'nick')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'acorn')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'acorn')?.detail).toContain('도토리봇');
     expect(report.items.find((row) => row.id === 'realtime')?.status).toBe(CLINIC_WARN);
     expect(report.items.find((row) => row.id === 'actionCam')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'ready')?.ok).toBe(true);
@@ -118,6 +120,7 @@ describe('대기실 자가진단', () => {
     expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('참가하기는 없고'))).toBe(false);
     expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.title).toContain('다시 놓기');
     expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.title).toContain('먼저');
+    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.points.some((line) => line.includes('도토리봇'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'fall')?.points.some((line) => line.includes('액션캠'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'sound')?.title).toContain('액션캠');
     expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.title).toContain('대기방');

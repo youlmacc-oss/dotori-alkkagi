@@ -31,11 +31,15 @@ import {
 } from './network/DualMock.js';
 import {
   AI_ACCEPT_HINT,
-  AI_LOBBY_ACORNS,
   AI_LOBBY_NICKNAME,
   AI_LOBBY_USER_ID,
   isLobbyAiUser,
   mergeLobbyAiSeat,
+  packAiWallet,
+  readAiAcorns,
+  settleAiAcorns,
+  shouldApplyAiWallet,
+  writeAiAcorns,
 } from './network/LobbyAi.js';
 import { createRealtimeClient, isLoopTestSearch, readSupabaseConfig, readViteSupabaseEnv } from './network/RealtimeClient.js';
 import {
@@ -86,6 +90,8 @@ import {
   canStartMatch,
   firstPlayerId,
   overlayRoomAcorns,
+  isHostStartPending,
+  shouldArmCampWait,
   shouldFollowPeerStart,
   shouldHoldPvpStartGate,
 } from './network/MatchStart.js';
@@ -126,6 +132,7 @@ import {
 import {
   FIRST_HINT,
   PEER_REARRANGE_HINT,
+  START_WAIT_HINT,
   READY_ASK,
   READY_NO,
   READY_YES,
@@ -139,6 +146,7 @@ import {
 import {
   acornSettleKey,
   clearAcornHistory,
+  parseAcorn,
   settleSessionAcorns,
   shouldForfeitOnLeave,
   shouldForfeitOnOpponentGone,
@@ -367,6 +375,9 @@ const realtimeManager = new RealtimeManager({
   onRoomState: (payload) => {
     applyIncomingRoomState(payload);
   },
+  onAiWallet: (payload) => {
+    applyIncomingAiWallet(payload);
+  },
   onSpectatorData: (gameState) => {
     applyIncomingMatchSync(gameState);
   },
@@ -406,7 +417,9 @@ let lastMatchSyncTs = 0;
 let lastMatchSyncSeq = 0;
 let matchSyncSeq = 0;
 let lastPeerCamp = null;
+let campSentForStart = false;
 let lastAcornSettleKey = '';
+let aiWallet = packAiWallet({ acorns: readAiAcorns(), seq: 0 });
 let helloRetryTimer = 0;
 let helloRetryLeft = 0;
 let helloRetryInvite = null;
@@ -642,6 +655,36 @@ function isMatchHost() {
   return myStoneColor() === STONE_COLOR.BLACK;
 }
 
+function currentAiAcorns() {
+  return parseAcorn(aiWallet?.acorns, readAiAcorns());
+}
+
+function publishAiWallet() {
+  const payload = packAiWallet({
+    acorns: currentAiAcorns(),
+    seq: aiWallet.seq,
+    settleKey: aiWallet.settleKey,
+  });
+  return realtimeManager.broadcastAiWallet(payload);
+}
+
+function applyIncomingAiWallet(payload) {
+  if (!shouldApplyAiWallet(payload, aiWallet)) return false;
+  const next = writeAiAcorns(payload.acorns);
+  aiWallet = packAiWallet({
+    acorns: next,
+    seq: payload.seq,
+    settleKey: payload.settleKey,
+    timestamp: payload.timestamp,
+  });
+  if (isLobbyAiUser(matchRoom?.guestId)) {
+    matchRoom = stampRoomAcorns(matchRoom, { myId: AI_LOBBY_USER_ID, acorns: next });
+  }
+  lastLobbyViewKey = '';
+  updateLobbyUserList(lobbyUserList);
+  return true;
+}
+
 function applyAcornResult(payload) {
   const settleKey = acornSettleKey({
     roomId: currentMatchRoomId(),
@@ -657,8 +700,21 @@ function applyAcornResult(payload) {
     settleKey,
     lastSettledKey: lastAcornSettleKey,
   };
-  if (shouldSettleAcorns(result)) lastAcornSettleKey = settleKey;
+  const settled = shouldSettleAcorns(result);
+  if (settled) lastAcornSettleKey = settleKey;
   sessionAcorns = writeNightAcorns(settleSessionAcorns(sessionAcorns, result));
+  if (settled && isLobbyAiUser(matchRoom?.guestId)) {
+    const nextAi = writeAiAcorns(settleAiAcorns(currentAiAcorns(), { ...result, aiOpponent: true }));
+    aiWallet = packAiWallet({
+      acorns: nextAi,
+      seq: (Number(aiWallet.seq) || 0) + 1,
+      settleKey,
+    });
+    matchRoom = stampRoomAcorns(matchRoom, { myId: AI_LOBBY_USER_ID, acorns: nextAi });
+    void publishAiWallet();
+    lastLobbyViewKey = '';
+    updateLobbyUserList(lobbyUserList);
+  }
   syncAcornHud();
   if (matchRoom?.roomId) publishRoomState();
 }
@@ -800,6 +856,14 @@ function syncStartGate() {
   } else if (pvp && !ready) {
     hintText = PVP_WAIT_HINT;
     hintShow = true;
+  } else if (isHostStartPending({
+    isHost: isMatchHost(),
+    awaitingStart,
+    matchStarted,
+    roomStarted: Boolean(matchRoom?.started),
+  })) {
+    hintText = START_WAIT_HINT;
+    hintShow = true;
   } else if (view.startVisible && view.firstHint) {
     hintText = FIRST_HINT;
     hintShow = true;
@@ -874,7 +938,10 @@ function applyIncomingRoomState(payload) {
   syncMatchRoom(next);
   if (next.acked) stopHelloRetry();
   if (next.started && awaitingStart && !matchStarted) {
-    publishCampLayout();
+    if (!campSentForStart) {
+      campSentForStart = true;
+      publishCampLayout();
+    }
     if (isMatchHost() && lastPeerCamp) emitHostStartBoard();
     else if (isMatchHost()) armCampWait();
   }
@@ -955,7 +1022,7 @@ function clearCampWait() {
 
 function armCampWait() {
   if (!isMatchHost() || !awaitingStart) return;
-  clearCampWait();
+  if (!shouldArmCampWait(Boolean(campWaitTimer))) return;
   campWaitTimer = setTimeout(() => {
     campWaitTimer = 0;
     if (awaitingStart && matchRoom?.started) emitHostStartBoard();
@@ -991,6 +1058,8 @@ function applyMatchStarted({ publishStart = false } = {}) {
   if (!awaitingStart) return false;
   awaitingStart = false;
   matchStarted = true;
+  campSentForStart = false;
+  lastPeerCamp = null;
   clearSentLobbyInvite();
   clearCampWait();
   pvpOpenedAt = null;
@@ -1131,9 +1200,13 @@ function beginMatchIfAllowed() {
     matchRoom = applyRoomStart(matchRoom);
     return emitHostStartBoard();
   }
-  publishCampLayout();
+  if (!campSentForStart) {
+    campSentForStart = true;
+    publishCampLayout();
+  }
   matchRoom = applyRoomStart(matchRoom);
-  publishRoomState();
+  let ok = publishRoomState();
+  if (!ok) ok = publishRoomState();
   publishPresence();
   if (isMatchHost()) {
     if (lastPeerCamp) return emitHostStartBoard();
@@ -1146,13 +1219,24 @@ function beginMatchIfAllowed() {
 }
 
 function beginMatchFromPeer() {
+  if (isHostStartPending({
+    isHost: isMatchHost(),
+    awaitingStart,
+    matchStarted,
+    roomStarted: Boolean(matchRoom?.started),
+  })) return false;
   if (!shouldFollowPeerStart({
     awaitingStart,
     started: matchStarted,
     peerStarted: peerHasStartedMatch(),
     mode: engine.gameMode,
+    isHost: isMatchHost(),
+    roomStarted: Boolean(matchRoom?.started),
   })) return false;
-  publishCampLayout();
+  if (!campSentForStart) {
+    campSentForStart = true;
+    publishCampLayout();
+  }
   if (isMatchHost() && lastPeerCamp) return emitHostStartBoard();
   if (isMatchHost()) armCampWait();
   return false;
@@ -1235,6 +1319,7 @@ function showLobby() {
   syncNickField();
   refreshLobbyPresence({ reconnect: true, publish: true });
   renderLobby();
+  void publishAiWallet();
   syncSceneMode();
   if (!isDualGuestSearch(window.location.search) && shouldAutoOpenGuideBook() && !pendingInviteRoom) {
     bookOpenedByConnect = true;
@@ -1515,6 +1600,7 @@ function enterMatchRoom() {
   inMatchRoom = true;
   awaitingStart = true;
   matchStarted = false;
+  campSentForStart = false;
   clearSentLobbyInvite();
   const joinedId = joinedMatchRoomId({
     joiningRoomId,
@@ -1626,6 +1712,7 @@ function returnToPvpWait() {
   suppressResult = true;
   matchStarted = false;
   awaitingStart = true;
+  campSentForStart = false;
   clearSentLobbyInvite();
   lastPeerCamp = null;
   lastMatchSyncSeq = 0;
@@ -1689,6 +1776,7 @@ function restartPvpRematch() {
   matchRoom = applyRoomRematch(matchRoom);
   awaitingStart = true;
   matchStarted = false;
+  campSentForStart = false;
   lastMatchSyncTs = 0;
   lastMatchSyncSeq = 0;
   matchSyncSeq = 0;
@@ -1726,6 +1814,7 @@ function followPvpRematch(payload) {
   hideResult();
   awaitingStart = true;
   matchStarted = false;
+  campSentForStart = false;
   lastMatchSyncTs = 0;
   lastMatchSyncSeq = 0;
   matchSyncSeq = 0;
@@ -2175,7 +2264,7 @@ function seatAiGuest() {
     guestId: AI_LOBBY_USER_ID,
     guestName: AI_LOBBY_NICKNAME,
   }));
-  matchRoom = stampRoomAcorns(matchRoom, { myId: AI_LOBBY_USER_ID, acorns: AI_LOBBY_ACORNS });
+  matchRoom = stampRoomAcorns(matchRoom, { myId: AI_LOBBY_USER_ID, acorns: currentAiAcorns() });
   matchRoom = stampRoomAcorns(matchRoom, { myId: realtimeManager.userId, acorns: myAcorns() });
   syncMatchRoom(matchRoom);
   clearSentLobbyInvite();
@@ -2433,6 +2522,7 @@ function updateLobbyUserList(users) {
     playing: inMatchRoom && isLobbyAiUser(matchRoom?.guestId),
     roomId: matchRoom?.roomId,
     started: matchStarted,
+    acorns: currentAiAcorns(),
   });
   const key = `${presenceViewKey(next)}#${roomsFromPresence(next).map((r) => r.id).sort().join(',')}`;
   const same = key === lastLobbyViewKey && lastLobbyViewKey !== '';
@@ -2965,6 +3055,7 @@ function bootRealtime(attempt = 0) {
     writeNightClaim(realtimeManager.userId, nightClaim.tabToken);
     realtimeManager.startHeartbeat();
     publishPresence();
+    void publishAiWallet();
     syncNickField();
     if (isDualSearch(window.location.search)) setTicker(DUAL_HINT);
     armDualGuestSeat();

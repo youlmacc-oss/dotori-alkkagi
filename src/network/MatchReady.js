@@ -9,6 +9,7 @@ export const READY_ASK_MS = 5000;
 export const REARRANGE_MS = 10000;
 export const FIRST_HINT_AFTER_MS = 3000;
 export const FIRST_HINT = '도토리가 적은 사람이 시작 버튼을 누르고 선공합니다.';
+export const START_WAIT_HINT = '상대 진형을 맞추고 있습니다';
 export const PEER_REARRANGE_HINT = '상대가 바둑알을 재배치하고 있습니다.';
 
 export function createMatchReady(now = 0) {

@@ -7,6 +7,7 @@ import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, isSparse
 import { MATCH_SYNC_EVENT, packMatchSync } from './MatchSync.js';
 import { PVP_INVITE_EVENT } from './PvpInvite.js';
 import { ROOM_STATE_EVENT } from './RoomState.js';
+import { AI_ACORN_EVENT } from './LobbyAi.js';
 import {
   defaultNickname,
   NICKNAME_LOCKED_HINT,
@@ -91,6 +92,7 @@ export class RealtimeManager {
     this.onSweepLeave = options.onSweepLeave || (() => {});
     this.onPvpInvite = options.onPvpInvite || (() => {});
     this.onRoomState = options.onRoomState || (() => {});
+    this.onAiWallet = options.onAiWallet || (() => {});
     this.keepNickname = options.keepNickname || null;
     this._disconnectedAt = null;
     this._staleTimer = 0;
@@ -297,6 +299,9 @@ export class RealtimeManager {
         })
         .on('broadcast', { event: ROOM_STATE_EVENT }, ({ payload }) => {
           this.onRoomState?.(payload);
+        })
+        .on('broadcast', { event: AI_ACORN_EVENT }, ({ payload }) => {
+          this.onAiWallet?.(payload);
         });
 
       await new Promise((resolve, reject) => {
@@ -508,6 +513,13 @@ export class RealtimeManager {
   async broadcastRoomState(payload) {
     if (!this.channel || !payload?.roomId || !payload?.hostId) return false;
     return this._sendBroadcast(ROOM_STATE_EVENT, payload);
+  }
+
+  async broadcastAiWallet(payload) {
+    if (!this.channel || !payload) return false;
+    let ok = await this._sendBroadcast(AI_ACORN_EVENT, payload, 2);
+    if (!ok) ok = await this._sendBroadcast(AI_ACORN_EVENT, payload, 0);
+    return ok;
   }
 
   async broadcastSpectatorData(gameState) {

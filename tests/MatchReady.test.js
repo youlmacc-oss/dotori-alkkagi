@@ -3,6 +3,7 @@ import {
   FIRST_HINT,
   FIRST_HINT_AFTER_MS,
   PEER_REARRANGE_HINT,
+  START_WAIT_HINT,
   READY_ASK,
   READY_ASK_MS,
   READY_NO,
@@ -55,6 +56,7 @@ describe('대전방 재배치·시작 타이밍', () => {
     expect(FIRST_HINT).toContain('도토리가 적은 사람');
     expect(FIRST_HINT).toContain('시작 버튼');
     expect(FIRST_HINT).toContain('선공');
+    expect(START_WAIT_HINT).toContain('진형');
     expect(stepMatchReady(state, READY_ASK_MS + FIRST_HINT_AFTER_MS - 1).firstHint).toBe(false);
     expect(stepMatchReady(state, READY_ASK_MS + FIRST_HINT_AFTER_MS).firstHint).toBe(true);
   });
