@@ -150,32 +150,45 @@ try {
       throw new Error(`${device.name} lobby clinic missing: ${JSON.stringify(clinic)}`);
     }
     await page.evaluate(() => document.getElementById('lobby-book-close')?.click());
-    // [PVP 공개 중단] 초대만 안내·1:1 점멸. 재개 시 아래를 원래 검사로 되돌린다
-    const pvpShelved = await page.evaluate(() => {
+    const inviteNotice = await page.evaluate(() => {
       const root = document.getElementById('invite-only-notice');
+      const text = document.getElementById('invite-only-text');
+      return {
+        ok: Boolean(root && !root.hidden && text?.textContent.includes('초대에 의해서만')),
+        hidden: root?.hidden,
+        text: text?.textContent,
+      };
+    });
+    if (!inviteNotice.ok) {
+      throw new Error(`${device.name} invite-only notice missing: ${JSON.stringify(inviteNotice)}`);
+    }
+    await page.evaluate(() => document.getElementById('invite-only-ok')?.click());
+    await page.waitForFunction(() => document.getElementById('invite-only-notice')?.hidden === true, null, { timeout: 3000 });
+    const pvpInvite = await page.evaluate(() => {
       const btn = document.getElementById('lobby-mode-pvp');
       const empty = document.querySelector('.lobby-empty');
       const hint = document.getElementById('lobby-pvp-hint');
       const balloon = document.getElementById('lobby-pvp-balloon');
       const vis = btn ? getComputedStyle(btn).visibility : '';
+      const anim = btn ? getComputedStyle(btn).animationName : '';
       return {
         ok: Boolean(
-          root?.hidden === true
-          && btn?.textContent.includes('1:1')
-          && btn?.classList.contains('is-pvp-shelved')
-          && vis === 'hidden'
-          && !btn.classList.contains('is-invite-blink')
+          btn?.textContent.includes('1:1')
+          && !btn.classList.contains('is-pvp-shelved')
+          && vis !== 'hidden'
+          && btn.classList.contains('is-invite-blink')
+          && anim.includes('blink')
           && empty?.textContent.includes('개설된 대국')
           && hint?.textContent.includes('대국방')
           && hint?.textContent.includes('시작')
           && !balloon
         ),
-        hidden: root?.hidden,
         vis,
+        anim,
       };
     });
-    if (!pvpShelved.ok) {
-      throw new Error(`${device.name} pvp shelved ui missing: ${JSON.stringify(pvpShelved)}`);
+    if (!pvpInvite.ok) {
+      throw new Error(`${device.name} pvp invite cue missing: ${JSON.stringify(pvpInvite)}`);
     }
     if (device.name === 'iPhone 14 Pro') {
       await page.screenshot({ path: outFile, timeout: 60000 });
@@ -453,24 +466,26 @@ try {
     }
     await page.locator('#spectate-leave').click({ force: true });
     await page.waitForSelector('#lobby-users:not([hidden])', { timeout: 8000 });
-    // [PVP 공개 중단] 1:1 대기 점멸·개설 팝업. 재개 시 아래를 원래 검사로 되돌린다
-    const pvpEntryClosed = await page.evaluate(() => {
+    const pvpWaitGuide = await page.evaluate(() => {
       const guide = document.getElementById('lobby-location-guide');
       const btn = document.getElementById('lobby-mode-pvp');
       const pick = document.getElementById('pvp-guide-pick');
       const hint = document.getElementById('lobby-pvp-hint');
       const balloon = document.getElementById('lobby-pvp-balloon');
+      const blinking = [...document.querySelectorAll('.lobby-room-status.is-wait-blink')];
+      const anim = guide ? getComputedStyle(guide).animationName : '';
       return Boolean(
-        !guide?.classList.contains('is-wait-blink')
-        && btn?.classList.contains('is-pvp-shelved')
-        && !btn.classList.contains('is-invite-blink')
+        guide?.classList.contains('is-wait-blink')
+        && anim.includes('blink')
+        && blinking.length >= 1
+        && !btn?.classList.contains('is-pvp-shelved')
         && pick?.hidden !== false
         && hint?.textContent.includes('대국방')
         && !balloon
       );
     });
-    if (!pvpEntryClosed) {
-      throw new Error(`${device.name} pvp entry still open after seed`);
+    if (!pvpWaitGuide) {
+      throw new Error(`${device.name} pvp wait guide missing after seed`);
     }
     await page.evaluate(() => {
       document.getElementById('lobby-settings')?.click();

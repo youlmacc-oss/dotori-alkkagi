@@ -119,7 +119,7 @@ function item(id, label, ok, detail, status) {
 
 export function isLiveRealtime(client) {
   const name = client?.constructor?.name || '';
-  return Boolean(name) && name !== 'MockSupabaseClient';
+  return Boolean(name) && name !== 'MockSupabaseClient' && name !== 'DualMockSupabaseClient';
 }
 
 export function readyClinicOk() {

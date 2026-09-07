@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { DualMockSupabaseClient, isDualSearch } from './DualMock.js';
 import { LOBBY_CHANNEL, MockSupabaseClient, lobbyChannelConfig } from './RealtimeManager.js';
 
 export const SUPABASE_URL_ENV = 'VITE_SUPABASE_URL';
@@ -37,12 +38,13 @@ export function readSupabaseConfig(env) {
 
 export function isMockRealtimeClient(client) {
   const name = client?.constructor?.name || '';
-  return !name || name === 'MockSupabaseClient';
+  return !name || name === 'MockSupabaseClient' || name === 'DualMockSupabaseClient';
 }
 
 export function createRealtimeClient(env) {
   const search = typeof location !== 'undefined' ? location.search : '';
   if (isLoopTestSearch(search)) return new MockSupabaseClient();
+  if (isDualSearch(search)) return new DualMockSupabaseClient();
   const { url, anonKey, live } = readSupabaseConfig(env);
   if (!live) return new MockSupabaseClient();
   return createClient(url, anonKey, {

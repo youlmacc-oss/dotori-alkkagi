@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ROOM_STATE_EVENT,
+  applyRoomAck,
   applyRoomClearInvite,
   applyRoomGuest,
   applyRoomInvite,
@@ -24,6 +25,8 @@ describe('1:1 방 상태', () => {
   it('수락하면 guestId가 생기고 호스트 초대 시트는 접는다', () => {
     const opened = createRoomState({ roomId: 'room_host', hostId: 'host', hostName: '호치' });
     expect(opened.guestId).toBeNull();
+    expect(opened.seq).toBe(0);
+    expect(opened.acked).toBe(false);
     expect(shouldKeepInviteShareFromRoom(opened, {
       myId: 'host', inRoom: true, mode: 'pvp',
     })).toBe(true);
@@ -85,8 +88,15 @@ describe('1:1 방 상태', () => {
     expect(shouldReturnToPvpWait({
       inRoom: true, mode: 'pvp', hadOpponent: true, hasOpponent: false, started: true, phase: 'gameOver',
     })).toBe(true);
+    const seated = applyRoomAck(applyRoomGuest(
+      createRoomState({ roomId: 'room_host', hostId: 'host' }),
+      { guestId: 'guest' },
+    ));
+    expect(seated.acked).toBe(true);
     const rematch = applyRoomRematch(playing);
-    expect(rematch).toMatchObject({ guestId: 'guest', started: false, phase: 'ready', matchGen: 1 });
+    expect(rematch).toMatchObject({
+      guestId: 'guest', started: false, phase: 'ready', matchGen: 1, seq: 0, acked: true,
+    });
     expect(incomingResetsForRematch(playing, rematch)).toBe(true);
     expect(mergeRoomState(playing, rematch).started).toBe(false);
     expect(mergeRoomState(rematch, { ...playing, hostAcorns: 11, guestAcorns: 9 }).started).toBe(false);

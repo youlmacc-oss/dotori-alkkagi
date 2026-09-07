@@ -1182,6 +1182,8 @@ export class GameEngine {
       ? options.aiDifficulty
       : AI_DIFFICULTY.INTERMEDIATE;
     this.inputLocked = false;
+    this.aiOpponent = false;
+    this.aiColor = STONE_COLOR.WHITE;
     this.placementOnly = false;
     this._place = null;
     this._lastPullBlockAt = 0;
@@ -1658,9 +1660,19 @@ export class GameEngine {
     if (this.gameMode !== GAME_MODE.SPECTATE) {
       this.spectatorData = null;
     }
+    if (this.gameMode !== GAME_MODE.PVP) {
+      this.aiOpponent = false;
+      this.aiColor = STONE_COLOR.WHITE;
+    }
     this.inputLocked = false;
     this.applyDefaultMatchFormation(this.formation?.count);
     return this.getSnapshot();
+  }
+
+  setAiOpponent(on, color = STONE_COLOR.WHITE) {
+    this.aiOpponent = Boolean(on);
+    this.aiColor = color === STONE_COLOR.BLACK ? STONE_COLOR.BLACK : STONE_COLOR.WHITE;
+    return this.aiOpponent;
   }
 
   /**
@@ -1794,7 +1806,8 @@ export class GameEngine {
 
   applyRemoteLaunch(shot = {}) {
     if (
-      this.phase === PHASE.GAME_OVER
+      this._paused
+      || this.phase === PHASE.GAME_OVER
       || this.phase === PHASE.SPECTATING
       || this.phase === PHASE.RESOLVING
     ) return false;
@@ -1830,7 +1843,10 @@ export class GameEngine {
     if (!shot?.ok || this.phase === PHASE.GAME_OVER || this.phase === PHASE.RESOLVING) return false;
     const stone = this.stones.find((s) => s.id === shot.shooterId && !s.fallen);
     if (!stone) return false;
-    if (this.gameMode === GAME_MODE.AI && stone.color !== STONE_COLOR.WHITE) return false;
+    if (
+      (this.gameMode === GAME_MODE.AI || this.aiOpponent)
+      && stone.color !== (this.aiColor || STONE_COLOR.WHITE)
+    ) return false;
     const neighbors = this.getAliveStones().filter((s) => s.id !== stone.id);
     if (resolvePullBlock(stone, shot.pointer, neighbors)) return false;
     Sleeping.set(stone.body, false);

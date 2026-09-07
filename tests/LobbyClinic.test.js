@@ -94,6 +94,7 @@ describe('대기실 자가진단', () => {
     expect(report.items.find((row) => row.id === 'ready')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'pull')?.ok).toBe(true);
     expect(isLiveRealtime({ constructor: { name: 'MockSupabaseClient' } })).toBe(false);
+    expect(isLiveRealtime({ constructor: { name: 'DualMockSupabaseClient' } })).toBe(false);
   });
 
   it('엔진이 없으면 실패하고, 가이드 페이지는 9장이다', () => {

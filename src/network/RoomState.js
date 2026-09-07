@@ -21,9 +21,25 @@ export function createRoomState({
     started: false,
     phase: 'waiting',
     matchGen: 0,
+    seq: 0,
+    acked: false,
     hostAcorns: null,
     guestAcorns: null,
   };
+}
+
+export function roomSeq(state) {
+  const n = Number(state?.seq);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+export function nextRoomSeq(state) {
+  return roomSeq(state) + 1;
+}
+
+export function applyRoomAck(state) {
+  if (!state?.roomId || !state.guestId) return state;
+  return { ...state, acked: true };
 }
 
 export function roomMatchGen(state) {
@@ -86,6 +102,8 @@ export function applyRoomLeave(state, { leaverId } = {}) {
     started: false,
     phase: 'waiting',
     matchGen: 0,
+    seq: 0,
+    acked: false,
     leaverId: who || null,
     leftoverId: leftoverId || null,
   };
@@ -127,6 +145,8 @@ export function applyRoomRematch(state) {
     started: false,
     phase: 'ready',
     matchGen: nextGen,
+    seq: 0,
+    acked: true,
     inviteTargetId: null,
     leaverId: null,
     leftoverId: null,
@@ -201,6 +221,8 @@ export function mergeRoomState(current, incoming) {
     guestName: incoming.guestName || withGuest.guestName,
     started: Boolean(withGuest.started || incoming.started),
     matchGen: Math.max(roomMatchGen(withGuest), roomMatchGen(incoming)),
+    seq: Math.max(roomSeq(withGuest), roomSeq(incoming)),
+    acked: Boolean(withGuest.acked || incoming.acked),
     hostAcorns: incoming.hostAcorns ?? withGuest.hostAcorns,
     guestAcorns: incoming.guestAcorns ?? withGuest.guestAcorns,
     inviteTargetId: (withGuest.guestId || incoming.guestId)

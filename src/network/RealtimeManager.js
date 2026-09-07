@@ -528,6 +528,8 @@ export class RealtimeManager {
       force: gameState.force,
       power: gameState.power,
       color: gameState.color,
+      seq: gameState.seq,
+      matchGen: gameState.matchGen,
     }));
   }
 

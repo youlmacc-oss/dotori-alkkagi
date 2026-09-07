@@ -3,6 +3,7 @@
  */
 
 import { PRESENCE_STATUS, canJoinPvpRoom, isPlayableLobbyMode, roomsFromPresence } from './LobbyRooms.js';
+import { canInviteLobbyAi, isLobbyAiUser } from './LobbyAi.js';
 import { hasPvpOpponent, matchPlayersFromPresence } from './MatchStart.js';
 import {
   NICKNAME_MAX,
@@ -12,8 +13,17 @@ import {
   writeStoredNickname,
 } from './Nickname.js';
 
-/** 1:1 공개 진입. false면 버튼 숨김·안내 팝업 중단. 재개 시 true. */
-export const PVP_PUBLIC_ENABLED = false;
+/**
+ * 1:1 공개 진입. 배포·개발 모두 기본 연다.
+ * VITE_PVP_PUBLIC=0 으로만 숨길 수 있다.
+ */
+export function readPvpPublicEnabled(env = import.meta.env) {
+  const raw = String(env?.VITE_PVP_PUBLIC ?? '').trim().toLowerCase();
+  if (raw === '0' || raw === 'false' || raw === 'off') return false;
+  return true;
+}
+
+export const PVP_PUBLIC_ENABLED = readPvpPublicEnabled();
 
 export const PVP_ROOM_HINT = '대국방을 선택하면 게임이 시작됩니다';
 export const PVP_GUIDE_ASK = '가이드선을 사용하시겠습니까?';
@@ -231,12 +241,15 @@ export function canInviteLobbyUser({
   started,
   isHost,
   hasOpponent,
+  spectating,
   target,
 } = {}) {
   const id = target?.userId ?? target?.id;
-  return canShareInvite({ mode, inRoom, started, isHost, hasOpponent })
-    && Boolean(id)
-    && isIdleLobbyUser(target);
+  if (!id || !isIdleLobbyUser(target)) return false;
+  if (isLobbyAiUser(target)) {
+    return canInviteLobbyAi({ started, hasOpponent, spectating });
+  }
+  return canShareInvite({ mode, inRoom, started, isHost, hasOpponent });
 }
 
 export function buildLobbyInvite({
@@ -289,12 +302,18 @@ export function evaluateLobbyInvite(payload, myId) {
 export const INVITE_ACTION_DECLINE = 'decline';
 export const INVITE_ACTION_CANCEL = 'cancel';
 export const INVITE_ACTION_ACCEPT = 'accept';
+export const INVITE_ACTION_HELLO = 'hello';
+export const INVITE_ACTION_ACK = 'ack';
+export const HELLO_RETRY_MS = 1500;
+export const HELLO_RETRY_MAX = 2;
 
 export function isInviteReply(payload) {
   const action = String(payload?.action || '');
   return action === INVITE_ACTION_DECLINE
     || action === INVITE_ACTION_CANCEL
-    || action === INVITE_ACTION_ACCEPT;
+    || action === INVITE_ACTION_ACCEPT
+    || action === INVITE_ACTION_HELLO
+    || action === INVITE_ACTION_ACK;
 }
 
 export function buildInviteReply(invite, action, extras = {}) {
@@ -313,13 +332,63 @@ export function shouldApplyInviteDecline(payload, { myId, sentTargetId } = {}) {
     && (!sentTargetId || String(payload.targetId) === String(sentTargetId));
 }
 
-export function shouldApplyInviteAccept(payload, { myId, sentTargetId, roomId, inRoom } = {}) {
-  if (payload?.action !== INVITE_ACTION_ACCEPT || !myId) return false;
+export function shouldApplyInviteAccept(payload, {
+  myId,
+  sentTargetId,
+  roomId,
+  inRoom,
+  guestId,
+} = {}) {
+  const action = String(payload?.action || '');
+  if (
+    (action !== INVITE_ACTION_ACCEPT && action !== INVITE_ACTION_HELLO)
+    || !myId
+  ) return false;
   if (String(payload.hostId) !== String(myId)) return false;
   if (inRoom === false) return false;
-  if (sentTargetId && String(payload.targetId) !== String(sentTargetId)) return false;
   if (roomId && payload.roomId && String(payload.roomId) !== String(roomId)) return false;
-  return Boolean(payload.targetId && payload.roomId);
+  const incomingGuest = String(payload.targetId || payload.guestId || '').trim();
+  if (!incomingGuest || !payload.roomId) return false;
+  const seated = String(guestId || '').trim();
+  if (seated && seated !== incomingGuest) return false;
+  if (
+    sentTargetId
+    && String(payload.targetId || incomingGuest) !== String(sentTargetId)
+    && seated
+  ) return false;
+  return true;
+}
+
+export function buildRoomHello(invite, extras = {}) {
+  const guestId = String(extras.guestId || extras.targetId || invite?.targetId || '').trim();
+  return {
+    ...buildInviteReply(invite, INVITE_ACTION_HELLO, extras),
+    action: INVITE_ACTION_HELLO,
+    guestId,
+    targetId: guestId || String(invite?.targetId || ''),
+    seq: 0,
+  };
+}
+
+export function buildRoomAck(state, extras = {}) {
+  const guestId = String(extras.guestId || state?.guestId || '').trim();
+  return {
+    roomId: String(state?.roomId || extras.roomId || '').trim(),
+    hostId: String(state?.hostId || extras.hostId || '').trim(),
+    hostName: String(extras.hostName || state?.hostName || '').trim(),
+    targetId: guestId,
+    guestId,
+    guestName: String(extras.guestName || state?.guestName || '').trim(),
+    action: INVITE_ACTION_ACK,
+    seq: Number(extras.seq) >= 0 ? Number(extras.seq) : 0,
+  };
+}
+
+export function shouldApplyRoomAck(payload, { myId, roomId } = {}) {
+  if (payload?.action !== INVITE_ACTION_ACK || !myId) return false;
+  if (roomId && payload.roomId && String(payload.roomId) !== String(roomId)) return false;
+  const guest = String(payload.guestId || payload.targetId || '');
+  return guest === String(myId) && Boolean(payload.roomId && payload.hostId);
 }
 
 export function shouldKeepHostInviteSheet({

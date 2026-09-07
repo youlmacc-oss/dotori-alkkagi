@@ -20,7 +20,24 @@ import { exitGame, shouldQuitFromLobbyClose } from './ui/GameExit.js';
 import { resultSubLine } from './physics/ResultBeat.js';
 import { soundEngine } from './audio/SoundEngine.js';
 import { RealtimeManager, bindPresenceUnload } from './network/RealtimeManager.js';
-import { createRealtimeClient, readSupabaseConfig, readViteSupabaseEnv } from './network/RealtimeClient.js';
+import {
+  DUAL_HINT,
+  dualGuestHref,
+  isDualGuestSearch,
+  isDualSearch,
+  mountDualGuestFrame,
+  openDualMatch,
+  shouldSpawnDualGuestFrame,
+} from './network/DualMock.js';
+import {
+  AI_ACCEPT_HINT,
+  AI_LOBBY_ACORNS,
+  AI_LOBBY_NICKNAME,
+  AI_LOBBY_USER_ID,
+  isLobbyAiUser,
+  mergeLobbyAiSeat,
+} from './network/LobbyAi.js';
+import { createRealtimeClient, isLoopTestSearch, readSupabaseConfig, readViteSupabaseEnv } from './network/RealtimeClient.js';
 import {
   LOBBY_CAP,
   dedupePresenceUsers,
@@ -68,23 +85,26 @@ import {
   PVP_WAIT_HINT,
   canStartMatch,
   firstPlayerId,
-  hasPvpOpponent,
-  isPeerMatchStarted,
-  matchPlayersFromPresence,
   overlayRoomAcorns,
   shouldFollowPeerStart,
   shouldHoldPvpStartGate,
 } from './network/MatchStart.js';
 import {
+  CAMP_WAIT_MS,
+  TURN_END_WATCHDOG_MS,
   canApplyRemoteBoard,
   isLaunchSync,
   isStaleEndedMatchSync,
+  mergeCampLayouts,
+  packStoneSync,
   shouldApplyMatchSync,
+  shouldFireTurnEndWatchdog,
   shouldFollowRemoteStart,
   shouldPublishMatchSync,
   shouldPulseMatchSync,
 } from './network/MatchSync.js';
 import {
+  applyRoomAck,
   applyRoomGuest,
   applyRoomClearInvite,
   applyRoomInvite,
@@ -97,6 +117,7 @@ import {
   mergeRoomState,
   pvpSeatColor,
   roomHasOpponent,
+  roomMatchGen,
   shouldApplyRoomState,
   shouldKeepPvpRematch,
   shouldReturnToPvpWait,
@@ -159,6 +180,11 @@ import {
   INVITE_ACTION_ACCEPT,
   INVITE_ACTION_CANCEL,
   INVITE_ACTION_DECLINE,
+  HELLO_RETRY_MAX,
+  HELLO_RETRY_MS,
+  buildRoomAck,
+  buildRoomHello,
+  shouldApplyRoomAck,
   lobbyInviteAsk,
   pickJoinablePvp,
   roomFromInvite,
@@ -186,7 +212,6 @@ import {
   shareViaKakaoTalk,
   shouldExpirePvpWait,
   shouldInvitePvp,
-  PVP_PUBLIC_ENABLED,
 } from './network/PvpInvite.js';
 import {
   BOOK_SKIP_LABEL,
@@ -325,8 +350,16 @@ const realtimeManager = new RealtimeManager({
       sentTargetId: sentLobbyInvite?.inviteTargetId,
       roomId: currentMatchRoomId(),
       inRoom: inMatchRoom && engine.phase !== PHASE.SPECTATING,
+      guestId: matchRoom?.guestId,
     })) {
       applyHostAcceptedInvite(payload);
+      return;
+    }
+    if (shouldApplyRoomAck(payload, {
+      myId: realtimeManager.userId,
+      roomId: currentMatchRoomId(),
+    })) {
+      applyGuestRoomAck(payload);
       return;
     }
     receiveLobbyInvite(payload);
@@ -370,7 +403,18 @@ let sentLobbyInvite = null;
 const lastSeenInviteAt = new Map();
 let lastMatchSyncAt = 0;
 let lastMatchSyncTs = 0;
+let lastMatchSyncSeq = 0;
+let matchSyncSeq = 0;
+let lastPeerCamp = null;
 let lastAcornSettleKey = '';
+let helloRetryTimer = 0;
+let helloRetryLeft = 0;
+let helloRetryInvite = null;
+let turnEndWatchdog = 0;
+let campWaitTimer = 0;
+let lastLaunchAt = 0;
+let gotShooterTurnEnd = false;
+let emittingStartBoard = false;
 
 let settingsModal = null;
 
@@ -627,19 +671,23 @@ function livePresencePool() {
 }
 
 function matchPlayers() {
-  return overlayRoomAcorns(
-    matchPlayersFromPresence(lobbyRoomsUsers(), {
-      myId: realtimeManager.userId,
-      myAcorns: myAcorns(),
-      mode: engine.gameMode,
-      roomId: currentMatchRoomId(),
-    }),
-    matchRoom,
-    { myId: realtimeManager.userId, myAcorns: myAcorns() },
-  );
+  return overlayRoomAcorns([], matchRoom, {
+    myId: realtimeManager.userId,
+    myAcorns: myAcorns(),
+  });
+}
+
+function handshakeReady() {
+  if (engine.gameMode !== GAME_MODE.PVP) return true;
+  if (!roomHasOpponent(matchRoom)) return false;
+  if (isLobbyAiUser(matchRoom?.guestId)) return true;
+  if (isMatchHost()) return true;
+  return Boolean(matchRoom?.acked);
 }
 
 function canStartNow() {
+  if (engine.gameMode === GAME_MODE.PVP && !handshakeReady()) return false;
+  if (engine.gameMode === GAME_MODE.PVP && matchRoom?.started && !matchStarted) return false;
   return canStartMatch({
     mode: engine.gameMode,
     userId: realtimeManager.userId,
@@ -727,7 +775,7 @@ function syncStartGate() {
   }
   const view = currentReadyView();
   const pvp = engine.gameMode === GAME_MODE.PVP;
-  const ready = roomHasOpponent(matchRoom) || hasPvpOpponent(matchPlayers());
+  const ready = handshakeReady();
   stage?.classList.toggle('is-rearranging', Boolean(view.rearranging));
   if (ask) ask.textContent = READY_ASK;
   if (yesBtn) yesBtn.textContent = READY_YES;
@@ -765,11 +813,7 @@ function syncStartGate() {
 }
 
 function peerHasStartedMatch() {
-  if (matchRoom?.started && matchRoom.hostId !== realtimeManager.userId) return true;
-  return isPeerMatchStarted(livePresencePool(), {
-    myId: realtimeManager.userId,
-    roomId: currentMatchRoomId(),
-  });
+  return Boolean(matchRoom?.started);
 }
 
 function clearSentLobbyInvite() {
@@ -828,7 +872,12 @@ function applyIncomingRoomState(payload) {
   const next = mergeRoomState(matchRoom, payload);
   if (!next) return false;
   syncMatchRoom(next);
-  if (next.started && awaitingStart && !matchStarted) applyMatchStarted();
+  if (next.acked) stopHelloRetry();
+  if (next.started && awaitingStart && !matchStarted) {
+    publishCampLayout();
+    if (isMatchHost() && lastPeerCamp) emitHostStartBoard();
+    else if (isMatchHost()) armCampWait();
+  }
   return true;
 }
 
@@ -838,12 +887,7 @@ function currentSentInvite() {
     started: matchStarted,
     mode: engine.gameMode,
     sent: sentLobbyInvite,
-    hasOpponent: roomHasOpponent(matchRoom) || hasPvpOpponent(matchPlayersFromPresence(lobbyUserList, {
-      myId: realtimeManager.userId,
-      myAcorns: myAcorns(),
-      mode: engine.gameMode,
-      roomId: currentMatchRoomId(),
-    })),
+    hasOpponent: roomHasOpponent(matchRoom),
   });
 }
 
@@ -862,11 +906,93 @@ function syncPresenceInvites(users) {
   }
 }
 
-function applyMatchStarted() {
+function firstPlayerColor() {
+  const lead = firstPlayerId(matchPlayers());
+  if (!lead || !matchRoom?.hostId) return STONE_COLOR.BLACK;
+  return String(lead) === String(matchRoom.hostId) ? STONE_COLOR.BLACK : STONE_COLOR.WHITE;
+}
+
+function ownCampStones() {
+  const color = myStoneColor();
+  return engine.stones
+    .filter((stone) => stone?.color === color)
+    .map(packStoneSync)
+    .filter(Boolean);
+}
+
+function publishCampLayout() {
+  if (engine.gameMode !== GAME_MODE.PVP || !inMatchRoom) return false;
+  return publishMatchSync({ force: true, event: 'camp', stones: ownCampStones() });
+}
+
+function clearTurnEndWatchdog() {
+  if (turnEndWatchdog) clearTimeout(turnEndWatchdog);
+  turnEndWatchdog = 0;
+}
+
+function armTurnEndWatchdog() {
+  if (!isMatchHost() || awaitingStart) return;
+  clearTurnEndWatchdog();
+  const launchedAt = lastLaunchAt;
+  turnEndWatchdog = setTimeout(() => {
+    turnEndWatchdog = 0;
+    if (!inMatchRoom || awaitingStart || gotShooterTurnEnd) return;
+    if (!shouldFireTurnEndWatchdog({
+      isHost: true,
+      awaitingStart,
+      launchedAt,
+      now: Date.now(),
+      gotShooterTurnEnd,
+    })) return;
+    publishMatchSync({ force: true, event: 'turnEnd' });
+  }, TURN_END_WATCHDOG_MS);
+}
+
+function clearCampWait() {
+  if (campWaitTimer) clearTimeout(campWaitTimer);
+  campWaitTimer = 0;
+}
+
+function armCampWait() {
+  if (!isMatchHost() || !awaitingStart) return;
+  clearCampWait();
+  campWaitTimer = setTimeout(() => {
+    campWaitTimer = 0;
+    if (awaitingStart && matchRoom?.started) emitHostStartBoard();
+  }, CAMP_WAIT_MS);
+}
+
+function emitHostStartBoard() {
+  if (!isMatchHost() || emittingStartBoard) return false;
+  emittingStartBoard = true;
+  clearCampWait();
+  try {
+    const hostCamp = engine.stones.filter((stone) => stone?.color === STONE_COLOR.BLACK);
+    const guestCamp = lastPeerCamp?.stones
+      || engine.stones.filter((stone) => stone?.color === STONE_COLOR.WHITE);
+    const merged = mergeCampLayouts(hostCamp, guestCamp);
+    engine.applyRemoteMatchState({
+      event: 'start',
+      phase: PHASE.IDLE,
+      currentTurn: firstPlayerColor(),
+      winner: null,
+      stones: merged,
+      started: true,
+    });
+    applyMatchStarted({ publishStart: false });
+    publishMatchSync({ force: true, event: 'start', stones: merged });
+    return true;
+  } finally {
+    emittingStartBoard = false;
+  }
+}
+
+function applyMatchStarted({ publishStart = false } = {}) {
   if (!awaitingStart) return false;
   awaitingStart = false;
   matchStarted = true;
   clearSentLobbyInvite();
+  clearCampWait();
   pvpOpenedAt = null;
   clearPvpWaitExpire();
   clearMatchReady();
@@ -877,11 +1003,13 @@ function applyMatchStarted() {
   renderer.snapSeat(engine.getSnapshot());
   publishPresence();
   publishRoomState();
-  publishMatchSync({ force: true, event: 'start' });
+  if (publishStart && isMatchHost()) {
+    publishMatchSync({ force: true, event: 'start' });
+  }
   return true;
 }
 
-function publishMatchSync({ force = false, event = '', launch = null } = {}) {
+function publishMatchSync({ force = false, event = '', launch = null, stones = null } = {}) {
   const watching = engine.phase === PHASE.SPECTATING;
   const pvpLive = engine.gameMode === GAME_MODE.PVP && inMatchRoom && !watching;
   if (!shouldPublishMatchSync({
@@ -894,23 +1022,35 @@ function publishMatchSync({ force = false, event = '', launch = null } = {}) {
   const now = Date.now();
   if (!force && now - lastMatchSyncAt < 180) return false;
   lastMatchSyncAt = now;
+  matchSyncSeq += 1;
+  const packed = event === 'launch'
+    ? []
+    : (Array.isArray(stones) ? stones : engine.stones);
   return realtimeManager.broadcastSpectatorData({
     ...engine.getSnapshot(),
-    stones: engine.stones,
+    stones: packed,
     matchId: currentMatchRoomId(),
     roomId: currentMatchRoomId(),
     senderId: realtimeManager.userId,
-    started: matchStarted,
+    started: matchStarted || event === 'start' || event === 'camp',
     timestamp: now,
     event,
-    kind: event === 'launch' ? 'launch' : 'board',
+    kind: event === 'launch' ? 'launch' : event === 'camp' ? 'camp' : 'board',
     launch,
     stoneId: launch?.stoneId,
     velocity: launch?.velocity,
     force: launch?.force,
     power: launch?.power,
     color: launch?.color,
+    seq: matchSyncSeq,
+    matchGen: roomMatchGen(matchRoom),
   });
+}
+
+function noteIncomingMatchSeq(payload) {
+  lastMatchSyncTs = Number(payload?.timestamp) || lastMatchSyncTs;
+  const seq = Number(payload?.seq);
+  if (Number.isFinite(seq) && seq > 0) lastMatchSyncSeq = seq;
 }
 
 function applyIncomingMatchSync(payload) {
@@ -919,6 +1059,8 @@ function applyIncomingMatchSync(payload) {
     myId: realtimeManager.userId,
     roomId: currentMatchRoomId(),
     lastTs: lastMatchSyncTs,
+    lastSeq: lastMatchSyncSeq,
+    matchGen: roomMatchGen(matchRoom),
     spectating,
     inPvp: inMatchRoom && engine.gameMode === GAME_MODE.PVP,
   })) return false;
@@ -928,22 +1070,35 @@ function applyIncomingMatchSync(payload) {
     remotePhase: payload?.phase,
     remoteWinner: payload?.winner,
   })) return false;
-  if (shouldFollowRemoteStart({
+  if (payload?.event === 'camp') {
+    noteIncomingMatchSeq(payload);
+    lastPeerCamp = payload;
+    if (isMatchHost() && awaitingStart && matchRoom?.started) emitHostStartBoard();
+    return true;
+  }
+  if (payload?.event === 'start' || shouldFollowRemoteStart({
     awaitingStart,
     started: matchStarted,
-    remoteStarted: payload?.started === true,
+    remoteStarted: payload?.started === true && payload?.event === 'start',
     mode: engine.gameMode,
     remotePhase: payload?.phase,
     remoteWinner: payload?.winner,
   })) {
-    applyMatchStarted();
+    if (awaitingStart) applyMatchStarted({ publishStart: false });
   }
   if (isLaunchSync(payload)) {
-    lastMatchSyncTs = Number(payload?.timestamp) || lastMatchSyncTs;
-    if (spectating) return false;
+    noteIncomingMatchSeq(payload);
+    if (spectating || awaitingStart) return false;
+    lastLaunchAt = Date.now();
+    gotShooterTurnEnd = false;
+    armTurnEndWatchdog();
     const launched = engine.applyRemoteLaunch(payload);
     if (launched) flushMatchView();
     return launched;
+  }
+  if (payload?.event === 'turnEnd') {
+    gotShooterTurnEnd = true;
+    clearTurnEndWatchdog();
   }
   if (!spectating && !canApplyRemoteBoard({
     localPhase: engine.phase,
@@ -952,11 +1107,14 @@ function applyIncomingMatchSync(payload) {
     remoteTurn: payload?.currentTurn,
     remoteEvent: payload?.event,
   })) return false;
-  lastMatchSyncTs = Number(payload?.timestamp) || lastMatchSyncTs;
+  noteIncomingMatchSeq(payload);
   const applied = spectating
     ? engine.updateSpectatorState(payload)
     : engine.applyRemoteMatchState(payload);
-  if (applied) flushMatchView();
+  if (applied) {
+    if (payload?.event === 'start') engine.resumeMatch();
+    flushMatchView();
+  }
   return applied;
 }
 
@@ -969,7 +1127,22 @@ function flushMatchView() {
 
 function beginMatchIfAllowed() {
   if (!awaitingStart || !canStartNow()) return false;
-  return applyMatchStarted();
+  if (isLobbyAiUser(matchRoom?.guestId)) {
+    matchRoom = applyRoomStart(matchRoom);
+    return emitHostStartBoard();
+  }
+  publishCampLayout();
+  matchRoom = applyRoomStart(matchRoom);
+  publishRoomState();
+  publishPresence();
+  if (isMatchHost()) {
+    if (lastPeerCamp) return emitHostStartBoard();
+    armCampWait();
+    syncStartGate();
+    return true;
+  }
+  syncStartGate();
+  return true;
 }
 
 function beginMatchFromPeer() {
@@ -979,7 +1152,10 @@ function beginMatchFromPeer() {
     peerStarted: peerHasStartedMatch(),
     mode: engine.gameMode,
   })) return false;
-  return applyMatchStarted();
+  publishCampLayout();
+  if (isMatchHost() && lastPeerCamp) return emitHostStartBoard();
+  if (isMatchHost()) armCampWait();
+  return false;
 }
 
 function syncSceneMode() {
@@ -1004,23 +1180,12 @@ function syncLobbyWaitGuide(rooms = lobbyRooms()) {
   const guide = document.getElementById('lobby-location-guide');
   if (!guide) return;
   const line = lobbyGuideLine(rooms, LOCATION_GUIDE);
-  // [PVP 공개 중단] 1:1 대기 점멸 안내. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED && line.blink) {
-    guide.textContent = rooms.length ? LOCATION_GUIDE : line.text;
-    guide.classList.remove('is-wait-blink');
-    return;
-  }
   guide.textContent = line.text;
   guide.classList.toggle('is-wait-blink', line.blink);
 }
 
 function syncPvpInvite() {
   const pvpBtn = document.getElementById('lobby-mode-pvp');
-  // [PVP 공개 중단] 1:1 버튼 점멸. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) {
-    pvpBtn?.classList.remove('is-invite-blink');
-    return;
-  }
   const invite = shouldInvitePvp(lobbyRoomsUsers().length);
   pvpBtn?.classList.toggle('is-invite-blink', invite);
 }
@@ -1031,8 +1196,6 @@ function closePvpGuidePick() {
 }
 
 function openPvpGuidePick() {
-  // [PVP 공개 중단] 가이드선 선택 팝업. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) return;
   const pick = document.getElementById('pvp-guide-pick');
   const ask = document.getElementById('pvp-guide-ask');
   if (ask) ask.textContent = PVP_GUIDE_ASK;
@@ -1046,8 +1209,6 @@ function confirmPvpGuide(enabled) {
 }
 
 function startOwnPvpRoom() {
-  // [PVP 공개 중단] 1:1 방 개설. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) return;
   startingPvp = true;
   try {
     settingsModal?.setGameMode(GAME_MODE.PVP, { startMatch: true });
@@ -1075,13 +1236,14 @@ function showLobby() {
   refreshLobbyPresence({ reconnect: true, publish: true });
   renderLobby();
   syncSceneMode();
-  if (shouldAutoOpenGuideBook() && !pendingInviteRoom) {
+  if (!isDualGuestSearch(window.location.search) && shouldAutoOpenGuideBook() && !pendingInviteRoom) {
     bookOpenedByConnect = true;
     openLobbyBookSheet('guide');
     return;
   }
-  // [PVP 공개 중단] 초대만 안내 팝업. 재개 시 아래 가드를 제거
-  if (PVP_PUBLIC_ENABLED) offerInviteOnlyNotice({ guidebookSkippedOnConnect: hasSkipGuideOnConnect() });
+  if (!isDualGuestSearch(window.location.search)) {
+    offerInviteOnlyNotice({ guidebookSkippedOnConnect: hasSkipGuideOnConnect() });
+  }
 }
 
 function hideLobby({ force = false } = {}) {
@@ -1217,8 +1379,7 @@ function closeLobbyBook({ offerNotice = false } = {}) {
   const book = document.getElementById('lobby-book');
   const wasOpen = Boolean(book && !book.hidden);
   if (book) book.hidden = true;
-  // [PVP 공개 중단] 가이드 닫힘 후 초대만 안내. 재개 시 아래 가드를 제거
-  if (PVP_PUBLIC_ENABLED && offerNotice && wasOpen) {
+  if (offerNotice && wasOpen) {
     offerInviteOnlyNotice({ guidebookClosed: bookOpenedByConnect });
   }
 }
@@ -1230,8 +1391,6 @@ function closeInviteOnlyNotice() {
 }
 
 function offerInviteOnlyNotice(reason = {}) {
-  // [PVP 공개 중단] 초대만 안내 팝업. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) return false;
   if (!shouldOfferInviteOnlyNotice({
     alreadyShown: inviteOnlyNoticeShown || hasSeenInviteOnlyNotice(),
     inviteJoin: Boolean(pendingInviteRoom),
@@ -1343,7 +1502,7 @@ function syncPvpWait() {
   if (beginMatchFromPeer()) return;
   if (shouldHoldPvpStartGate({
     started: matchStarted,
-    hasOpponent: roomHasOpponent(matchRoom) || hasPvpOpponent(matchPlayers()),
+    hasOpponent: roomHasOpponent(matchRoom),
   })) {
     awaitingStart = true;
     turnManager.cancel();
@@ -1384,7 +1543,6 @@ function enterMatchRoom() {
   markPvpRoomOpened();
   armPvpWaitExpire();
   publishPresence();
-  publishMatchSync({ force: true });
 }
 
 function handleSweepLeave() {
@@ -1402,6 +1560,12 @@ function handleSweepLeave() {
   lobbyUserList = [];
   lastLobbyViewKey = '';
   pvpOpenedAt = null;
+  lastPeerCamp = null;
+  lastMatchSyncSeq = 0;
+  matchSyncSeq = 0;
+  stopHelloRetry();
+  clearCampWait();
+  clearTurnEndWatchdog();
   clearPvpWaitExpire();
   setTicker(SWEEP_LEAVE_HINT);
   showLobby();
@@ -1431,6 +1595,12 @@ function handleStaleLeave() {
   lobbyUserList = [];
   lastLobbyViewKey = '';
   pvpOpenedAt = null;
+  lastPeerCamp = null;
+  lastMatchSyncSeq = 0;
+  matchSyncSeq = 0;
+  stopHelloRetry();
+  clearCampWait();
+  clearTurnEndWatchdog();
   clearPvpWaitExpire();
   setTicker(STALE_LEAVE_HINT);
   showLobby();
@@ -1457,6 +1627,12 @@ function returnToPvpWait() {
   matchStarted = false;
   awaitingStart = true;
   clearSentLobbyInvite();
+  lastPeerCamp = null;
+  lastMatchSyncSeq = 0;
+  matchSyncSeq = 0;
+  stopHelloRetry();
+  clearCampWait();
+  clearTurnEndWatchdog();
   clearMatchReady();
   joiningRoomId = '';
   joiningRoom = false;
@@ -1471,6 +1647,7 @@ function returnToPvpWait() {
     matchRoom = applyRoomLeave(matchRoom, { leaverId: matchRoom.guestId });
   }
   engine.setHost(true);
+  engine.setAiOpponent(false);
   engine.setMatchConfig({ mode: GAME_MODE.PVP, difficulty: engine.aiDifficulty });
   beginMatchReady();
   renderer.snapSeat(engine.getSnapshot());
@@ -1513,7 +1690,11 @@ function restartPvpRematch() {
   awaitingStart = true;
   matchStarted = false;
   lastMatchSyncTs = 0;
+  lastMatchSyncSeq = 0;
+  matchSyncSeq = 0;
+  lastPeerCamp = null;
   lastAcornSettleKey = '';
+  clearTurnEndWatchdog();
   inMatchRoom = true;
   engine.setHost(pvpSeatColor({
     myId: realtimeManager.userId,
@@ -1546,7 +1727,11 @@ function followPvpRematch(payload) {
   awaitingStart = true;
   matchStarted = false;
   lastMatchSyncTs = 0;
+  lastMatchSyncSeq = 0;
+  matchSyncSeq = 0;
+  lastPeerCamp = null;
   lastAcornSettleKey = '';
+  clearTurnEndWatchdog();
   engine.setHost(pvpSeatColor({
     myId: realtimeManager.userId,
     hostId: matchRoom?.hostId,
@@ -1594,6 +1779,12 @@ function leaveToWaitingRoom() {
   awaitingStart = false;
   matchStarted = false;
   lastAcornSettleKey = '';
+  lastPeerCamp = null;
+  lastMatchSyncSeq = 0;
+  matchSyncSeq = 0;
+  stopHelloRetry();
+  clearCampWait();
+  clearTurnEndWatchdog();
   clearMatchReady();
   activeRoomId = null;
   joiningRoomId = '';
@@ -1669,21 +1860,73 @@ function resolveJoinablePvp(room, invite) {
 
 function applyHostAcceptedInvite(payload) {
   if (!inMatchRoom || engine.phase === PHASE.SPECTATING) return false;
-  const next = applyRoomGuest(matchRoom || createRoomState({
+  const next = applyRoomAck(applyRoomGuest(matchRoom || createRoomState({
     roomId: payload?.roomId || currentMatchRoomId(),
     hostId: realtimeManager.userId,
     hostName: realtimeManager.userNickname,
   }), {
-    guestId: payload?.targetId,
+    guestId: payload?.targetId || payload?.guestId,
     guestName: payload?.guestName,
-  });
+  }));
   if (!roomHasOpponent(next)) return false;
   syncMatchRoom(next);
   clearSentLobbyInvite();
   publishPresence();
   publishRoomState();
+  void announceRoomAck(next);
   syncPvpWait();
   return true;
+}
+
+function applyGuestRoomAck(payload) {
+  if (!inMatchRoom) return false;
+  syncMatchRoom(applyRoomAck(mergeRoomState(matchRoom, payload)));
+  stopHelloRetry();
+  syncStartGate();
+  return true;
+}
+
+function stopHelloRetry() {
+  if (helloRetryTimer) clearInterval(helloRetryTimer);
+  helloRetryTimer = 0;
+  helloRetryLeft = 0;
+  helloRetryInvite = null;
+}
+
+function startHelloRetry(invite) {
+  stopHelloRetry();
+  helloRetryInvite = invite;
+  helloRetryLeft = HELLO_RETRY_MAX;
+  helloRetryTimer = setInterval(() => {
+    if (matchRoom?.acked || helloRetryLeft <= 0) {
+      stopHelloRetry();
+      return;
+    }
+    helloRetryLeft -= 1;
+    void announceRoomHello(helloRetryInvite);
+  }, HELLO_RETRY_MS);
+}
+
+async function announceRoomHello(invite) {
+  if (!invite?.roomId || !invite?.hostId) return false;
+  const hello = buildRoomHello(invite, {
+    guestName: realtimeManager.userNickname,
+    guestId: realtimeManager.userId,
+  });
+  let ok = await realtimeManager.broadcastPvpInvite(hello);
+  if (!ok) ok = await realtimeManager.broadcastPvpInvite(hello);
+  return ok;
+}
+
+async function announceRoomAck(state) {
+  const ack = buildRoomAck(state, {
+    hostName: realtimeManager.userNickname,
+    guestName: state?.guestName,
+  });
+  if (!ack.roomId || !ack.targetId) return false;
+  let ok = await realtimeManager.broadcastPvpInvite(ack);
+  if (!ok) ok = await realtimeManager.broadcastPvpInvite(ack);
+  return ok;
 }
 
 function enterJoinedPvp(room) {
@@ -1740,8 +1983,6 @@ function bounceRejectedJoin() {
 }
 
 function joinPvpRoom(room, invite) {
-  // [PVP 공개 중단] 대기실 참가. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) return false;
   let live = resolveJoinablePvp(room, invite);
   if (!canJoinPvpRoom(live, realtimeManager.userId)) {
     refreshLobbyPresence({ reconnect: false });
@@ -1764,12 +2005,8 @@ function inviteHostState(users = lobbyRoomsUsers()) {
     myId: realtimeManager.userId,
     roomId: currentMatchRoomId(),
     myAcorns: myAcorns(),
-    hasOpponent: roomHasOpponent(matchRoom) || hasPvpOpponent(matchPlayersFromPresence(users, {
-      myId: realtimeManager.userId,
-      myAcorns: myAcorns(),
-      mode: engine.gameMode,
-      roomId: currentMatchRoomId(),
-    })),
+    hasOpponent: roomHasOpponent(matchRoom),
+    spectating: engine.phase === PHASE.SPECTATING,
   };
 }
 
@@ -1779,7 +2016,7 @@ function hostWaitingForInvite() {
     myId: realtimeManager.userId,
     inRoom: inMatchRoom && engine.phase !== PHASE.SPECTATING,
     mode: engine.gameMode,
-    hasOpponent: roomHasOpponent(matchRoom) || hasPvpOpponent(matchPlayers()),
+    hasOpponent: roomHasOpponent(matchRoom),
   });
 }
 
@@ -1862,8 +2099,6 @@ function renderLobbyInviteList({ refresh = false } = {}) {
 }
 
 function openInviteShareSheet() {
-  // [PVP 공개 중단] 초대 링크 시트. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) return;
   if (!hostWaitingForInvite() || !inviteShareSheet) return;
   refreshLobbyPresence({ reconnect: true });
   renderLobbyInviteList({ refresh: true });
@@ -1875,8 +2110,6 @@ function closeInviteShareSheet() {
 }
 
 function openInviteNickModal(roomId) {
-  // [PVP 공개 중단] 초대 링크 닉 입력. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) return;
   pendingInviteRoom = roomId;
   writeStoredInviteRoom(roomId);
   if (inviteNickDesc) {
@@ -1904,8 +2137,6 @@ function closeLobbyInviteModal() {
 }
 
 function openLobbyInviteModal(invite) {
-  // [PVP 공개 중단] 수락/거절 팝업. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) return;
   pendingLobbyInvite = invite;
   const modal = document.getElementById('lobby-invite-modal');
   const ask = document.getElementById('lobby-invite-ask');
@@ -1925,12 +2156,62 @@ function receiveLobbyInvite(payload) {
   const verdict = evaluateLobbyInvite(payload, realtimeManager.userId);
   if (!verdict.ok) return;
   if (inMatchRoom || engine.phase === PHASE.SPECTATING) return;
+  if (isDualGuestSearch(window.location.search)) {
+    pendingLobbyInvite = verdict.invite;
+    void acceptLobbyInvite();
+    return;
+  }
   openLobbyInviteModal(verdict.invite);
 }
 
+function seatAiGuest() {
+  engine.setHost(true);
+  engine.setAiOpponent(true, STONE_COLOR.WHITE);
+  matchRoom = applyRoomAck(applyRoomGuest(matchRoom || createRoomState({
+    roomId: currentMatchRoomId(),
+    hostId: realtimeManager.userId,
+    hostName: realtimeManager.userNickname,
+  }), {
+    guestId: AI_LOBBY_USER_ID,
+    guestName: AI_LOBBY_NICKNAME,
+  }));
+  matchRoom = stampRoomAcorns(matchRoom, { myId: AI_LOBBY_USER_ID, acorns: AI_LOBBY_ACORNS });
+  matchRoom = stampRoomAcorns(matchRoom, { myId: realtimeManager.userId, acorns: myAcorns() });
+  syncMatchRoom(matchRoom);
+  clearSentLobbyInvite();
+  syncPvpWait();
+  syncStartGate();
+  setTicker(AI_ACCEPT_HINT);
+  return roomHasOpponent(matchRoom);
+}
+
+function inviteLobbyAiUser(target) {
+  if (!isLobbyAiUser(target) || matchStarted || engine.phase === PHASE.SPECTATING) return false;
+  if (
+    inMatchRoom
+    && engine.gameMode === GAME_MODE.PVP
+    && roomHasOpponent(matchRoom)
+    && !isLobbyAiUser(matchRoom?.guestId)
+  ) return false;
+  if (!inMatchRoom || engine.gameMode !== GAME_MODE.PVP) {
+    startingPvp = true;
+    try {
+      settingsModal?.setGameMode(GAME_MODE.PVP, { startMatch: true });
+      if (engine.gameMode !== GAME_MODE.PVP) {
+        engine.setMatchConfig({ mode: GAME_MODE.PVP, difficulty: engine.aiDifficulty });
+      }
+    } finally {
+      startingPvp = false;
+    }
+  }
+  return seatAiGuest();
+}
+
 async function sendLobbyInvite(target) {
-  // [PVP 공개 중단] 대기실 초대 전송. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) return;
+  if (isLobbyAiUser(target)) {
+    inviteLobbyAiUser(target);
+    return;
+  }
   if (!canInviteLobbyUser({ ...inviteHostState(), target })) return;
   const payload = buildLobbyInvite({
     roomId: currentMatchRoomId(),
@@ -1979,13 +2260,15 @@ async function acceptLobbyInvite() {
     refresh: () => refreshLobbyPresence({ reconnect: false, publish: true }),
   });
   closeLobbyInviteModal();
-  if (result.ok) void announceInviteAccept(invite);
+  if (result.ok) {
+    void announceInviteAccept(invite);
+    void announceRoomHello(invite);
+    startHelloRetry(invite);
+  }
   if (!result.ok) setTicker(INVITE_ROOM_GONE_HINT);
 }
 
 function joinRoom(roomId, extras = {}) {
-  // [PVP 공개 중단] 초대 방 입장. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) return false;
   if (extras.nickname != null) {
     const named = guestInviteNickname(
       extras.nickname,
@@ -2014,8 +2297,6 @@ function joinRoom(roomId, extras = {}) {
 }
 
 async function enterInviteRoom() {
-  // [PVP 공개 중단] 초대 링크 입장. 재개 시 아래 가드를 제거
-  if (!PVP_PUBLIC_ENABLED) return false;
   const roomId = pendingInviteRoom || readStoredInviteRoom() || readInviteRoomId(window.location.search);
   if (!roomId) return false;
   pendingInviteRoom = roomId;
@@ -2145,7 +2426,14 @@ function lobbyRooms() {
 }
 
 function updateLobbyUserList(users) {
-  const next = dedupePresenceUsers(users).slice(0, LOBBY_CAP);
+  const humans = dedupePresenceUsers(users)
+    .filter((user) => !isLobbyAiUser(user))
+    .slice(0, LOBBY_CAP);
+  const next = mergeLobbyAiSeat(humans, {
+    playing: inMatchRoom && isLobbyAiUser(matchRoom?.guestId),
+    roomId: matchRoom?.roomId,
+    started: matchStarted,
+  });
   const key = `${presenceViewKey(next)}#${roomsFromPresence(next).map((r) => r.id).sort().join(',')}`;
   const same = key === lastLobbyViewKey && lastLobbyViewKey !== '';
   lobbyUserList = next;
@@ -2205,7 +2493,7 @@ function renderLobby() {
     name.className = 'lobby-room-name';
     name.textContent = roomTitle(room);
     const status = document.createElement('div');
-    status.className = (PVP_PUBLIC_ENABLED && isPvpWaiting(room)) ? 'lobby-room-status is-wait-blink' : 'lobby-room-status';
+    status.className = isPvpWaiting(room) ? 'lobby-room-status is-wait-blink' : 'lobby-room-status';
     status.textContent = roomStatusLabel(room);
     info.appendChild(name);
     info.appendChild(status);
@@ -2213,7 +2501,7 @@ function renderLobby() {
     const watch = document.createElement('button');
     watch.type = 'button';
     watch.className = 'spectate-btn';
-    if (PVP_PUBLIC_ENABLED && canJoinPvpFromLobby(room, realtimeManager.userId)) {
+    if (canJoinPvpFromLobby(room, realtimeManager.userId)) {
       watch.textContent = '참가하기';
       const enter = () => joinPvpRoom(room);
       watch.addEventListener('click', (event) => {
@@ -2312,7 +2600,6 @@ engine.on('reset', () => {
   syncSceneMode();
   setTicker('READY: 바둑알을 뒤로 당겨 튕겨내세요!');
   publishPresence();
-  publishMatchSync({ force: true });
 });
 
 engine.on('aimStart', () => {
@@ -2336,6 +2623,9 @@ engine.on('launch', (payload) => {
   noteTutorial('launch');
   if (!tutorial.active) setTicker('발사!');
   if (payload?.remote) return;
+  lastLaunchAt = Date.now();
+  gotShooterTurnEnd = false;
+  armTurnEndWatchdog();
   publishMatchSync({ force: true, event: 'launch', launch: payload });
 });
 
@@ -2360,6 +2650,8 @@ engine.on('turnEnd', () => {
     setTicker(engine.currentTurn === 'black' ? '흑 차례입니다' : '백 차례입니다');
   }
   soundEngine.playTurn();
+  gotShooterTurnEnd = true;
+  clearTurnEndWatchdog();
   publishMatchSync({ force: true, event: 'turnEnd' });
 });
 
@@ -2498,26 +2790,8 @@ try {
 
 turnManager.attach();
 syncSceneMode();
-function shelvePvpPublicUi() {
-  // [PVP 공개 중단] 1:1 버튼 숨김. 재개 시 PVP_PUBLIC_ENABLED = true
-  if (PVP_PUBLIC_ENABLED) return;
-  document.querySelectorAll('[data-mode="pvp"]').forEach((el) => {
-    el.classList.add('is-pvp-shelved');
-    el.setAttribute('aria-hidden', 'true');
-    el.tabIndex = -1;
-  });
-}
-
-shelvePvpPublicUi();
-if (PVP_PUBLIC_ENABLED && pendingInviteRoom) openInviteNickModal(pendingInviteRoom);
-else {
-  if (!PVP_PUBLIC_ENABLED) {
-    pendingInviteRoom = '';
-    writeStoredInviteRoom('');
-    clearInviteQuery(window);
-  }
-  showLobby();
-}
+if (pendingInviteRoom) openInviteNickModal(pendingInviteRoom);
+else showLobby();
 
 document.getElementById('match-start')?.addEventListener('click', () => {
   beginMatchIfAllowed();
@@ -2692,6 +2966,8 @@ function bootRealtime(attempt = 0) {
     realtimeManager.startHeartbeat();
     publishPresence();
     syncNickField();
+    if (isDualSearch(window.location.search)) setTicker(DUAL_HINT);
+    armDualGuestSeat();
   }).catch(() => {
     if (attempt >= 1) return;
     return new Promise((resolve) => setTimeout(resolve, 1000)).then(() => bootRealtime(attempt + 1));
@@ -2734,6 +3010,21 @@ if (!window.__dotoriLobbyRefresh) {
   }, 2000);
 }
 
+function armDualGuestSeat() {
+  const search = window.location.search;
+  if (isLoopTestSearch(search) || !isDualSearch(search) || isDualGuestSearch(search)) return;
+  setTimeout(() => {
+    const peers = lobbyUserList.filter((user) => (user.userId ?? user.id) !== realtimeManager.userId).length;
+    if (!shouldSpawnDualGuestFrame({
+      dual: true,
+      guestSeat: false,
+      peerCount: peers,
+    })) return;
+    mountDualGuestFrame(document, dualGuestHref(window.location));
+    setTicker(DUAL_HINT);
+  }, 800);
+}
+
 function seedVirtualLobby() {
   const guests = seedPlayingGuests(9);
   const added = applySeededPresence(realtimeManager, guests);
@@ -2757,6 +3048,7 @@ globalThis.__dotori = {
   soundEngine,
   powerRatioController,
   seedVirtualLobby,
+  openDualMatch,
   openLobbyBook,
   closeLobbyBook,
   startTutorialPlay,

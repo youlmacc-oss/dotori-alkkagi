@@ -3,12 +3,19 @@ import { GAME_MODE, GameEngine, PHASE, STONE_COLOR } from '../src/physics/GameEn
 import { MockSupabaseClient, RealtimeManager } from '../src/network/RealtimeManager.js';
 import {
   INVITE_ACTION_ACCEPT,
+  INVITE_ACTION_HELLO,
   buildInviteReply,
   buildLobbyInvite,
+  buildRoomAck,
+  buildRoomHello,
   evaluateLobbyInvite,
+  readPvpPublicEnabled,
+  shouldApplyInviteAccept,
+  shouldApplyRoomAck,
   shouldRepublishOpenRoom,
 } from '../src/network/PvpInvite.js';
 import {
+  applyRoomAck,
   applyRoomGuest,
   applyRoomInvite,
   applyRoomLeave,
@@ -25,15 +32,17 @@ import {
   canApplyRemoteBoard,
   isLaunchSync,
   isStaleEndedMatchSync,
+  mergeCampLayouts,
   packLaunchSync,
   packMatchSync,
   shouldApplyMatchSync,
+  shouldFireTurnEndWatchdog,
   shouldFollowRemoteStart,
   shouldPublishMatchSync,
   shouldPulseMatchSync,
 } from '../src/network/MatchSync.js';
 import { SESSION_ACORNS, acornSettleKey, settleSessionAcorns, shouldSettleAcorns } from '../src/network/AcornPolicy.js';
-import { canStartMatch, firstPlayerId, hasPvpOpponent, matchPlayersFromPresence } from '../src/network/MatchStart.js';
+import { canStartMatch, firstPlayerId, hasPvpOpponent, matchPlayersFromPresence, overlayRoomAcorns } from '../src/network/MatchStart.js';
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -120,6 +129,7 @@ describe('1:1 한 바퀴', () => {
     expect(isLaunchSync(launch)).toBe(true);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: true })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'launch' })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(true);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })).toBe(false);
     expect(shouldApplyMatchSync(launch, {
       myId: 'guest', roomId: 'room_host', inPvp: true,
@@ -227,5 +237,144 @@ describe('1:1 한 바퀴', () => {
     expect(left.guestId).toBeNull();
     expect(left.started).toBe(false);
     expect(rooms.length).toBeGreaterThanOrEqual(0);
+    expect(readPvpPublicEnabled({ DEV: false })).toBe(true);
+  });
+
+  it('수락 hello/ack · camp 병합 · 게스트 샷 · watchdog · rematch seq가 한 사이클이다', () => {
+    const invite = buildLobbyInvite({
+      roomId: 'room_host', hostId: 'host', hostName: '호치', targetId: 'guest',
+    });
+    const hello = buildRoomHello(invite, { guestId: 'guest', guestName: '달이' });
+    expect(hello.action).toBe(INVITE_ACTION_HELLO);
+    expect(shouldApplyInviteAccept(hello, {
+      myId: 'host', roomId: 'room_host', inRoom: true, sentTargetId: 'other',
+    })).toBe(true);
+    let hostRoom = applyRoomAck(applyRoomGuest(applyRoomInvite(createRoomState({
+      roomId: 'room_host', hostId: 'host', hostName: '호치',
+    }), 'guest'), { guestId: hello.guestId, guestName: hello.guestName }));
+    const ack = buildRoomAck(hostRoom);
+    expect(shouldApplyRoomAck(ack, { myId: 'guest', roomId: 'room_host' })).toBe(true);
+    let guestRoom = applyRoomAck(applyRoomGuest(createRoomState({
+      roomId: 'room_host', hostId: 'host', hostName: '호치',
+    }), { guestId: 'guest', guestName: '달이' }));
+    expect(hostRoom.guestId).toBe(guestRoom.guestId);
+    expect(hostRoom.roomId).toBe(guestRoom.roomId);
+    expect(hostRoom.acked).toBe(true);
+    expect(guestRoom.acked).toBe(true);
+
+    const players = overlayRoomAcorns([], {
+      ...hostRoom, hostAcorns: 8, guestAcorns: 10,
+    }, { myId: 'host', myAcorns: 8 });
+    expect(firstPlayerId(players)).toBe('host');
+    expect(canStartMatch({ mode: 'pvp', userId: 'host', players })).toBe(true);
+
+    const hostEngine = new GameEngine({ autoStart: false });
+    const guestEngine = new GameEngine({ autoStart: false });
+    hostEngine.setMatchConfig({ mode: GAME_MODE.PVP });
+    guestEngine.setMatchConfig({ mode: GAME_MODE.PVP });
+    hostEngine.setHost(true);
+    guestEngine.setHost(false);
+    const white = guestEngine.stones.find((stone) => stone.color === STONE_COLOR.WHITE);
+    white.body.position.x = 233;
+    white.body.position.y = 171;
+    const guestCamp = guestEngine.stones.filter((stone) => stone.color === STONE_COLOR.WHITE);
+    const startStones = mergeCampLayouts(
+      hostEngine.stones.filter((stone) => stone.color === STONE_COLOR.BLACK),
+      guestCamp,
+    );
+    expect(startStones.some((stone) => stone.color === STONE_COLOR.WHITE && stone.position.x === 233)).toBe(true);
+    expect(hostEngine.applyRemoteMatchState({
+      event: 'start',
+      phase: PHASE.IDLE,
+      currentTurn: STONE_COLOR.BLACK,
+      stones: startStones,
+    })).toBe(true);
+    expect(guestEngine.applyRemoteMatchState({
+      event: 'start',
+      phase: PHASE.IDLE,
+      currentTurn: STONE_COLOR.BLACK,
+      stones: startStones,
+    })).toBe(true);
+    const hostWhite = hostEngine.stones.find((stone) => stone.color === STONE_COLOR.WHITE);
+    expect(hostWhite.body.position.x).toBeCloseTo(233);
+    expect(hostWhite.body.position.y).toBeCloseTo(171);
+
+    hostEngine.pauseMatch();
+    const blocked = packLaunchSync({
+      stoneId: hostEngine.stones[0].id,
+      color: hostEngine.stones[0].color,
+      velocity: { x: 4, y: -4 },
+    }, { roomId: 'room_host', senderId: 'guest', started: true, timestamp: 25, seq: 1 });
+    expect(hostEngine.applyRemoteLaunch(blocked)).toBe(false);
+    hostEngine._paused = false;
+    hostEngine.inputLocked = false;
+    const shooter = guestEngine.stones.find((stone) => stone.color === STONE_COLOR.WHITE);
+    const launch = packLaunchSync({
+      stoneId: shooter.id,
+      color: shooter.color,
+      velocity: { x: -6, y: 12 },
+      force: { x: -0.02, y: 0.04 },
+      power: 0.6,
+    }, {
+      roomId: 'room_host', senderId: 'guest', started: true, timestamp: 30, seq: 1, currentTurn: STONE_COLOR.WHITE,
+    });
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'launch' })).toBe(true);
+    expect(shouldApplyMatchSync(launch, {
+      myId: 'host', roomId: 'room_host', inPvp: true, lastSeq: 0,
+    })).toBe(true);
+    expect(hostEngine.applyRemoteLaunch(launch)).toBe(true);
+    expect(hostEngine.phase).toBe(PHASE.RESOLVING);
+    shooter.body.position.x = 240;
+    shooter.body.position.y = 200;
+    const guestRest = packMatchSync({
+      phase: PHASE.IDLE,
+      currentTurn: STONE_COLOR.BLACK,
+      stones: guestEngine.stones.map((stone) => ({
+        id: stone.id,
+        color: stone.color,
+        position: { x: stone.body.position.x, y: stone.body.position.y },
+      })),
+    }, {
+      roomId: 'room_host', senderId: 'guest', started: true, timestamp: 40, seq: 2, event: 'turnEnd',
+    });
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(true);
+    expect(hostEngine.applyRemoteMatchState(guestRest)).toBe(true);
+    expect(hostEngine.phase).toBe(PHASE.IDLE);
+    expect(hostEngine.currentTurn).toBe(STONE_COLOR.BLACK);
+    expect(hostEngine.stones.find((stone) => stone.id === shooter.id).body.position.x).toBeCloseTo(240);
+
+    guestEngine.phase = PHASE.RESOLVING;
+    expect(shouldFireTurnEndWatchdog({
+      isHost: true, launchedAt: 10, now: 920, gotShooterTurnEnd: false,
+    })).toBe(true);
+    const watchdog = packMatchSync({
+      phase: PHASE.IDLE,
+      currentTurn: STONE_COLOR.BLACK,
+      stones: hostEngine.stones.map((stone) => ({
+        id: stone.id,
+        color: stone.color,
+        position: { x: stone.body.position.x, y: stone.body.position.y },
+      })),
+    }, {
+      roomId: 'room_host', senderId: 'host', started: true, timestamp: 50, seq: 3, event: 'turnEnd',
+    });
+    expect(guestEngine.applyRemoteMatchState(watchdog)).toBe(true);
+    expect(guestEngine.phase).toBe(PHASE.IDLE);
+
+    hostRoom = applyRoomStart(hostRoom);
+    const rematch = applyRoomRematch(hostRoom);
+    expect(rematch.matchGen).toBe(1);
+    const leftoverOver = packMatchSync({
+      phase: PHASE.GAME_OVER,
+      currentTurn: STONE_COLOR.BLACK,
+      winner: STONE_COLOR.BLACK,
+      stones: [],
+    }, {
+      roomId: 'room_host', senderId: 'host', started: true, timestamp: 900, seq: 4, matchGen: 0,
+    });
+    expect(shouldApplyMatchSync(leftoverOver, {
+      myId: 'guest', roomId: 'room_host', inPvp: true, lastSeq: 3, matchGen: rematch.matchGen,
+    })).toBe(false);
+    expect(readPvpPublicEnabled({ DEV: false })).toBe(true);
   });
 });

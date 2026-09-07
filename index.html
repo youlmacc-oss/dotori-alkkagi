@@ -12,7 +12,7 @@
     <meta property="og:description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
     <meta property="og:type" content="website" />
     <meta name="description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
-    <link rel="stylesheet" href="/src/style.css?v=20260907h" />
+    <link rel="stylesheet" href="/src/style.css?v=20260908d" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -1131,8 +1131,7 @@
             <div class="hud-mode" id="hud-mode">
               <button type="button" class="hud-mode-btn" data-mode="solo">1인</button>
               <button type="button" class="hud-mode-btn is-on" data-mode="ai">AI</button>
-              <!-- [PVP 공개 중단] 재개 시 is-pvp-shelved / aria-hidden / tabindex 제거 -->
-              <button type="button" class="hud-mode-btn is-pvp-shelved" data-mode="pvp" aria-hidden="true" tabindex="-1">1:1</button>
+              <button type="button" class="hud-mode-btn" data-mode="pvp">1:1</button>
             </div>
 
             <button type="button" class="settings-btn" id="settings-btn" hidden aria-hidden="true" tabindex="-1" aria-label="설정">⚙️</button>
@@ -1267,8 +1266,7 @@
                   <div class="mode-tabs" id="mode-tabs">
                     <button type="button" class="formation-tab" data-mode="solo" title="혼자서 흑·백 번갈아">1인</button>
                     <button type="button" class="formation-tab is-on" data-mode="ai" title="컴퓨터와 연습">AI 연습</button>
-                    <!-- [PVP 공개 중단] 재개 시 is-pvp-shelved / aria-hidden / tabindex 제거 -->
-                    <button type="button" class="formation-tab is-pvp-shelved" data-mode="pvp" title="사람끼리 맞대결" aria-hidden="true" tabindex="-1">1:1 대전</button>
+                    <button type="button" class="formation-tab" data-mode="pvp" title="사람끼리 맞대결">1:1 대전</button>
                   </div>
                 </div>
                 <div class="settings-row" id="ai-diff-chips">
@@ -1340,8 +1338,7 @@
               <div class="lobby-modes" id="lobby-modes" aria-label="대전 모드">
                 <button type="button" class="lobby-mode-btn" id="lobby-mode-solo" data-mode="solo">1인</button>
                 <button type="button" class="lobby-mode-btn is-on" id="lobby-mode-ai" data-mode="ai">AI</button>
-                <!-- [PVP 공개 중단] 재개 시 is-pvp-shelved / aria-hidden / tabindex 제거 -->
-                <button type="button" class="lobby-mode-btn is-pvp-shelved" id="lobby-mode-pvp" data-mode="pvp" aria-hidden="true" tabindex="-1">1:1</button>
+                <button type="button" class="lobby-mode-btn" id="lobby-mode-pvp" data-mode="pvp">1:1</button>
               </div>
               <div class="lobby-nick">
                 <label class="lobby-nick-label" for="lobby-nick-input">닉네임</label>
@@ -1359,7 +1356,6 @@
                 <button type="button" class="lobby-exit" id="lobby-exit" aria-label="게임종료">게임종료</button>
               </footer>
             </div>
-            <!-- [PVP 공개 중단] 가이드선 선택 팝업 DOM 유지. 표시는 main.js에서 막음 -->
             <div class="pvp-guide-pick" id="pvp-guide-pick" hidden>
               <div class="pvp-guide-card">
                 <p class="pvp-guide-ask" id="pvp-guide-ask">가이드선을 사용하시겠습니까?</p>
@@ -1396,7 +1392,6 @@
               </div>
             </div>
           </section>
-          <!-- [PVP 공개 중단] 초대 시트·닉·수락·초대만 안내 DOM 유지. 표시는 main.js에서 막음 -->
           <div class="invite-share-sheet" id="invite-share-sheet" hidden>
             <div class="invite-share-card">
               <p class="invite-share-title">초대 링크 보내기</p>
@@ -1433,6 +1428,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260907h"></script>
+    <script type="module" src="/src/main.js?v=20260908d"></script>
   </body>
 </html>

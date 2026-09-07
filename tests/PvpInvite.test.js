@@ -26,8 +26,15 @@ import {
   guestClaimHeld,
   incomingRejectsMyGuestSeat,
   INVITE_ACTION_ACCEPT,
+  INVITE_ACTION_ACK,
   INVITE_ACTION_CANCEL,
   INVITE_ACTION_DECLINE,
+  INVITE_ACTION_HELLO,
+  HELLO_RETRY_MAX,
+  HELLO_RETRY_MS,
+  buildRoomAck,
+  buildRoomHello,
+  shouldApplyRoomAck,
   pickJoinablePvp,
   roomFromInvite,
   shouldApplyInviteAccept,
@@ -50,6 +57,7 @@ import {
   shouldExpirePvpWait,
   PVP_GUIDE_ASK,
   PVP_PUBLIC_ENABLED,
+  readPvpPublicEnabled,
   PVP_ROOM_HINT,
   readInvitePrefill,
   readInviteRoomId,
@@ -68,7 +76,11 @@ describe('대기실 1:1 안내', () => {
     expect(shouldInvitePvp(3)).toBe(true);
     expect(PVP_ROOM_HINT).toContain('대국방');
     expect(PVP_ROOM_HINT).toContain('시작');
-    expect(PVP_PUBLIC_ENABLED).toBe(false);
+    expect(readPvpPublicEnabled({ DEV: false })).toBe(true);
+    expect(readPvpPublicEnabled({ DEV: true })).toBe(true);
+    expect(readPvpPublicEnabled({ DEV: true, VITE_PVP_PUBLIC: '0' })).toBe(false);
+    expect(readPvpPublicEnabled({ DEV: false, VITE_PVP_PUBLIC: '1' })).toBe(true);
+    expect(PVP_PUBLIC_ENABLED).toBe(readPvpPublicEnabled());
   });
 
   it('가이드선 사용·미사용을 가린다', () => {
@@ -149,7 +161,25 @@ describe('대기실 1:1 안내', () => {
     }, { myId: 'host', inRoom: false })).toBe(false);
     expect(shouldApplyInviteAccept({
       action: INVITE_ACTION_ACCEPT, hostId: 'host', targetId: 'other', roomId: 'room_host_1',
-    }, { myId: 'host', sentTargetId: 'guest' })).toBe(false);
+    }, { myId: 'host', sentTargetId: 'guest' })).toBe(true);
+    expect(shouldApplyInviteAccept({
+      action: INVITE_ACTION_HELLO, hostId: 'host', targetId: 'guest', roomId: 'room_host_1',
+    }, { myId: 'host', roomId: 'room_host_1', inRoom: true })).toBe(true);
+    expect(shouldApplyInviteAccept({
+      action: INVITE_ACTION_ACCEPT, hostId: 'host', targetId: 'late', roomId: 'room_host_1',
+    }, { myId: 'host', roomId: 'room_host_1', inRoom: true, guestId: 'guest' })).toBe(false);
+    const hello = buildRoomHello({
+      roomId: 'room_host_1', hostId: 'host', hostName: '호치', targetId: 'guest',
+    }, { guestName: '달이', guestId: 'guest' });
+    expect(hello).toMatchObject({ action: INVITE_ACTION_HELLO, guestId: 'guest', seq: 0 });
+    const ack = buildRoomAck({
+      roomId: 'room_host_1', hostId: 'host', guestId: 'guest', guestName: '달이',
+    });
+    expect(ack).toMatchObject({ action: INVITE_ACTION_ACK, targetId: 'guest', guestId: 'guest' });
+    expect(shouldApplyRoomAck(ack, { myId: 'guest', roomId: 'room_host_1' })).toBe(true);
+    expect(shouldApplyRoomAck(ack, { myId: 'host', roomId: 'room_host_1' })).toBe(false);
+    expect(HELLO_RETRY_MS).toBe(1500);
+    expect(HELLO_RETRY_MAX).toBe(2);
     expect(shouldKeepHostInviteSheet({
       room: { roomId: 'room_host_1', hostId: 'host', guestId: null },
       myId: 'host', inRoom: true, mode: 'pvp', hasOpponent: false,

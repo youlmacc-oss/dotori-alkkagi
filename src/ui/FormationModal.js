@@ -44,7 +44,6 @@ import {
   shiftBoardHex,
 } from './ThreeRenderer.js';
 import { soundEngine } from '../audio/SoundEngine.js';
-import { PVP_PUBLIC_ENABLED } from '../network/PvpInvite.js';
 import {
   isActionCamEnabled,
   isRearrangeAskEnabled,
@@ -124,7 +123,7 @@ function loadMatchConfig() {
   try {
     const rawMode = localStorage.getItem(GAME_MODE_KEY);
     const mode = rawMode === GAME_MODE.PVP
-      ? (PVP_PUBLIC_ENABLED ? GAME_MODE.PVP : GAME_MODE.AI)
+      ? GAME_MODE.PVP
       : rawMode === GAME_MODE.SOLO
         ? GAME_MODE.SOLO
         : GAME_MODE.AI;
@@ -270,8 +269,6 @@ export class SettingsModal {
     for (const btn of root.querySelectorAll('[data-mode]')) {
       btn.addEventListener('click', () => {
         if (btn.dataset.mode === 'pvp' || btn.id === 'lobby-mode-pvp') {
-          // [PVP 공개 중단] 1:1 모드 선택. 재개 시 아래 가드를 제거
-          if (!PVP_PUBLIC_ENABLED) return;
           if (this.onPvpPick) {
             this.onPvpPick();
             return;

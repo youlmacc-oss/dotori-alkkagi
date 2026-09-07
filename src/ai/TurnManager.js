@@ -63,11 +63,17 @@ export class TurnManager {
     this.sync();
   }
 
+  aiColor() {
+    return this.engine.aiColor || STONE_COLOR.WHITE;
+  }
+
   isAiControlling() {
     const engine = this.engine;
-    return engine.gameMode === GAME_MODE.AI
-      && engine.currentTurn === STONE_COLOR.WHITE
-      && engine.phase !== PHASE.GAME_OVER;
+    if (engine.phase === PHASE.GAME_OVER) return false;
+    if (engine.gameMode === GAME_MODE.AI && engine.currentTurn === STONE_COLOR.WHITE) return true;
+    return engine.gameMode === GAME_MODE.PVP
+      && engine.aiOpponent === true
+      && engine.currentTurn === this.aiColor();
   }
 
   sync() {
@@ -77,11 +83,9 @@ export class TurnManager {
       engine.setInputLocked(true);
       return;
     }
-    if (engine.phase === PHASE.GAME_OVER || engine.gameMode !== GAME_MODE.AI) {
+    if (engine.phase === PHASE.GAME_OVER) {
       this.cancel();
-      if (engine.gameMode !== GAME_MODE.PVP || !engine.isPaused?.()) {
-        engine.setInputLocked(false);
-      }
+      engine.setInputLocked(false);
       return;
     }
     if (this.isAiControlling()) {
@@ -89,6 +93,7 @@ export class TurnManager {
       if (engine.phase === PHASE.IDLE && !engine.aim) this.schedule();
       return;
     }
+    this.cancel();
     engine.setInputLocked(false);
   }
 
@@ -105,8 +110,10 @@ export class TurnManager {
     const engine = this.engine;
     if (engine.isPaused?.() || !this.isAiControlling() || engine.phase !== PHASE.IDLE) return;
     const shot = calculateShot(
-      engine.getAliveStones(STONE_COLOR.WHITE).map(toShotStone),
-      engine.getAliveStones(STONE_COLOR.BLACK).map(toShotStone),
+      engine.getAliveStones(this.aiColor()).map(toShotStone),
+      engine.getAliveStones(this.aiColor() === STONE_COLOR.WHITE
+        ? STONE_COLOR.BLACK
+        : STONE_COLOR.WHITE).map(toShotStone),
       engine.aiDifficulty,
       { rng: this.rng, board: engine.board },
     );

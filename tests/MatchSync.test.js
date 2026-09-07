@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  TURN_END_WATCHDOG_MS,
   canApplyRemoteBoard,
   isLaunchSync,
+  mergeCampLayouts,
   ownCampFacesSeat,
   packLaunchSync,
   packMatchSync,
   remoteStonesNeedRebuild,
   shouldApplyMatchSync,
+  shouldFireTurnEndWatchdog,
   shouldFollowRemoteStart,
   shouldPublishMatchSync,
   shouldPulseMatchSync,
@@ -79,9 +82,11 @@ describe('1:1 판 동기', () => {
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'launch' })).toBe(true);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'turnEnd' })).toBe(true);
-    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(false);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'camp' })).toBe(true);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'start' })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'start' })).toBe(false);
     expect(shouldPulseMatchSync({ inPvp: true, started: true })).toBe(false);
     expect(shouldPulseMatchSync({ inPvp: true, started: false })).toBe(false);
     expect(shouldPulseMatchSync({ inPvp: true, started: true, spectating: true })).toBe(false);
@@ -222,5 +227,48 @@ describe('1:1 판 동기', () => {
     })).toBe(true);
     expect(guest.phase).toBe(PHASE.IDLE);
     expect(shouldAttachKillCam(true, null)).toBe(true);
+  });
+
+  it('seq가 lastSeq보다 클 때만 받고 timestamp는 구패킷 fallback이다', () => {
+    const older = packMatchSync({
+      phase: PHASE.IDLE,
+      currentTurn: STONE_COLOR.WHITE,
+      stones: [],
+    }, { roomId: 'room_h', senderId: 'host', timestamp: 80, seq: 2, matchGen: 1 });
+    expect(shouldApplyMatchSync(older, {
+      myId: 'guest', roomId: 'room_h', inPvp: true, lastSeq: 2, matchGen: 1,
+    })).toBe(false);
+    expect(shouldApplyMatchSync({ ...older, seq: 3 }, {
+      myId: 'guest', roomId: 'room_h', inPvp: true, lastSeq: 2, lastTs: 90, matchGen: 1,
+    })).toBe(true);
+    expect(shouldApplyMatchSync({ ...older, seq: 3, matchGen: 0 }, {
+      myId: 'guest', roomId: 'room_h', inPvp: true, lastSeq: 2, matchGen: 2,
+    })).toBe(false);
+    expect(shouldApplyMatchSync({ ...older, seq: 4, matchGen: 2 }, {
+      myId: 'guest', roomId: 'room_h', inPvp: true, lastSeq: 2, matchGen: 2,
+    })).toBe(true);
+  });
+
+  it('호스트는 흑+백 camp를 한 장으로 합치고 watchdog은 900ms에 한 번이다', () => {
+    const merged = mergeCampLayouts(
+      [{ id: 'b1', color: STONE_COLOR.BLACK, position: { x: 10, y: 520 } }],
+      [{ id: 'w1', color: STONE_COLOR.WHITE, position: { x: 20, y: 180 } }],
+    );
+    expect(merged).toHaveLength(2);
+    expect(merged[0].color).toBe(STONE_COLOR.BLACK);
+    expect(merged[1].position.x).toBe(20);
+    expect(TURN_END_WATCHDOG_MS).toBe(900);
+    expect(shouldFireTurnEndWatchdog({
+      isHost: true, launchedAt: 1000, now: 1900, gotShooterTurnEnd: false,
+    })).toBe(true);
+    expect(shouldFireTurnEndWatchdog({
+      isHost: true, launchedAt: 1000, now: 1899, gotShooterTurnEnd: false,
+    })).toBe(false);
+    expect(shouldFireTurnEndWatchdog({
+      isHost: false, launchedAt: 1000, now: 2000,
+    })).toBe(false);
+    expect(shouldFireTurnEndWatchdog({
+      isHost: true, launchedAt: 1000, now: 2000, gotShooterTurnEnd: true,
+    })).toBe(false);
   });
 });

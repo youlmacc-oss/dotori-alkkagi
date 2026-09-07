@@ -5,6 +5,8 @@
 import { PHASE } from '../physics/GameEngine.js';
 
 export const MATCH_SYNC_EVENT = 'spectator_update';
+export const TURN_END_WATCHDOG_MS = 900;
+export const CAMP_WAIT_MS = 800;
 
 export function packStoneSync(stone) {
   if (!stone) return null;
@@ -46,7 +48,57 @@ export function packMatchSync(snapshot, extras = {}) {
     force: launch?.force ?? extras.force ?? snapshot?.force ?? null,
     power: launch?.power ?? extras.power ?? snapshot?.power ?? 0,
     color: launch?.color ?? extras.color ?? snapshot?.color ?? null,
+    seq: matchSyncSeq(extras.seq ?? snapshot?.seq),
+    matchGen: matchSyncGen(extras.matchGen ?? snapshot?.matchGen),
   };
+}
+
+export function matchSyncSeq(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+export function matchSyncGen(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+export function mergeCampLayouts(hostStones = [], guestStones = []) {
+  const black = (Array.isArray(hostStones) ? hostStones : [])
+    .filter((stone) => stone && stone.color !== 'white')
+    .map(packStoneSync)
+    .filter(Boolean);
+  const white = (Array.isArray(guestStones) ? guestStones : [])
+    .filter((stone) => stone && stone.color === 'white')
+    .map(packStoneSync)
+    .filter(Boolean);
+  return [...black, ...white];
+}
+
+export function packCampSync(stones, extras = {}) {
+  return packMatchSync({
+    phase: extras.phase,
+    currentTurn: extras.currentTurn,
+    stones,
+  }, {
+    ...extras,
+    event: 'camp',
+    kind: 'camp',
+    stones,
+  });
+}
+
+export function shouldFireTurnEndWatchdog({
+  isHost = false,
+  awaitingStart = false,
+  launchedAt = 0,
+  now = Date.now(),
+  gotShooterTurnEnd = false,
+} = {}) {
+  if (!isHost || awaitingStart === true || gotShooterTurnEnd === true) return false;
+  const at = Number(launchedAt);
+  if (!Number.isFinite(at) || at <= 0) return false;
+  return Number(now) - at >= TURN_END_WATCHDOG_MS;
 }
 
 export function packLaunchSync(launch, extras = {}) {
@@ -67,14 +119,25 @@ export function shouldApplyMatchSync(payload, {
   myId,
   roomId,
   lastTs = 0,
+  lastSeq = 0,
+  matchGen = 0,
   spectating = false,
   inPvp = false,
 } = {}) {
   if (!payload) return false;
   if (myId && payload.senderId && String(payload.senderId) === String(myId)) return false;
   if (roomId && payload.roomId && String(payload.roomId) !== String(roomId)) return false;
-  const ts = Number(payload.timestamp) || 0;
-  if (ts && Number(lastTs) > 0 && ts <= Number(lastTs)) return false;
+  const incomingGen = matchSyncGen(payload.matchGen);
+  const localGen = matchSyncGen(matchGen);
+  if (localGen && incomingGen < localGen) return false;
+  const seq = matchSyncSeq(payload.seq);
+  const seen = matchSyncSeq(lastSeq);
+  if (seq > 0) {
+    if (seen > 0 && seq <= seen) return false;
+  } else {
+    const ts = Number(payload.timestamp) || 0;
+    if (ts && Number(lastTs) > 0 && ts <= Number(lastTs)) return false;
+  }
   return spectating === true || inPvp === true;
 }
 
@@ -85,8 +148,10 @@ export function shouldPublishMatchSync({
   event = '',
 } = {}) {
   if (!inPvp || force !== true) return false;
-  if (event === 'launch') return true;
-  if (event === 'turnEnd' || event === 'gameOver' || event === 'start') return isHost === true;
+  if (event === 'launch' || event === 'turnEnd' || event === 'camp' || event === 'gameOver') {
+    return true;
+  }
+  if (event === 'start') return isHost === true;
   return false;
 }
 
@@ -107,8 +172,13 @@ export function canApplyRemoteBoard({
   remoteEvent = '',
 } = {}) {
   if (shouldHoldEndedBoard({ localPhase, remotePhase })) return false;
-  if (remoteEvent === 'turnEnd' || remoteEvent === 'gameOver' || remoteEvent === 'start') {
-    return true;
+  if (
+    remoteEvent === 'turnEnd'
+    || remoteEvent === 'gameOver'
+    || remoteEvent === 'start'
+    || remoteEvent === 'camp'
+  ) {
+    return remoteEvent !== 'camp';
   }
   const remoteBehind = remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE;
   const turnMoved = Boolean(remoteTurn && localTurn && remoteTurn !== localTurn);

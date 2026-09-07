@@ -7,6 +7,7 @@
     "cache:purge": "node scripts/purge-cache.js",
     "predev": "node scripts/purge-cache.js",
     "dev": "vite --force",
+    "dev:dual": "vite --force --open /?dual=1",
     "prebuild": "node scripts/purge-cache.js",
     "build": "vite build",
     "pretest": "node scripts/purge-cache.js",
