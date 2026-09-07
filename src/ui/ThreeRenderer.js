@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GAME_MODE, POWER_RATIO, STONE_COLOR, STONE_RADIUS, STONE_VISUAL_SCALE, aimGuideVisualScale, clampPowerScale, isOutsideInnerBoard, scaleAimGuideEnd } from '../physics/GameEngine.js';
+import { GAME_MODE, POWER_RATIO, STONE_COLOR, STONE_RADIUS, STONE_VISUAL_SCALE, aimGuideVisualScale, clampPowerScale, isOutsideInnerBoard, rearrangeZoneRects, scaleAimGuideEnd } from '../physics/GameEngine.js';
 import { isActionCamEnabled } from './PlayPrefs.js';
 import { ndcBoundsFitBox, ndcBoxToCss, ndcLiftToClearBottom, playfieldNdcBox, PLAYFIELD_HUD, visualShellRect } from './ViewportShell.js';
 
@@ -557,6 +557,7 @@ export class ThreeRenderer {
     this._initLighting();
     this._createWoodBoard();
     this._createAimGuideLine();
+    this._createRearrangeGuides();
     this._fitQuarterView();
   }
 
@@ -986,6 +987,53 @@ export class ThreeRenderer {
     this.scene.add(this.aimTargetDot);
   }
 
+  _createRearrangeGuides() {
+    this.rearrangeGuides = [];
+    for (const color of [STONE_COLOR.WHITE, STONE_COLOR.BLACK]) {
+      const geo = new THREE.PlaneGeometry(1, 1);
+      const mat = new THREE.MeshBasicMaterial({
+        color: color === STONE_COLOR.WHITE ? 0xfff3c8 : 0xf4c06e,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false,
+        depthTest: false,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = STONE_Y + 0.6;
+      mesh.renderOrder = 20;
+      mesh.visible = false;
+      mesh.userData.zoneColor = color;
+      this.scene.add(mesh);
+      this.rearrangeGuides.push(mesh);
+    }
+  }
+
+  syncRearrangeGuide(snapshot) {
+    if (!this.rearrangeGuides?.length) return;
+    const on = Boolean(snapshot?.placementOnly) && !this.killCam;
+    const allowed = snapshot?.placementColor || null;
+    const rects = on ? rearrangeZoneRects(snapshot?.board, allowed) : [];
+    const pulse = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const blink = Math.floor(pulse / 500) % 2 === 0;
+    this.rearrangeGuides.forEach((mesh) => {
+      const rect = rects.find((band) => band.color === mesh.userData.zoneColor);
+      if (!rect) {
+        mesh.visible = false;
+        return;
+      }
+      const a = this._matterToThree(rect.minX, rect.minY);
+      const b = this._matterToThree(rect.maxX, rect.maxY);
+      mesh.position.x = (a.x + b.x) / 2;
+      mesh.position.z = (a.z + b.z) / 2;
+      mesh.scale.x = Math.max(8, Math.abs(b.x - a.x));
+      mesh.scale.y = Math.max(8, Math.abs(b.z - a.z));
+      mesh.material.opacity = blink ? 0.34 : 0.1;
+      mesh.visible = true;
+    });
+  }
+
   _matterToThree(x, y) {
     const mx = Number.isFinite(x) ? x : this.worldWidth / 2;
     const my = Number.isFinite(y) ? y : this.worldHeight / 2;
@@ -1348,6 +1396,7 @@ export class ThreeRenderer {
     const dt = Number.isFinite(rawDt) ? Math.min(0.05, Math.max(0, rawDt)) || 0.016 : 0.016;
     this._lastT = now;
     this.syncSeat(snapshot, dt);
+    this.syncRearrangeGuide(snapshot);
     if (!this.killCam) this.pinPlayfieldChrome();
 
     const currentIds = new Set();

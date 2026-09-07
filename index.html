@@ -12,7 +12,7 @@
     <meta property="og:description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
     <meta property="og:type" content="website" />
     <meta name="description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
-    <link rel="stylesheet" href="/src/style.css?v=20260907e" />
+    <link rel="stylesheet" href="/src/style.css?v=20260907g" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -354,6 +354,15 @@
         pointer-events: auto;
       }
       #stage .pvp-start-hint[hidden] { display: none !important; }
+      #stage .pvp-start-hint.is-rearrange-count {
+        min-width: 52px;
+        font-size: min(28px, 7vw);
+        letter-spacing: 0.04em;
+      }
+      #stage.is-rearranging .control-panel,
+      #stage.is-rearranging .ticker-billboard {
+        pointer-events: none;
+      }
       #stage .ready-ask-box {
         position: absolute;
         left: var(--board-cx, 50%);
@@ -1424,6 +1433,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260907e"></script>
+    <script type="module" src="/src/main.js?v=20260907g"></script>
   </body>
 </html>

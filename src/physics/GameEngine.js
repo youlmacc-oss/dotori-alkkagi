@@ -583,7 +583,7 @@ export const FORMATION_SECOND_LINE = Object.freeze({
   BLACK: 6,
 });
 
-/** 3D 상판 9줄과 같은 격자선 → Matter Y */
+/** 3D 상판 9줄과 같은 격자선 → Matter 좌표 */
 export function boardGridLineMatterY(index, world = VIRTUAL_WIDTH) {
   const tex = 1024;
   const pad = 68;
@@ -593,6 +593,11 @@ export function boardGridLineMatterY(index, world = VIRTUAL_WIDTH) {
   const usable = mesh - inset;
   return world / 2 + (t * mesh - mesh / 2) * (world / usable);
 }
+export const boardGridLineMatterX = boardGridLineMatterY;
+export const FORMATION_EDGE_LINE = Object.freeze({
+  MIN: 0,
+  MAX: 8,
+});
 export const FORMATION_SHAPE = Object.freeze({
   LINE: 'line',
   WEDGE: 'wedge',
@@ -716,6 +721,92 @@ export function resolveCustomFormationDrop(origin, pointer, color, others = [], 
     ...validateStonePlacement(clamped, others, origin, board, kind),
     action: 'place',
   };
+}
+
+/** 시작 전 재배치: 둘째 선까지만, 좌우·자기 끝은 9줄 가장자리까지. */
+export function getRearrangeZones() {
+  const left = boardGridLineMatterX(FORMATION_EDGE_LINE.MIN);
+  const right = boardGridLineMatterX(FORMATION_EDGE_LINE.MAX);
+  const top = boardGridLineMatterY(FORMATION_EDGE_LINE.MIN);
+  const bottom = boardGridLineMatterY(FORMATION_EDGE_LINE.MAX);
+  const whiteFar = boardGridLineMatterY(FORMATION_SECOND_LINE.WHITE);
+  const blackFar = boardGridLineMatterY(FORMATION_SECOND_LINE.BLACK);
+  return {
+    minX: Math.min(left, right),
+    maxX: Math.max(left, right),
+    white: {
+      minY: Math.min(top, whiteFar),
+      maxY: Math.max(top, whiteFar),
+    },
+    black: {
+      minY: Math.min(blackFar, bottom),
+      maxY: Math.max(blackFar, bottom),
+    },
+  };
+}
+
+export function clampToRearrangeZone(x, y, color) {
+  const zones = getRearrangeZones();
+  const band = color === STONE_COLOR.BLACK ? zones.black : zones.white;
+  return {
+    x: Math.min(zones.maxX, Math.max(zones.minX, x)),
+    y: Math.min(band.maxY, Math.max(band.minY, y)),
+    color,
+  };
+}
+
+export function isInRearrangeZone(x, y, color) {
+  const zones = getRearrangeZones();
+  const band = color === STONE_COLOR.BLACK ? zones.black : zones.white;
+  return x >= zones.minX && x <= zones.maxX && y >= band.minY && y <= band.maxY;
+}
+
+/** 대전 시작 전 재배치: 둘째 선·판 끝으로 클램프. 설정용 뒤로당김=발사와 분리. */
+export function resolveMatchRearrangeDrop(origin, pointer, color, others = []) {
+  const clamped = clampToRearrangeZone(pointer.x, pointer.y, color);
+  if (!isInRearrangeZone(clamped.x, clamped.y, color)) {
+    return {
+      ok: false,
+      reason: 'zone',
+      action: 'place',
+      x: origin?.x ?? clamped.x,
+      y: origin?.y ?? clamped.y,
+    };
+  }
+  if (hasStoneOverlap(clamped.x, clamped.y, others)) {
+    return {
+      ok: false,
+      reason: 'overlap',
+      action: 'place',
+      x: origin?.x ?? clamped.x,
+      y: origin?.y ?? clamped.y,
+    };
+  }
+  return { ok: true, reason: null, action: 'place', x: clamped.x, y: clamped.y };
+}
+
+export function rearrangeZoneRects(board = BOARD, color = null) {
+  const zones = getRearrangeZones(board);
+  const bands = [];
+  if (!color || color === STONE_COLOR.WHITE) {
+    bands.push({
+      color: STONE_COLOR.WHITE,
+      minX: zones.minX,
+      maxX: zones.maxX,
+      minY: zones.white.minY,
+      maxY: zones.white.maxY,
+    });
+  }
+  if (!color || color === STONE_COLOR.BLACK) {
+    bands.push({
+      color: STONE_COLOR.BLACK,
+      minX: zones.minX,
+      maxX: zones.maxX,
+      minY: zones.black.minY,
+      maxY: zones.black.maxY,
+    });
+  }
+  return bands;
 }
 
 export function clampLayoutToFormationZone(layout, board = BOARD, kind = FORMATION_ZONE.CUSTOM) {
@@ -1425,6 +1516,7 @@ export class GameEngine {
       inputLocked: Boolean(this.inputLocked),
       paused: Boolean(this._paused),
       placementOnly: Boolean(this.placementOnly),
+      placementColor: this.placementColor(),
     };
   }
 
@@ -1474,7 +1566,9 @@ export class GameEngine {
     const others = this.getAliveStones()
       .filter((s) => s.id !== stone.id)
       .map((s) => ({ x: s.body.position.x, y: s.body.position.y, color: s.color }));
-    const drop = resolveCustomFormationDrop(origin, point, stone.color, others, this.board);
+    const drop = this.placementOnly
+      ? resolveMatchRearrangeDrop(origin, point, stone.color, others)
+      : resolveCustomFormationDrop(origin, point, stone.color, others, this.board);
     if (drop.ok && drop.action === 'place') {
       Body.setPosition(stone.body, { x: drop.x, y: drop.y });
       Body.setVelocity(stone.body, { x: 0, y: 0 });
@@ -1501,6 +1595,7 @@ export class GameEngine {
       color ? this.getAliveStones(color) : this.getAliveStones(),
       point,
       this.stoneRadius,
+      STONE_PICK_SLOP * 1.7,
     );
   }
 

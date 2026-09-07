@@ -719,12 +719,16 @@ function syncStartGate() {
   const show = inMatchRoom && awaitingStart && engine.phase !== PHASE.SPECTATING;
   if (gate) gate.hidden = !show;
   if (!show) {
+    stage?.classList.remove('is-rearranging');
+    hint?.classList.remove('is-rearrange-count');
+    if (askBox) askBox.hidden = true;
     if (inviteCopyBtn) inviteCopyBtn.hidden = true;
     return;
   }
   const view = currentReadyView();
   const pvp = engine.gameMode === GAME_MODE.PVP;
   const ready = roomHasOpponent(matchRoom) || hasPvpOpponent(matchPlayers());
+  stage?.classList.toggle('is-rearranging', Boolean(view.rearranging));
   if (ask) ask.textContent = READY_ASK;
   if (yesBtn) yesBtn.textContent = READY_YES;
   if (noBtn) noBtn.textContent = READY_NO;
@@ -754,6 +758,7 @@ function syncStartGate() {
   }
   if (hint) {
     hint.hidden = !hintShow;
+    hint.classList.toggle('is-rearrange-count', Boolean(view.rearranging && hintShow));
     if (hintShow) hint.textContent = hintText;
   }
   syncInviteShare();
