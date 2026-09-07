@@ -8,7 +8,7 @@ import {
   FORMATION_SHAPE,
   FORMATION_SLOT,
   FORMATION_STORAGE_KEY,
-  FORMATION_SECOND_LINE,
+  FORMATION_FIRST_LINE,
   FORMATION_ZONE,
   boardGridLineMatterY,
   campsAreSegregated,
@@ -790,7 +790,7 @@ describe('진형 프리셋·구역·겹침', () => {
     expect(validateStonePlacement(far, [other], previous).ok).toBe(true);
   });
 
-  it('커스텀은 둘째 선으로 맞추고 겹침은 거부한다', () => {
+  it('커스텀은 첫째 선으로 맞추고 겹침은 거부한다', () => {
     engine = createEngine();
     engine.setupFormation(1, FORMATION_MODE.PRESET, FORMATION_SHAPE.LINE);
     const before = engine.stones.map((s) => ({ x: s.body.position.x, y: s.body.position.y, color: s.color }));
@@ -838,11 +838,11 @@ describe('진형 프리셋·구역·겹침', () => {
     expect(engine.stones[0].body.position.x).toBeCloseTo(validCustom[0].x);
   });
 
-  it('내 진형은 둘째 선 이내에서만 유효하고 가운데는 밖으로 본다', () => {
+  it('내 진형은 첫째 선 이내에서만 유효하고 가운데는 밖으로 본다', () => {
     const custom = getFormationZones(BOARD, FORMATION_ZONE.CUSTOM);
-    const second = boardGridLineMatterY(FORMATION_SECOND_LINE.WHITE);
-    expect(custom.white.minY).toBeCloseTo(BOARD.outer.y + 24, 5);
-    expect(custom.white.maxY).toBeCloseTo(second, 5);
+    const first = boardGridLineMatterY(FORMATION_FIRST_LINE.WHITE);
+    expect(custom.white.minY).toBeCloseTo(boardGridLineMatterY(0), 5);
+    expect(custom.white.maxY).toBeCloseTo(first, 5);
     expect(custom.white.maxY - custom.white.minY).toBeGreaterThan(80);
     expect(isInFormationZone(360, custom.white.minY, STONE_COLOR.WHITE, BOARD, FORMATION_ZONE.CUSTOM)).toBe(true);
     expect(isInFormationZone(360, custom.white.maxY, STONE_COLOR.WHITE, BOARD, FORMATION_ZONE.CUSTOM)).toBe(true);
@@ -870,7 +870,7 @@ describe('진형 프리셋·구역·겹침', () => {
     expect(formationStorageKey(FORMATION_SLOT.MINE)).not.toBe(formationStorageKey(FORMATION_SLOT.PRESET));
   });
 
-  it('임의 프리셋은 둘째 선 안에 겹치지 않게 놓는다', () => {
+  it('임의 프리셋은 첫째 선 안에 겹치지 않게 놓는다', () => {
     let n = 0;
     const rng = () => {
       n += 1;

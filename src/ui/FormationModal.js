@@ -443,7 +443,7 @@ export class SettingsModal {
         this.count = saved.count;
         this.shape = saved.shape ?? FORMATION_SHAPE.LINE;
         this.draft = saved.positions.map((s) => ({ ...s }));
-        this.setStatus('내 진형입니다. 둘째 선 안에서 돌을 자유롭게 옮기세요');
+        this.setStatus('내 진형입니다. 첫째 선 안에서 돌을 자유롭게 옮기세요');
       } else {
         this.draft = clampLayoutToFormationZone(this.draft, undefined, FORMATION_ZONE.CUSTOM);
         this.setStatus('내 진형이 없습니다. 돌을 옮긴 뒤 진형 저장을 누르세요');
@@ -452,7 +452,7 @@ export class SettingsModal {
       this.usingMine = false;
       this.mode = FORMATION_MODE.CUSTOM;
       this.draft = clampLayoutToFormationZone(this.draft, undefined, FORMATION_ZONE.CUSTOM);
-      this.setStatus('직접 놓기 · 둘째 선 안에 돌을 자유롭게 두세요');
+      this.setStatus('직접 놓기 · 첫째 선 안에 돌을 자유롭게 두세요');
     } else {
       this.usingMine = false;
       this.mode = FORMATION_MODE.PRESET;
@@ -840,8 +840,8 @@ export class SettingsModal {
       const drop = resolveCustomFormationDrop(this.drag.prev, { x: clamped.x, y: clamped.y }, stone.color, others);
       stone.x = drop.ok ? drop.x : origin.x;
       stone.y = drop.ok ? drop.y : origin.y;
-      if (!drop.ok) this.setStatus(drop.reason === 'overlap' ? '겹침으로 되돌렸습니다' : '둘째 선 안으로 되돌렸습니다');
-      else this.setStatus('배치됨 · 둘째 선 안에서 자유롭게 옮기세요');
+      if (!drop.ok) this.setStatus(drop.reason === 'overlap' ? '겹침으로 되돌렸습니다' : '첫째 선 안으로 되돌렸습니다');
+      else this.setStatus('배치됨 · 첫째 선 안에서 자유롭게 옮기세요');
     } else if (!shot.inDeadzone && pullDist >= SLINGSHOT.PULL_DEADZONE) {
       this.draft[this.drag.index].x = origin.x;
       this.draft[this.drag.index].y = origin.y;

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   FORMATION_EDGE_LINE,
-  FORMATION_SECOND_LINE,
+  FORMATION_FIRST_LINE,
   FORMATION_ZONE,
   GAME_MODE,
   GameEngine,
@@ -72,7 +72,7 @@ describe('대전방 재배치 규칙', () => {
     expect(black.body.position.y).toBeCloseTo(kept.y, 5);
   });
 
-  it('시작 전 재배치는 둘째 선 밖으로 나가도 발사하지 않고 존 안에 고정한다', () => {
+  it('시작 전 재배치는 첫째 선 밖으로 나가도 발사하지 않고 존 안에 고정한다', () => {
     const engine = createEngine();
     engine.setMatchConfig({ mode: GAME_MODE.AI });
     engine.setPlacementOnly(true);
@@ -99,20 +99,23 @@ describe('대전방 재배치 규칙', () => {
     expect(rearrangeZoneRects(engine.board)).toHaveLength(2);
   });
 
-  it('재배치는 둘째 선만 막고 좌우·자기 끝은 바둑판 끝까지 연다', () => {
+  it('재배치는 첫째 선만 막고 좌우·자기 끝은 바둑판 끝까지 연다', () => {
     const zones = getRearrangeZones();
     const left = boardGridLineMatterX(FORMATION_EDGE_LINE.MIN);
     const right = boardGridLineMatterX(FORMATION_EDGE_LINE.MAX);
     const bottom = boardGridLineMatterY(FORMATION_EDGE_LINE.MAX);
-    const second = boardGridLineMatterY(FORMATION_SECOND_LINE.BLACK);
+    const first = boardGridLineMatterY(FORMATION_FIRST_LINE.BLACK);
     expect(zones.minX).toBeCloseTo(left, 5);
     expect(zones.maxX).toBeCloseTo(right, 5);
     expect(zones.black.maxY).toBeCloseTo(bottom, 5);
-    expect(zones.black.minY).toBeCloseTo(second, 5);
+    expect(zones.black.minY).toBeCloseTo(first, 5);
     expect(zones.white.minY).toBeCloseTo(boardGridLineMatterY(FORMATION_EDGE_LINE.MIN), 5);
-    expect(zones.white.maxY).toBeCloseTo(boardGridLineMatterY(FORMATION_SECOND_LINE.WHITE), 5);
-    expect(zones.maxX - zones.minX).toBeGreaterThan(getFormationZones(undefined, FORMATION_ZONE.CUSTOM).maxX
-      - getFormationZones(undefined, FORMATION_ZONE.CUSTOM).minX + 40);
+    expect(zones.white.maxY).toBeCloseTo(boardGridLineMatterY(FORMATION_FIRST_LINE.WHITE), 5);
+    const custom = getFormationZones(undefined, FORMATION_ZONE.CUSTOM);
+    expect(custom.minX).toBeCloseTo(zones.minX, 5);
+    expect(custom.maxX).toBeCloseTo(zones.maxX, 5);
+    expect(custom.black.maxY).toBeCloseTo(zones.black.maxY, 5);
+    expect(zones.black.minY).toBeGreaterThan(boardGridLineMatterY(6));
     const engine = createEngine();
     engine.setMatchConfig({ mode: GAME_MODE.AI });
     engine.setPlacementOnly(true);
@@ -122,10 +125,13 @@ describe('대전방 재배치 규칙', () => {
     expect(corner.ok).toBe(true);
     expect(corner.x).toBeCloseTo(left, 5);
     expect(corner.y).toBeCloseTo(bottom, 5);
-    expect(isInFormationZone(corner.x, corner.y, STONE_COLOR.BLACK, engine.board, FORMATION_ZONE.CUSTOM)).toBe(false);
+    expect(isInFormationZone(corner.x, corner.y, STONE_COLOR.BLACK, engine.board, FORMATION_ZONE.CUSTOM)).toBe(true);
+    const towardCenter = engine.placeStoneAt(black, { x: origin.x, y: boardGridLineMatterY(6) }, origin);
+    expect(towardCenter.ok).toBe(true);
+    expect(towardCenter.y).toBeCloseTo(first, 5);
   });
 
-  it('1인은 일시정지 중에도 흑백 모두 둘째 선 안에서 옮긴다', () => {
+  it('1인은 일시정지 중에도 흑백 모두 첫째 선 안에서 옮긴다', () => {
     const engine = createEngine();
     engine.setMatchConfig({ mode: GAME_MODE.SOLO });
     engine.setPlacementOnly(true);

@@ -19,7 +19,7 @@ import { SESSION_ACORNS, acornSettleKey, shouldForfeitOnLeave, shouldForfeitOnOp
 import { RESULT_BEAT_MS, RESULT_FALL_HOLD_MS } from '../physics/ResultBeat.js';
 import {
   BOARD,
-  FORMATION_SECOND_LINE,
+  FORMATION_FIRST_LINE,
   FORMATION_ZONE,
   GAME_MODE,
   PHASE,
@@ -389,8 +389,8 @@ export function pvpPresenceClinicOk() {
 export function pvpRearrangeClinicOk() {
   const zones = getFormationZones(BOARD, FORMATION_ZONE.CUSTOM);
   return readyClinicOk()
-    && Math.abs(zones.white.maxY - boardGridLineMatterY(FORMATION_SECOND_LINE.WHITE)) < 1e-6
-    && Math.abs(zones.black.minY - boardGridLineMatterY(FORMATION_SECOND_LINE.BLACK)) < 1e-6;
+    && Math.abs(zones.white.maxY - boardGridLineMatterY(FORMATION_FIRST_LINE.WHITE)) < 1e-6
+    && Math.abs(zones.black.minY - boardGridLineMatterY(FORMATION_FIRST_LINE.BLACK)) < 1e-6;
 }
 
 export function pullClinicOk(input = {}) {
@@ -606,11 +606,11 @@ export function runLobbyClinic(input = {}) {
     ),
     item(
       'pvpPlace',
-      '1:1 둘째 선 재배치',
+      '1:1 첫째 선 재배치',
       pvpRearrangeClinicOk() && Boolean(input.hasReadyAsk && input.hasRearrangeAsk),
       pvpRearrangeClinicOk()
-        ? (input.rearrangeAskOn === false ? '꺼짐 · 시작 버튼 바로 표시' : '예 하면 10초 내림 카운트 · 둘째 선 안')
-        : '재배치 카운트/둘째 선 오류',
+        ? (input.rearrangeAskOn === false ? '꺼짐 · 시작 버튼 바로 표시' : '예 하면 10초 내림 카운트 · 첫째 선 안')
+        : '재배치 카운트/첫째 선 오류',
     ),
     item(
       'ready',

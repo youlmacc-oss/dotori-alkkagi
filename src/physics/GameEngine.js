@@ -577,7 +577,11 @@ export const FORMATION_MODE = Object.freeze({
   CUSTOM: 'custom',
 });
 
-/** 9줄 바둑판에서 진영 둘째 선(위 2 · 아래 6). */
+/** 9줄 바둑판에서 진영 첫째 선(위 1 · 아래 7). */
+export const FORMATION_FIRST_LINE = Object.freeze({
+  WHITE: 1,
+  BLACK: 7,
+});
 export const FORMATION_SECOND_LINE = Object.freeze({
   WHITE: 2,
   BLACK: 6,
@@ -617,22 +621,14 @@ export function getFormationZones(board = BOARD, kind = FORMATION_ZONE.PRESET) {
   const minX = inner.x + r;
   const maxX = inner.x + inner.size - r;
   if (kind === FORMATION_ZONE.CUSTOM) {
-    const outer = board.outer ?? BOARD.outer;
-    const whiteFar = boardGridLineMatterY(FORMATION_SECOND_LINE.WHITE);
-    const blackFar = boardGridLineMatterY(FORMATION_SECOND_LINE.BLACK);
+    const edges = getRearrangeZones();
     return {
       inner,
       kind: FORMATION_ZONE.CUSTOM,
-      minX,
-      maxX,
-      white: {
-        minY: outer.y + r,
-        maxY: Math.max(outer.y + r, whiteFar),
-      },
-      black: {
-        minY: Math.min(outer.y + outer.size - r, blackFar),
-        maxY: outer.y + outer.size - r,
-      },
+      minX: edges.minX,
+      maxX: edges.maxX,
+      white: edges.white,
+      black: edges.black,
     };
   }
   const zoneH = inner.size * FORMATION_ZONE_RATIO;
@@ -673,7 +669,7 @@ export function hasStoneOverlap(x, y, others, minSep = FORMATION_MIN_SEPARATION)
 }
 
 /**
- * 프리셋은 진영 30% 구역, 내 진형/커스텀은 둘째 선 이내 + 지름×1.2 겹침 검사.
+ * 프리셋은 진영 30% 구역, 내 진형/커스텀은 첫째 선 이내 + 지름×1.2 겹침 검사.
  * 실패 시 이전 유효 좌표로 복귀한다.
  */
 export function validateStonePlacement(
@@ -723,14 +719,14 @@ export function resolveCustomFormationDrop(origin, pointer, color, others = [], 
   };
 }
 
-/** 시작 전 재배치: 둘째 선까지만, 좌우·자기 끝은 9줄 가장자리까지. */
+/** 시작 전 재배치: 첫째 선까지만, 좌우·자기 끝은 9줄 가장자리까지. */
 export function getRearrangeZones() {
   const left = boardGridLineMatterX(FORMATION_EDGE_LINE.MIN);
   const right = boardGridLineMatterX(FORMATION_EDGE_LINE.MAX);
   const top = boardGridLineMatterY(FORMATION_EDGE_LINE.MIN);
   const bottom = boardGridLineMatterY(FORMATION_EDGE_LINE.MAX);
-  const whiteFar = boardGridLineMatterY(FORMATION_SECOND_LINE.WHITE);
-  const blackFar = boardGridLineMatterY(FORMATION_SECOND_LINE.BLACK);
+  const whiteFar = boardGridLineMatterY(FORMATION_FIRST_LINE.WHITE);
+  const blackFar = boardGridLineMatterY(FORMATION_FIRST_LINE.BLACK);
   return {
     minX: Math.min(left, right),
     maxX: Math.max(left, right),
@@ -761,7 +757,7 @@ export function isInRearrangeZone(x, y, color) {
   return x >= zones.minX && x <= zones.maxX && y >= band.minY && y <= band.maxY;
 }
 
-/** 대전 시작 전 재배치: 둘째 선·판 끝으로 클램프. 설정용 뒤로당김=발사와 분리. */
+/** 대전 시작 전 재배치: 첫째 선·판 끝으로 클램프. 설정용 뒤로당김=발사와 분리. */
 export function resolveMatchRearrangeDrop(origin, pointer, color, others = []) {
   const clamped = clampToRearrangeZone(pointer.x, pointer.y, color);
   if (!isInRearrangeZone(clamped.x, clamped.y, color)) {

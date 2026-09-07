@@ -103,7 +103,7 @@ describe('대기실 자가진단', () => {
     expect(guidePageCount()).toBe(10);
     expect(guidePageAt(0).id).toBe('cover');
     expect(guidePageAt(10).id).toBe('cover');
-    expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.points.some((line) => line.includes('둘째 선'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.points.some((line) => line.includes('첫째 선'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.points.some((line) => line.includes('10부터'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('참가하기'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.lead).toContain('초대에 의해서만');

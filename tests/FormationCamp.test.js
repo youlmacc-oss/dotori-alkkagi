@@ -49,7 +49,7 @@ describe('시작 진영 분리', () => {
     }
   });
 
-  it('임의 배치도 둘째 선 안 자기 진영만 쓴다', () => {
+  it('임의 배치도 첫째 선 안 자기 진영만 쓴다', () => {
     const layout = createRandomFormationLayout(9, BOARD, () => 0.15);
     expect(campsOf(layout, FORMATION_ZONE.CUSTOM)).toBe(true);
   });
