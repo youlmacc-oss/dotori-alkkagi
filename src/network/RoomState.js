@@ -3,6 +3,11 @@
  */
 
 export const ROOM_STATE_EVENT = 'room_state';
+export const PVP_ROOM_ID = 'dotori-pvp';
+
+export function normalizePvpRoomId(raw) {
+  return String(raw || '').trim() ? PVP_ROOM_ID : '';
+}
 
 export function createRoomState({
   roomId,
@@ -29,22 +34,12 @@ export function createRoomState({
   };
 }
 
-/**
- * 도토리 금화 시드 동전. 화면 메시 없음.
- * 짝수=앞면=호스트(흑), 홀수=뒷면=게스트(백).
- */
-export function tossFirstPlayerId({ hostId, guestId, roomId, matchGen } = {}) {
+/** 1:1 선공은 항상 호스트. */
+export function tossFirstPlayerId({ hostId, guestId } = {}) {
   const host = String(hostId || '').trim();
   const guest = String(guestId || '').trim();
   if (!host || !guest || host === guest) return null;
-  const gen = roomMatchGen({ matchGen });
-  const key = `${String(roomId || '')}:${gen}:${host}:${guest}`;
-  let h = 2166136261;
-  for (let i = 0; i < key.length; i++) {
-    h ^= key.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0) % 2 === 0 ? host : guest;
+  return host;
 }
 
 export function assignFirstPlayer(state) {
@@ -104,6 +99,7 @@ export function applyRoomGuest(state, { guestId, guestName } = {}) {
     guestName: String(guestName || state.guestName || '').trim() || null,
     inviteTargetId: null,
     phase: state.started ? 'playing' : 'ready',
+    acked: true,
   });
 }
 
@@ -139,8 +135,21 @@ export function incomingClearsOpponent(current, incoming) {
   if (String(current.roomId) !== String(incoming.roomId)) return false;
   if (incoming.guestId) return false;
   if (incoming.started === true) return false;
+  if (incoming.inviteTargetId) return false;
+  if (!String(incoming.leaverId || '').trim()) return false;
   if (incoming.phase && incoming.phase !== 'waiting') return false;
   return Boolean(current.guestId || current.started);
+}
+
+/** 좌석 권위는 room_state. Presence 끊김만으로 상대를 지워 대기실로 보내지 않는다. */
+export function shouldApplyPresenceOpponentLoss({
+  roomHasOpponent = false,
+  presenceHasOpponent = false,
+  confirmedLeave = false,
+} = {}) {
+  if (presenceHasOpponent === true) return false;
+  if (roomHasOpponent === true) return false;
+  return confirmedLeave === true;
 }
 
 export function shouldReturnToPvpWait({
@@ -183,7 +192,8 @@ export function incomingResetsForRematch(current, incoming) {
   if (String(current.roomId) !== String(incoming.roomId)) return false;
   if (!current.guestId || !incoming.guestId) return false;
   if (String(current.guestId) !== String(incoming.guestId)) return false;
-  return current.started === true && incoming.started !== true;
+  if (current.started !== true) return false;
+  return roomMatchGen(incoming) > roomMatchGen(current);
 }
 
 /** 다시하기 뒤에 도착한 1국 started=true는 시작으로 되돌리지 않는다. */
@@ -213,10 +223,26 @@ export function shouldKeepPvpRematch({
     && Boolean(guestId);
 }
 
+/** 게스트가 자기 room_id를 들고 있어도, 호스트 방에 자기 이름이 있으면 그 방을 따른다. */
+export function shouldAdoptHostRoom(current, incoming) {
+  if (!current?.roomId || !incoming?.roomId) return false;
+  if (String(current.roomId) === String(incoming.roomId)) return false;
+  const guest = String(incoming.guestId || '').trim();
+  if (!guest) return false;
+  return guest === String(current.guestId || '') || guest === String(current.hostId || '');
+}
+
 export function mergeRoomState(current, incoming) {
   if (!incoming?.roomId) return current || null;
   if (!current) return { ...createRoomState(incoming), ...incoming };
-  if (current.roomId !== incoming.roomId) return current;
+  if (current.roomId !== incoming.roomId) {
+    if (!shouldAdoptHostRoom(current, incoming)) return current;
+    current = {
+      ...current,
+      roomId: incoming.roomId,
+      hostId: incoming.hostId || current.hostId,
+    };
+  }
   if (incomingClearsOpponent(current, incoming)) {
     return applyRoomLeave(current, { leaverId: incoming.leaverId || current.guestId });
   }
@@ -261,11 +287,16 @@ export function mergeRoomState(current, incoming) {
 
 export function shouldApplyRoomState(payload, { myId, roomId, inRoom } = {}) {
   if (!payload?.roomId) return false;
-  if (roomId && String(payload.roomId) !== String(roomId)) return false;
   const mine = String(myId || '');
+  const named = Boolean(mine) && (
+    String(payload.hostId || '') === mine
+    || String(payload.guestId || '') === mine
+    || String(payload.inviteTargetId || '') === mine
+    || String(payload.leftoverId || '') === mine
+  );
+  if (roomId && String(payload.roomId) !== String(roomId) && !named) return false;
   if (!mine) return true;
-  if (payload.hostId === mine || payload.guestId === mine || payload.inviteTargetId === mine) return true;
-  if (payload.leftoverId && String(payload.leftoverId) === mine) return true;
+  if (named) return true;
   return Boolean(inRoom && roomId && String(payload.roomId) === String(roomId));
 }
 

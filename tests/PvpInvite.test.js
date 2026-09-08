@@ -23,6 +23,7 @@ import {
   canInviteLobbyUser,
   buildLobbyInvite,
   evaluateLobbyInvite,
+  shouldOfferLobbyInvite,
   guestClaimHeld,
   incomingRejectsMyGuestSeat,
   INVITE_ACTION_ACCEPT,
@@ -40,6 +41,7 @@ import {
   shouldApplyInviteAccept,
   shouldApplyInviteDecline,
   shouldKeepHostInviteSheet,
+  peerJoiningHostRoom,
   shouldDismissInviteModal,
   attemptInviteJoin,
   lobbyInviteAsk,
@@ -93,10 +95,10 @@ describe('대기실 1:1 안내', () => {
   });
 
   it('초대 URL을 읽고 빈 닉은 게스트로 맞춘다', () => {
-    expect(readInviteRoomId('?room=room_host_1')).toBe('room_host_1');
-    expect(readInviteRoomId('https://x.test/play?room=room_a')).toBe('room_a');
+    expect(readInviteRoomId('?room=room_host_1')).toBe('dotori-pvp');
+    expect(readInviteRoomId('https://x.test/play?room=room_a')).toBe('dotori-pvp');
     expect(inviteUrlFor('room_host_1', { origin: 'https://game.test', pathname: '/' }))
-      .toBe('https://game.test/?room=room_host_1');
+      .toBe('https://game.test/?room=dotori-pvp');
     expect(guestInviteNickname('', []).nickname).toBe(INVITE_NICK_FALLBACK);
     expect(guestInviteNickname('가나다라마바', []).nickname).toBe('가나다라마');
     expect(guestInviteNickname('달이', [{ userId: 'a', nickname: '달이' }]).nickname).toBe('달이2');
@@ -177,6 +179,7 @@ describe('대기실 1:1 안내', () => {
     });
     expect(ack).toMatchObject({ action: INVITE_ACTION_ACK, targetId: 'guest', guestId: 'guest' });
     expect(shouldApplyRoomAck(ack, { myId: 'guest', roomId: 'room_host_1' })).toBe(true);
+    expect(shouldApplyRoomAck(ack, { myId: 'guest', roomId: 'room_guest' })).toBe(true);
     expect(shouldApplyRoomAck(ack, { myId: 'host', roomId: 'room_host_1' })).toBe(false);
     expect(HELLO_RETRY_MS).toBe(1500);
     expect(HELLO_RETRY_MAX).toBe(2);
@@ -188,12 +191,19 @@ describe('대기실 1:1 안내', () => {
       room: { roomId: 'room_host_1', hostId: 'host', guestId: null },
       myId: 'host', inRoom: true, mode: 'pvp', hasOpponent: true,
     })).toBe(false);
+    expect(peerJoiningHostRoom([
+      { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'dotori-pvp' },
+      { userId: 'guest', nickname: '달이', status: 'playing', mode: 'pvp', roomId: 'dotori-pvp' },
+    ], { myId: 'host', roomId: 'dotori-pvp' })?.userId).toBe('guest');
+    expect(peerJoiningHostRoom([
+      { userId: 'guest', status: 'lobby', roomId: null },
+    ], { myId: 'host', roomId: 'dotori-pvp' })).toBeNull();
     expect(evaluateLobbyInvite({
       roomId: 'room_host_1', hostId: 'host', targetId: 'guest', action: INVITE_ACTION_ACCEPT,
     }, 'guest').ok).toBe(false);
     expect(roomFromInvite({
       roomId: 'room_host_1', hostId: 'host', hostName: '호치',
-    })).toMatchObject({ id: 'room_host_1', hostId: 'host', status: 'waiting', started: false });
+    })).toMatchObject({ id: 'dotori-pvp', hostId: 'host', status: 'waiting', started: false });
     expect(evaluateInviteJoin(roomFromInvite({
       roomId: 'room_host_1', hostId: 'host',
     }), 'guest').ok).toBe(true);
@@ -221,9 +231,10 @@ describe('대기실 1:1 안내', () => {
     expect(canShareInvite({
       mode: 'pvp', inRoom: true, started: false, isHost: true, hasOpponent: false,
     })).toBe(true);
-    expect(joinedMatchRoomId({ joiningRoomId: 'room_host', joining: true, myId: 'guest' })).toBe('room_host');
+    expect(joinedMatchRoomId({ joiningRoomId: 'room_host', joining: true, myId: 'guest' })).toBe('dotori-pvp');
     expect(joinedMatchRoomId({ joining: true, myId: 'guest' })).toBe('');
     expect(joinedMatchRoomId({ joining: false, myId: 'host' })).toBe('room_host');
+    expect(joinedMatchRoomId({ joining: false, myId: 'host', mode: 'pvp' })).toBe('dotori-pvp');
     expect(shouldKeepInviteShare({
       mode: 'pvp',
       inRoom: true,
@@ -275,6 +286,17 @@ describe('대기실 1:1 안내', () => {
     expect(evaluateLobbyInvite(payload, 'guest').ok).toBe(true);
     expect(evaluateLobbyInvite(payload, 'other').ok).toBe(false);
     expect(evaluateLobbyInvite({ roomId: '', hostId: 'host', targetId: 'guest' }, 'guest').ok).toBe(false);
+    expect(evaluateLobbyInvite({
+      roomId: 'dotori-pvp', hostId: 'host', hostName: '호치', targetId: 'guest',
+    }, 'guest').ok).toBe(true);
+    expect(shouldOfferLobbyInvite({ spectating: false, matchStarted: false, roomStarted: false })).toBe(true);
+    expect(shouldOfferLobbyInvite({ spectating: true })).toBe(false);
+    expect(shouldOfferLobbyInvite({ matchStarted: true })).toBe(false);
+    expect(shouldOfferLobbyInvite({ roomStarted: true })).toBe(false);
+    expect(shouldOfferLobbyInvite({ inRoom: true, isHost: true, hasOpponent: false })).toBe(true);
+    expect(shouldOfferLobbyInvite({ inRoom: true, joining: true, isHost: true })).toBe(false);
+    expect(shouldOfferLobbyInvite({ inRoom: true, isHost: false })).toBe(false);
+    expect(shouldOfferLobbyInvite({ inRoom: true, isHost: true, hasOpponent: true })).toBe(false);
     expect(lobbyInviteAsk('도토리1')).toContain('도토리1');
     expect(LOBBY_INVITE_SENT).toContain('초대');
     expect(LOBBY_INVITE_BTN).toContain('초대');
@@ -336,25 +358,22 @@ describe('대기실 1:1 안내', () => {
     expect(refresh).toBe(1);
   });
 
-  it('1:1 개설 후 10분이면 대기실로 보낸다', () => {
-    expect(PVP_WAIT_EXPIRE_MS).toBe(10 * 60 * 1000);
-    expect(PVP_WAIT_EXPIRE_HINT).toContain('10분');
+  it('1:1 미시작 강제 퇴장은 없다', () => {
+    expect(PVP_WAIT_EXPIRE_MS).toBe(0);
+    expect(PVP_WAIT_EXPIRE_HINT).toBe('');
     expect(roomOpenedAt([
       { roomId: 'room_a', pvpOpenedAt: 5000 },
       { roomId: 'room_a', pvpOpenedAt: 2000 },
       { roomId: 'room_b', pvpOpenedAt: 100 },
     ], 'room_a', 9000)).toBe(2000);
     expect(shouldExpirePvpWait({
-      mode: 'pvp', openedAt: 1000, started: false, now: 1000 + PVP_WAIT_EXPIRE_MS,
-    })).toBe(true);
-    expect(shouldExpirePvpWait({
-      mode: 'pvp', openedAt: 1000, started: false, now: 1000 + PVP_WAIT_EXPIRE_MS - 1,
+      mode: 'pvp', openedAt: 1000, started: false, now: 1000 + 10 * 60 * 1000,
     })).toBe(false);
     expect(shouldExpirePvpWait({
-      mode: 'pvp', openedAt: 1000, started: true, now: 1000 + PVP_WAIT_EXPIRE_MS,
+      mode: 'pvp', openedAt: 1000, started: true, now: 1000 + 10 * 60 * 1000,
     })).toBe(false);
     expect(shouldExpirePvpWait({
-      mode: 'solo', openedAt: 1000, started: false, now: 1000 + PVP_WAIT_EXPIRE_MS,
+      mode: 'solo', openedAt: 1000, started: false, now: 1000 + 10 * 60 * 1000,
     })).toBe(false);
   });
 

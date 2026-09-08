@@ -93,6 +93,8 @@ export function presenceFromMatch(input = {}) {
     acorns: Number.isFinite(Number(input.acorns)) ? Math.floor(Number(input.acorns)) : 10,
     rearranging: Boolean(input.rearranging),
     started: Boolean(playing && input.started),
+    matchGen: playing && Number(input.matchGen) > 0 ? Math.floor(Number(input.matchGen)) : 0,
+    boardReady: Boolean(playing && input.boardReady),
     ended: Boolean(playing && (input.ended || input.phase === 'gameOver')),
     inviteTargetId: playing && input.inviteTargetId ? String(input.inviteTargetId) : null,
     inviteAt: playing && Number(input.inviteAt) > 0 ? Math.floor(Number(input.inviteAt)) : null,
@@ -211,13 +213,13 @@ export function canJoinPvpRoom(room, userId) {
   return !seated && room.hostId !== userId;
 }
 
-export function canJoinPvpFromLobby(room, userId) {
-  return canJoinPvpRoom(room, userId);
+export function canJoinPvpFromLobby(_room, _userId) {
+  return false;
 }
 
 export const PVP_WAIT_GUIDE = '1:1 초대 대전 · 초대손님을 기다리는 중';
 export const PVP_WAIT_ROOM_HINT = '초대 대전 · 초대손님을 기다리는 중';
-export const LOBBY_MODE_HINT = '1인 연습 · AI 대국 · 1:1은 참가 또는 초대';
+export const LOBBY_MODE_HINT = '1인 연습 · AI 대국 · 1:1은 초대 또는 링크';
 
 export function waitingPvpRooms(rooms) {
   return (Array.isArray(rooms) ? rooms : []).filter(isPvpWaiting);
@@ -288,6 +290,14 @@ export function preferNewerPresence(current, incoming) {
     id: current.id || incoming.id,
     presenceKey: current.presenceKey || incoming.presenceKey || current.userId || incoming.userId,
   };
+  const incomingNick = String(incoming.nickname || '');
+  const currentNick = String(current.nickname || '');
+  if (incomingNick && incomingNick !== currentNick && (nextAt >= curAt || !curAt)) {
+    merged.nickname = incomingNick;
+  }
+  if (Boolean(incoming.started) !== Boolean(current.started) && (nextAt >= curAt || !curAt)) {
+    merged.started = Boolean(incoming.started);
+  }
   if (nextAt === curAt && incomingPlay && currentPlay) {
     const newerInv = Number(newer.inviteAt) || 0;
     const olderInv = Number(older.inviteAt) || 0;
@@ -304,6 +314,10 @@ export function shouldReplacePresenceHint(live, hint) {
   if (!hint) return false;
   const liveAt = presenceTime(live);
   const hintAt = presenceTime(hint);
+  const liveNick = String(live?.nickname || '');
+  const hintNick = String(hint?.nickname || '');
+  if (hintNick && liveNick && hintNick !== liveNick) return liveAt > hintAt;
+  if (Boolean(live?.started) !== Boolean(hint?.started)) return liveAt > hintAt;
   if (isMatchRoomOccupant(hint) && !isMatchRoomOccupant(live)) return liveAt > hintAt;
   return liveAt >= hintAt;
 }

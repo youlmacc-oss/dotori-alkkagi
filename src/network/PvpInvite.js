@@ -3,8 +3,9 @@
  */
 
 import { PRESENCE_STATUS, canJoinPvpRoom, isPlayableLobbyMode, roomsFromPresence } from './LobbyRooms.js';
-import { canInviteLobbyAi, isLobbyAiUser } from './LobbyAi.js';
+import { isLobbyAiUser } from './LobbyAi.js';
 import { hasPvpOpponent, matchPlayersFromPresence } from './MatchStart.js';
+import { PVP_ROOM_ID, normalizePvpRoomId } from './RoomState.js';
 import {
   NICKNAME_MAX,
   NICKNAME_STORAGE_KEY,
@@ -36,8 +37,9 @@ export const INVITE_NICK_FALLBACK = '게스트';
 export const INVITE_NICK_STORAGE_KEY = 'alkagi_nickname';
 export const INVITE_NICK_PLACEHOLDER = '닉네임 (5글자 이내)';
 export const INVITE_ROOM_STORAGE_KEY = 'dotori-alkkagi-invite-room';
-export const PVP_WAIT_EXPIRE_MS = 10 * 60 * 1000;
-export const PVP_WAIT_EXPIRE_HINT = '10분 동안 시작되지 않아 대기실로 돌아갑니다';
+export const PVP_WAIT_EXPIRE_MS = 0;
+export const PVP_WAIT_EXPIRE_HINT = '';
+export const PVP_PEER_GONE_HINT = '상대방과의 연결이 종료되었습니다';
 export const PVP_INVITE_EVENT = 'pvp_invite';
 export const LOBBY_INVITE_HINT = '대기방 친구를 초대할 수 있습니다';
 export const LOBBY_INVITE_EMPTY = '지금 초대할 대기 인원이 없습니다';
@@ -60,14 +62,14 @@ export function readInviteRoomId(search = '') {
   const raw = String(search ?? '');
   const query = raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : raw;
   try {
-    return String(new URLSearchParams(query).get('room') || '').trim();
+    return normalizePvpRoomId(new URLSearchParams(query).get('room'));
   } catch {
     return '';
   }
 }
 
 export function inviteUrlFor(roomId, loc = globalThis.location) {
-  const id = String(roomId || '').trim();
+  const id = normalizePvpRoomId(roomId) || PVP_ROOM_ID;
   const origin = loc?.origin || '';
   const pathname = loc?.pathname || '/';
   return `${origin}${pathname}?room=${encodeURIComponent(id)}`;
@@ -84,9 +86,12 @@ export function clearInviteQuery(win = globalThis) {
 }
 
 export function findInviteRoom(rooms, roomId) {
-  const id = String(roomId || '').trim();
+  const id = normalizePvpRoomId(roomId) || String(roomId || '').trim();
   if (!id) return null;
-  return (rooms || []).find((room) => room.id === id) || null;
+  return (rooms || []).find((room) => {
+    const rid = normalizePvpRoomId(room?.id) || String(room?.id || '').trim();
+    return rid === id;
+  }) || null;
 }
 
 export function readStoredInviteRoom(storage = globalThis.sessionStorage) {
@@ -110,9 +115,10 @@ export function writeStoredInviteRoom(roomId, storage = globalThis.sessionStorag
 
 /** 초대 payload만으로 대기 1:1 방을 만든다. Presence가 늦어도 수락 입장에 쓴다. */
 export function roomFromInvite(invite) {
-  const roomId = String(invite?.roomId || '').trim();
+  const raw = String(invite?.roomId || '').trim();
+  const roomId = normalizePvpRoomId(raw) || raw;
   const hostId = String(invite?.hostId || '').trim()
-    || (roomId.startsWith('room_') ? roomId.slice(5) : '');
+    || (raw.startsWith('room_') ? raw.slice(5) : '');
   if (!roomId || !hostId) return null;
   const started = invite?.started === true;
   return {
@@ -139,14 +145,15 @@ export function pickJoinablePvp(candidates, userId) {
 }
 
 export function resolveInviteRoom(users, roomId) {
-  const id = String(roomId || '').trim();
+  const id = normalizePvpRoomId(roomId) || String(roomId || '').trim();
   if (!id) return null;
   const found = findInviteRoom(roomsFromPresence(users), id);
   if (found) return found;
   const host = (users || []).find((user) => {
     const uid = user?.userId ?? user?.id;
     const playing = !user?.status || user.status === 'playing';
-    return playing && (user?.roomId === id || (uid && `room_${uid}` === id && user?.mode === 'pvp'));
+    const sameRoom = normalizePvpRoomId(user?.roomId) === id || user?.roomId === id;
+    return playing && user?.mode === 'pvp' && (sameRoom || (uid && `room_${uid}` === String(roomId || '')));
   });
   if (!host || (host.mode && host.mode !== 'pvp')) return null;
   const started = host.started === true;
@@ -189,8 +196,9 @@ export function canShareInvite({
 }
 
 /** 수락으로 들어가는 방 id. joining 중에는 내 방으로 덮지 않는다. */
-export function joinedMatchRoomId({ joiningRoomId, joining, myId } = {}) {
-  const join = String(joiningRoomId || '').trim();
+export function joinedMatchRoomId({ joiningRoomId, joining, myId, mode } = {}) {
+  if (mode === 'pvp') return PVP_ROOM_ID;
+  const join = normalizePvpRoomId(joiningRoomId) || String(joiningRoomId || '').trim();
   if (join) return join;
   if (joining) return '';
   return myId ? `room_${myId}` : '';
@@ -246,9 +254,7 @@ export function canInviteLobbyUser({
 } = {}) {
   const id = target?.userId ?? target?.id;
   if (!id || !isIdleLobbyUser(target)) return false;
-  if (isLobbyAiUser(target)) {
-    return canInviteLobbyAi({ started, hasOpponent, spectating });
-  }
+  if (isLobbyAiUser(target)) return false;
   return canShareInvite({ mode, inRoom, started, isHost, hasOpponent });
 }
 
@@ -299,6 +305,24 @@ export function evaluateLobbyInvite(payload, myId) {
   return { ok: true, invite, hint: '' };
 }
 
+/** 대기실·빈 1:1 호스트만 수락 팝업. 수락해 앉은 게스트·입장 중에는 다시 열지 않는다. */
+export function shouldOfferLobbyInvite({
+  spectating = false,
+  matchStarted = false,
+  roomStarted = false,
+  inRoom = false,
+  joining = false,
+  isHost = false,
+  hasOpponent = false,
+} = {}) {
+  if (spectating === true) return false;
+  if (matchStarted === true || roomStarted === true) return false;
+  if (joining === true) return false;
+  if (inRoom === true && isHost !== true) return false;
+  if (inRoom === true && hasOpponent === true) return false;
+  return true;
+}
+
 export const INVITE_ACTION_DECLINE = 'decline';
 export const INVITE_ACTION_CANCEL = 'cancel';
 export const INVITE_ACTION_ACCEPT = 'accept';
@@ -346,7 +370,11 @@ export function shouldApplyInviteAccept(payload, {
   ) return false;
   if (String(payload.hostId) !== String(myId)) return false;
   if (inRoom === false) return false;
-  if (roomId && payload.roomId && String(payload.roomId) !== String(roomId)) return false;
+  if (roomId && payload.roomId) {
+    const a = normalizePvpRoomId(payload.roomId) || String(payload.roomId);
+    const b = normalizePvpRoomId(roomId) || String(roomId);
+    if (a !== b) return false;
+  }
   const incomingGuest = String(payload.targetId || payload.guestId || '').trim();
   if (!incomingGuest || !payload.roomId) return false;
   const seated = String(guestId || '').trim();
@@ -384,9 +412,8 @@ export function buildRoomAck(state, extras = {}) {
   };
 }
 
-export function shouldApplyRoomAck(payload, { myId, roomId } = {}) {
+export function shouldApplyRoomAck(payload, { myId } = {}) {
   if (payload?.action !== INVITE_ACTION_ACK || !myId) return false;
-  if (roomId && payload.roomId && String(payload.roomId) !== String(roomId)) return false;
   const guest = String(payload.guestId || payload.targetId || '');
   return guest === String(myId) && Boolean(payload.roomId && payload.hostId);
 }
@@ -405,6 +432,20 @@ export function shouldKeepHostInviteSheet({
     && room.started !== true
     && !room.guestId
     && hasOpponent !== true;
+}
+
+/** 수락 방송이 없어도, 같은 1:1 방에 들어온 Presence는 호스트가 손님으로 앉힌다. */
+export function peerJoiningHostRoom(users, { myId, roomId } = {}) {
+  const mine = String(myId || '');
+  const rid = normalizePvpRoomId(roomId) || String(roomId || '').trim();
+  if (!mine || !rid) return null;
+  return (Array.isArray(users) ? users : []).find((user) => {
+    const id = String(user?.userId ?? user?.id ?? '').trim();
+    if (!id || id === mine) return false;
+    if (user?.status !== PRESENCE_STATUS.PLAYING || user?.mode !== 'pvp') return false;
+    const uidRoom = normalizePvpRoomId(user?.roomId) || String(user?.roomId || '').trim();
+    return uidRoom === rid;
+  }) || null;
 }
 
 export function shouldDismissInviteModal(openInvite, payload, myId) {
@@ -487,7 +528,7 @@ export function shouldExpirePvpWait({
   started,
   now = Date.now(),
 } = {}) {
-  if (mode !== 'pvp' || started) return false;
+  if (!PVP_WAIT_EXPIRE_MS || mode !== 'pvp' || started) return false;
   const at = Number(openedAt);
   if (!Number.isFinite(at) || at <= 0) return false;
   return Number(now) - at >= PVP_WAIT_EXPIRE_MS;

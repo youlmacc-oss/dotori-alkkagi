@@ -130,15 +130,25 @@ export class SoundEngine {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) return null;
     if (!this.audioCtx) this.audioCtx = new AudioContextClass();
-    if (this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume();
-    }
+    this._resumeCtx(this.audioCtx);
     return this.audioCtx;
   }
 
+  _resumeCtx(ctx) {
+    if (!ctx || ctx.state === 'running') return ctx;
+    try {
+      ctx.resume();
+    } catch {
+      /* resume is user-gesture bound */
+    }
+    return ctx;
+  }
+
+  /** 재생은 이미 열린 컨텍스트만 쓴다. 로드 시 만들면 suspended로 고정된다. */
   _ctx() {
-    const ctx = this.audioCtx || this._ensureCtx();
-    if (!ctx || ctx.state === 'suspended') return null;
+    const ctx = this.audioCtx;
+    if (!ctx) return null;
+    this._resumeCtx(ctx);
     return ctx;
   }
 

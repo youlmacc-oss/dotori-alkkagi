@@ -8,9 +8,12 @@ import {
   packLaunchSync,
   packMatchSync,
   remoteStonesNeedRebuild,
+  sameMatchSyncRoom,
   shouldApplyMatchSync,
   shouldFireTurnEndWatchdog,
+  shouldApplyRematchStart,
   shouldFollowRemoteStart,
+  shouldIgnoreLateStartReplay,
   shouldPublishMatchSync,
   shouldPulseMatchSync,
   findRemoteStone,
@@ -40,9 +43,48 @@ describe('1:1 판 동기', () => {
     expect(shouldApplyMatchSync(payload, {
       myId: 'guest', roomId: 'room_other', inPvp: true,
     })).toBe(false);
+    expect(sameMatchSyncRoom('dotori-pvp', 'room_host')).toBe(true);
+    expect(shouldApplyMatchSync({
+      ...payload, roomId: 'room_host', timestamp: 51, seq: 2,
+    }, { myId: 'guest', roomId: 'dotori-pvp', inPvp: true })).toBe(true);
     expect(shouldApplyMatchSync(payload, {
       myId: 'guest', roomId: 'room_h', lastTs: 50, inPvp: true,
     })).toBe(false);
+    expect(shouldIgnoreLateStartReplay({
+      localPhase: PHASE.AIMING, remoteEvent: 'start',
+    })).toBe(true);
+    expect(shouldIgnoreLateStartReplay({
+      localPhase: PHASE.IDLE, remoteEvent: 'start',
+    })).toBe(false);
+    expect(shouldIgnoreLateStartReplay({
+      localPhase: PHASE.AIMING,
+      remoteEvent: 'start',
+      localTurn: STONE_COLOR.WHITE,
+      remoteTurn: STONE_COLOR.BLACK,
+    })).toBe(false);
+    expect(shouldApplyRematchStart({
+      localPhase: PHASE.GAME_OVER, remoteEvent: 'start', remoteGen: 1, localGen: 0,
+    })).toBe(true);
+    expect(shouldApplyRematchStart({
+      localPhase: PHASE.IDLE, remoteEvent: 'start', remoteGen: 1, localGen: 0,
+    })).toBe(false);
+    expect(canApplyRemoteBoard({
+      localPhase: PHASE.AIMING,
+      remotePhase: PHASE.IDLE,
+      remoteEvent: 'start',
+    })).toBe(false);
+    expect(canApplyRemoteBoard({
+      localPhase: PHASE.AIMING,
+      remotePhase: PHASE.IDLE,
+      remoteEvent: 'start',
+      localTurn: STONE_COLOR.WHITE,
+      remoteTurn: STONE_COLOR.BLACK,
+    })).toBe(true);
+    expect(canApplyRemoteBoard({
+      localPhase: PHASE.GAME_OVER,
+      remotePhase: PHASE.IDLE,
+      remoteEvent: 'start',
+    })).toBe(true);
     expect(canApplyRemoteBoard({ localPhase: PHASE.AIMING, remotePhase: PHASE.IDLE })).toBe(false);
     expect(canApplyRemoteBoard({
       localPhase: PHASE.AIMING,
@@ -130,6 +172,76 @@ describe('1:1 판 동기', () => {
     expect(findRemoteStone(engine.stones, { id: first.id }, 9)).toBe(first);
     expect(packMatchSync(engine.getSnapshot(), { roomId: 'room_h', senderId: 'g' }).scores)
       .toEqual(engine.getSnapshot().scores);
+  });
+
+  it('시작 재전송은 조준 중인 마지막 백돌을 취소하지 않는다', () => {
+    const engine = new GameEngine({ autoStart: false });
+    engine.setMatchConfig({ mode: GAME_MODE.PVP });
+    engine.setHost(false);
+    engine.currentTurn = STONE_COLOR.WHITE;
+    const whites = engine.getAliveStones(STONE_COLOR.WHITE);
+    whites.slice(1).forEach((stone) => {
+      stone.fallen = true;
+    });
+    const last = whites[0];
+    const origin = { x: last.body.position.x, y: last.body.position.y };
+    engine.aim = { stone: last, pointer: { x: origin.x, y: origin.y + 48 } };
+    engine.phase = PHASE.AIMING;
+    expect(engine.applyRemoteMatchState({
+      event: 'start',
+      phase: PHASE.IDLE,
+      currentTurn: STONE_COLOR.WHITE,
+      stones: engine.stones.map((stone) => ({
+        id: stone.id,
+        color: stone.color,
+        fallen: stone.fallen,
+        position: { x: stone.body.position.x, y: stone.body.position.y },
+      })),
+    })).toBe(false);
+    expect(engine.phase).toBe(PHASE.AIMING);
+    expect(engine.aim?.stone).toBe(last);
+    expect(engine._pickOwnStoneAt(origin)?.id).toBe(last.id);
+  });
+
+  it('다시하기 start는 끝난 판과 엇갈린 턴을 흑 선공으로 맞춘다', () => {
+    const engine = new GameEngine({ autoStart: false });
+    engine.setMatchConfig({ mode: GAME_MODE.PVP });
+    engine.setHost(false);
+    engine.phase = PHASE.GAME_OVER;
+    engine.winner = STONE_COLOR.WHITE;
+    engine.currentTurn = STONE_COLOR.WHITE;
+    expect(engine.applyRemoteMatchState({
+      event: 'start',
+      phase: PHASE.IDLE,
+      currentTurn: STONE_COLOR.BLACK,
+      winner: null,
+      turnRemainingMs: 15000,
+      stones: engine.stones.map((stone) => ({
+        id: stone.id,
+        color: stone.color,
+        fallen: false,
+        position: { x: stone.body.position.x, y: stone.body.position.y },
+      })),
+    })).toBe(true);
+    expect(engine.phase).toBe(PHASE.IDLE);
+    expect(engine.winner).toBeNull();
+    expect(engine.currentTurn).toBe(STONE_COLOR.BLACK);
+    engine.phase = PHASE.AIMING;
+    engine.currentTurn = STONE_COLOR.WHITE;
+    expect(engine.applyRemoteMatchState({
+      event: 'start',
+      phase: PHASE.IDLE,
+      currentTurn: STONE_COLOR.BLACK,
+      winner: null,
+      stones: engine.stones.map((stone) => ({
+        id: stone.id,
+        color: stone.color,
+        fallen: false,
+        position: { x: stone.body.position.x, y: stone.body.position.y },
+      })),
+    })).toBe(true);
+    expect(engine.currentTurn).toBe(STONE_COLOR.BLACK);
+    expect(engine.phase).toBe(PHASE.IDLE);
   });
 
   it('수락한 게스트는 백 좌석이고 자기 돌이 앞에 있다', () => {

@@ -30,6 +30,7 @@ import {
   shouldConfirmPresenceLeave,
   shouldEvictConnectedUser,
   shouldForceLobbyLeave,
+  shouldPublishLeaveOnUnload,
 } from './PresencePolicy.js';
 
 export const LOBBY_SWEEP_EVENT = 'lobby_sweep';
@@ -512,7 +513,9 @@ export class RealtimeManager {
 
   async broadcastRoomState(payload) {
     if (!this.channel || !payload?.roomId || !payload?.hostId) return false;
-    return this._sendBroadcast(ROOM_STATE_EVENT, payload);
+    let ok = await this._sendBroadcast(ROOM_STATE_EVENT, payload, 2);
+    if (ok) void this._sendBroadcast(ROOM_STATE_EVENT, payload, 0);
+    return ok;
   }
 
   async broadcastAiWallet(payload) {
@@ -525,7 +528,7 @@ export class RealtimeManager {
   async broadcastSpectatorData(gameState) {
     if (!this.isConnected || !this.channel || !gameState) return false;
 
-    return this._sendBroadcast(MATCH_SYNC_EVENT, packMatchSync(gameState, {
+    const packed = packMatchSync(gameState, {
       matchId: gameState.matchId || gameState.roomId || `match_${Date.now()}`,
       roomId: gameState.roomId || gameState.matchId || '',
       senderId: gameState.senderId || '',
@@ -542,7 +545,10 @@ export class RealtimeManager {
       color: gameState.color,
       seq: gameState.seq,
       matchGen: gameState.matchGen,
-    }));
+    });
+    let ok = await this._sendBroadcast(MATCH_SYNC_EVENT, packed, 2);
+    if (ok) void this._sendBroadcast(MATCH_SYNC_EVENT, packed, 0);
+    return ok;
   }
 
   /**
@@ -676,6 +682,7 @@ export class RealtimeManager {
       userId: key,
       id: key,
       presenceKey: key,
+      lastSeen: Number(row.lastSeen) > 0 ? Number(row.lastSeen) : Date.now(),
     };
     const prev = this._peerHints.get(key) || this.onlineUsers.get(key);
     this._peerHints.set(key, preferNewerPresence(prev, incoming));
@@ -801,17 +808,25 @@ export class RealtimeManager {
 // 임시 Mock 클라이언트 (실제 Supabase 없이 테스트용)
 export function bindPresenceUnload(manager, target = globalThis, onLeave) {
   if (!manager || !target?.addEventListener) return () => {};
-  const leave = (event) => {
-    if (event?.type === 'pagehide' && event.persisted) return;
+  const leave = (event, fallbackType) => {
+    const typed = {
+      type: event?.type || fallbackType,
+      persisted: event?.persisted,
+    };
+    const visibilityState = target.document?.visibilityState
+      || globalThis.document?.visibilityState;
+    if (!shouldPublishLeaveOnUnload(typed, { visibilityState })) return;
     try { onLeave?.(); } catch { /* ignore */ }
     manager._unloading = true;
     void manager.disconnect();
   };
-  target.addEventListener('pagehide', leave);
-  target.addEventListener('beforeunload', leave);
+  const onPageHide = (event) => leave(event, 'pagehide');
+  const onBeforeUnload = (event) => leave(event, 'beforeunload');
+  target.addEventListener('pagehide', onPageHide);
+  target.addEventListener('beforeunload', onBeforeUnload);
   return () => {
-    target.removeEventListener('pagehide', leave);
-    target.removeEventListener('beforeunload', leave);
+    target.removeEventListener('pagehide', onPageHide);
+    target.removeEventListener('beforeunload', onBeforeUnload);
   };
 }
 

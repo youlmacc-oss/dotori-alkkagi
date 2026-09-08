@@ -100,9 +100,8 @@ export function createLobbyAiUser({
   };
 }
 
-export function mergeLobbyAiSeat(users, extras = {}) {
-  const list = (Array.isArray(users) ? users : []).filter((user) => !isLobbyAiUser(user));
-  return [...list, createLobbyAiUser(extras)];
+export function mergeLobbyAiSeat(users) {
+  return (Array.isArray(users) ? users : []).filter((user) => !isLobbyAiUser(user));
 }
 
 /** AI는 초대하지 않는다. 사람은 대기·빈 방에서 AI에게만 보낸다. */
@@ -111,5 +110,5 @@ export function canInviteLobbyAi({
   hasOpponent = false,
   spectating = false,
 } = {}) {
-  return started !== true && hasOpponent !== true && spectating !== true;
+  return false;
 }

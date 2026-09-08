@@ -12,7 +12,7 @@
     <meta property="og:description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
     <meta property="og:type" content="website" />
     <meta name="description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
-    <link rel="stylesheet" href="/src/style.css?v=20260908j" />
+    <link rel="stylesheet" href="/src/style.css?v=20260909a" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -235,6 +235,7 @@
       }
       #stage .lobby-invite-modal[hidden] { display: none !important; }
       #stage #invite-only-notice { z-index: 62; }
+      #stage #lobby-invite-modal { z-index: 64; }
       #stage .lobby-invite-card {
         width: min(280px, calc(100% - 32px));
         padding: 16px;
@@ -359,6 +360,25 @@
         font-size: min(28px, 7vw);
         letter-spacing: 0.04em;
       }
+      #stage .pvp-start-hint.is-coin-toss {
+        animation: none;
+        opacity: 1;
+        white-space: normal;
+      }
+      #stage .pvp-start-hint.is-coin-toss::before {
+        content: attr(data-face);
+        display: block;
+        width: 44px;
+        height: 44px;
+        margin: 0 auto 6px;
+        border-radius: 50%;
+        border: 2px solid #fff6c8;
+        background: radial-gradient(circle at 35% 30%, #fff3b8 0%, #d4a018 55%, #8a5a10 100%);
+        color: #2c1b14;
+        font-size: 16px;
+        font-weight: 900;
+        line-height: 40px;
+      }
       #stage.is-rearranging .control-panel,
       #stage.is-rearranging .ticker-billboard {
         pointer-events: none;
@@ -438,7 +458,8 @@
         display: flex; flex-direction: column; align-items: center; gap: 8px;
         z-index: 20; pointer-events: none;
       }
-      .hud-bottom-zone > * { pointer-events: auto; }
+      .hud-bottom-zone > * { pointer-events: none; }
+      .hud-bottom-zone button { pointer-events: auto; }
       .control-panel {
         width: calc(100% - 28px); margin-bottom: 0;
         display: flex; align-items: center; gap: 10px;
@@ -1428,6 +1449,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260908j"></script>
+    <script type="module" src="/src/main.js?v=20260909a"></script>
   </body>
 </html>

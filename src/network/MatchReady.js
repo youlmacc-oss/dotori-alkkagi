@@ -2,13 +2,16 @@
  * 대전방 진입 후 재배치 의사 · 시작 버튼 · 선공 안내 타이밍.
  */
 
+import { PVP_WAIT_HINT, tossCoinHint } from './MatchStart.js';
+import { roomHasOpponent } from './RoomState.js';
+
 export const READY_ASK = '바둑돌을 재배치 하시겠습니까?';
 export const READY_YES = '예';
 export const READY_NO = '아니오';
 export const READY_ASK_MS = 5000;
 export const REARRANGE_MS = 10000;
 export const FIRST_HINT_AFTER_MS = 3000;
-export const FIRST_HINT = '동전 앞뒤는 반반입니다. 선공이 시작 버튼을 누릅니다.';
+export const FIRST_HINT = '호스트(흑)가 먼저입니다. 선공이 시작 버튼을 누릅니다.';
 export const START_WAIT_HINT = '상대 진형을 맞추고 있습니다';
 export const PEER_REARRANGE_HINT = '상대가 바둑알을 재배치하고 있습니다.';
 
@@ -73,6 +76,33 @@ export function stepMatchReady(state, now, extras = {}) {
     rearranging,
     peerRearranging: Boolean(extras.peerRearranging),
   };
+}
+
+/** 재배치·대기 문구를 가리지 않는다. 선공은 항상 호스트. */
+export function startGateHint({
+  rearranging = false,
+  rearrangeCount = 0,
+  peerRearranging = false,
+  pvp = false,
+  ready = false,
+  hostStartPending = false,
+  startVisible = false,
+  firstHint = false,
+  room = null,
+} = {}) {
+  if (rearranging) {
+    const text = rearrangeCountHint(rearrangeCount);
+    return { text, kind: text ? 'count' : '', face: '' };
+  }
+  if (peerRearranging) return { text: PEER_REARRANGE_HINT, kind: 'wait', face: '' };
+  if (pvp && !roomHasOpponent(room)) return { text: PVP_WAIT_HINT, kind: 'wait', face: '' };
+  if (hostStartPending) return { text: START_WAIT_HINT, kind: 'wait', face: '' };
+  if (pvp && roomHasOpponent(room)) {
+    const text = tossCoinHint(room);
+    if (text) return { text, kind: 'wait', face: '' };
+  }
+  if (pvp && startVisible && firstHint) return { text: FIRST_HINT, kind: 'wait', face: '' };
+  return { text: '', kind: '', face: '' };
 }
 
 export function isPeerRearranging(users, myId, roomId) {

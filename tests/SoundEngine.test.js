@@ -97,6 +97,47 @@ describe('SoundEngine API', () => {
     expect(engine.playDoor('leave')).toBe(false);
   });
 
+  it('로드 시 앰비언스·재생은 AudioContext를 만들지 않는다', () => {
+    const engine = new SoundEngine({ storage: { getItem: () => null, setItem: () => {} } });
+    expect(engine.setAmbience('lobby')).toBe(false);
+    expect(engine.playStart()).toBe(false);
+    expect(engine.audioCtx).toBeNull();
+  });
+
+  it('정지된 컨텍스트는 resume을 다시 걸고 재생을 올린다', () => {
+    const resume = vi.fn(function resume() {
+      this.state = 'running';
+      return Promise.resolve();
+    });
+    const osc = {
+      type: 'sine',
+      frequency: {
+        setValueAtTime() {},
+        exponentialRampToValueAtTime() {},
+      },
+      connect() {},
+      start() {},
+      stop() {},
+    };
+    const gain = {
+      gain: { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} },
+      connect() {},
+    };
+    const ctx = {
+      state: 'suspended',
+      currentTime: 0,
+      resume,
+      destination: {},
+      createOscillator: () => osc,
+      createGain: () => gain,
+    };
+    const engine = new SoundEngine({ storage: { getItem: () => null, setItem: () => {} } });
+    engine.audioCtx = ctx;
+    expect(engine.playStart()).toBe(true);
+    expect(resume).toHaveBeenCalled();
+    expect(ctx.state).toBe('running');
+  });
+
   it('음량·뮤트가 실효 게인을 정한다', () => {
     const store = {};
     const storage = {

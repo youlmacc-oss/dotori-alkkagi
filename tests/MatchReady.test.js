@@ -15,8 +15,10 @@ import {
   rearrangeCountDown,
   rearrangeCountHint,
   skipReadyAsk,
+  startGateHint,
   stepMatchReady,
 } from '../src/network/MatchReady.js';
+import { PVP_WAIT_HINT, tossCoinHint } from '../src/network/MatchStart.js';
 
 describe('대전방 재배치·시작 타이밍', () => {
   it('진입 직후 5초만 재배치 의사를 묻고 시작 버튼은 숨긴다', () => {
@@ -53,7 +55,7 @@ describe('대전방 재배치·시작 타이밍', () => {
 
   it('시작 버튼이 나온 뒤 3초가 지나도 시작하지 않으면 선공 안내를 켠다', () => {
     const state = createMatchReady(0);
-    expect(FIRST_HINT).toContain('동전');
+    expect(FIRST_HINT).toContain('호스트');
     expect(FIRST_HINT).toContain('시작 버튼');
     expect(FIRST_HINT).toContain('선공');
     expect(START_WAIT_HINT).toContain('진형');
@@ -83,5 +85,23 @@ describe('대전방 재배치·시작 타이밍', () => {
     const skipped = skipReadyAsk(createMatchReady(9000), 9000);
     expect(stepMatchReady(skipped, 9000).startVisible).toBe(true);
     expect(stepMatchReady(skipped, 9000).askVisible).toBe(false);
+  });
+
+  it('양쪽이 앉으면 호스트 선공을 보여 주고, 상대가 없으면 기다린다', () => {
+    const room = { roomId: 'dotori-pvp', hostId: 'host', guestId: 'guest', matchGen: 0 };
+    const seated = startGateHint({
+      pvp: true, ready: true, startVisible: false, firstHint: false, room,
+    });
+    expect(seated.kind).toBe('wait');
+    expect(seated.text).toBe(tossCoinHint(room));
+    expect(startGateHint({
+      pvp: true, ready: false, room,
+    }).text).toBe(tossCoinHint(room));
+    expect(startGateHint({
+      pvp: true, ready: false, room: { roomId: 'dotori-pvp', hostId: 'host' },
+    }).text).toBe(PVP_WAIT_HINT);
+    expect(startGateHint({
+      rearranging: true, rearrangeCount: 3, pvp: true, ready: true, room,
+    })).toEqual({ text: '3', kind: 'count', face: '' });
   });
 });

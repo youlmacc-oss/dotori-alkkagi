@@ -14,6 +14,7 @@ import {
   nicknameForSeat,
   reconcileOwnSeat,
   shouldConfirmPresenceLeave,
+  shouldPublishLeaveOnUnload,
   shouldEvictConnectedUser,
   shouldForceLobbyLeave,
 } from '../src/network/PresencePolicy.js';
@@ -102,5 +103,11 @@ describe('대기실 입장 순 닉네임·5분 퇴장', () => {
       selfLeave: true,
       liveUsers: [],
     })).toBe(false);
+    expect(shouldPublishLeaveOnUnload({ type: 'beforeunload' })).toBe(true);
+    expect(shouldPublishLeaveOnUnload(
+      { type: 'pagehide', persisted: false },
+      { visibilityState: 'hidden' },
+    )).toBe(false);
+    expect(shouldPublishLeaveOnUnload({ type: 'pagehide', persisted: true })).toBe(false);
   });
 });

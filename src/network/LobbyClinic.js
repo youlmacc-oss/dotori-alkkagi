@@ -37,11 +37,16 @@ import {
   PVP_WAIT_HINT,
   firstPlayerId,
   hasPvpOpponent,
+  isPeerBoardReady,
   isPeerMatchStarted,
   matchPlayersFromPresence,
   overlayRoomAcorns,
+  presenceStartedFlag,
+  isRematchWait,
   shouldFollowPeerStart,
   shouldHoldPvpStartGate,
+  shouldReplayHostStart,
+  shouldPollGuestStart,
 } from './MatchStart.js';
 import {
   canInviteLobbyUser,
@@ -70,12 +75,15 @@ import {
   isStaleEndedMatchSync,
   shouldHoldEndedBoard,
   shouldApplyMatchSync,
+  shouldApplyRematchStart,
   shouldFollowRemoteStart,
+  shouldIgnoreLateStartReplay,
   shouldPublishMatchSync,
   shouldPulseMatchSync,
 } from './MatchSync.js';
 import {
   applyRoomGuest,
+  applyRoomInvite,
   applyRoomLeave,
   applyRoomStart,
   createRoomState,
@@ -89,10 +97,11 @@ import {
   shouldKeepInviteShareFromRoom,
   shouldKeepPvpRematch,
   shouldReturnToPvpWait,
+  shouldApplyPresenceOpponentLoss,
 } from './RoomState.js';
 import { shouldBlockSettingsToLobby } from '../ui/PlayPrefs.js';
 import { LOBBY_STATE_EVENT, channelSendOk, channelSendLaunched } from './RealtimeManager.js';
-import { shouldConfirmPresenceLeave } from './PresencePolicy.js';
+import { shouldConfirmPresenceLeave, shouldPublishLeaveOnUnload } from './PresencePolicy.js';
 import { BOOK_PLAY_LABEL, BOOK_SKIP_LABEL } from '../ui/GuideBook.js';
 import { seatYawFor } from '../ui/ThreeRenderer.js';
 import {
@@ -133,7 +142,7 @@ export function readyClinicOk() {
   const lastTick = stepMatchReady(yes, REARRANGE_MS - 1);
   const done = stepMatchReady(yes, REARRANGE_MS);
   return READY_ASK.includes('재배치')
-    && FIRST_HINT.includes('반반')
+    && FIRST_HINT.includes('호스트')
     && READY_ASK_MS === 5000
     && REARRANGE_MS === 10000
     && rearrangeCountDown(REARRANGE_MS) === 10
@@ -157,7 +166,7 @@ export function pvpJoinClinicOk() {
     players: [{ userId: 'host' }],
   };
   return canJoinPvpRoom(waiting, 'guest')
-    && canJoinPvpFromLobby(waiting, 'guest')
+    && !canJoinPvpFromLobby(waiting, 'guest')
     && !canJoinPvpRoom(waiting, 'host')
     && !canJoinPvpRoom({ ...waiting, started: true }, 'guest')
     && evaluateInviteJoin(waiting, 'guest').ok === true
@@ -210,13 +219,13 @@ export function pvpInviteAcceptClinicOk() {
         { userId: 'guest', status: 'playing', mode: 'pvp', roomId: 'room_host' },
       ],
     })
-    && joinedMatchRoomId({ joiningRoomId: 'room_host', joining: true, myId: 'guest' }) === 'room_host'
+    && joinedMatchRoomId({ joiningRoomId: 'room_host', joining: true, myId: 'guest', mode: 'pvp' }) === 'dotori-pvp'
     && !shouldKeepInviteShareFromRoom(
       applyRoomGuest(createRoomState({ roomId: 'room_host', hostId: 'host' }), { guestId: 'guest' }),
       { myId: 'host', inRoom: true, mode: GAME_MODE.PVP },
     )
     && ROOM_STATE_EVENT === 'room_state'
-    && joinedMatchRoomId({ joining: false, myId: 'host' }) === 'room_host'
+    && joinedMatchRoomId({ joining: false, myId: 'host', mode: 'pvp' }) === 'dotori-pvp'
     && shouldFollowPeerStart({
       awaitingStart: true,
       started: false,
@@ -224,6 +233,15 @@ export function pvpInviteAcceptClinicOk() {
         { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'room_host' },
         { userId: 'guest', status: 'playing', mode: 'pvp', roomId: 'room_host', started: true },
       ], { myId: 'host', roomId: 'room_host' }),
+      mode: 'pvp',
+    })
+    && shouldFollowPeerStart({
+      awaitingStart: true,
+      started: false,
+      peerStarted: isPeerMatchStarted([
+        { userId: 'host', status: 'playing', mode: 'pvp', roomId: 'dotori-pvp', started: true },
+        { userId: 'guest', status: 'playing', mode: 'pvp', roomId: 'dotori-pvp' },
+      ], { myId: 'guest', roomId: 'dotori-pvp' }),
       mode: 'pvp',
     })
     && !shouldFollowPeerStart({
@@ -236,6 +254,10 @@ export function pvpInviteAcceptClinicOk() {
     && incomingClearsOpponent(
       applyRoomStart(applyRoomGuest(createRoomState({ roomId: 'room_host', hostId: 'host' }), { guestId: 'guest' })),
       applyRoomLeave(applyRoomStart(applyRoomGuest(createRoomState({ roomId: 'room_host', hostId: 'host' }), { guestId: 'guest' })), { leaverId: 'guest' }),
+    )
+    && !incomingClearsOpponent(
+      applyRoomGuest(createRoomState({ roomId: 'room_host', hostId: 'host' }), { guestId: 'guest' }),
+      applyRoomInvite(createRoomState({ roomId: 'room_host', hostId: 'host' }), 'guest'),
     )
     && shouldReturnToPvpWait({
       inRoom: true, mode: GAME_MODE.PVP, hadOpponent: true, hasOpponent: false,
@@ -284,8 +306,46 @@ export function pvpInviteAcceptClinicOk() {
     && !shouldPulseMatchSync({ inPvp: true, started: true })
     && mergeRoomState(
       { roomId: 'room_h', hostId: 'h', guestId: 'g', started: true, phase: 'playing' },
-      { roomId: 'room_h', hostId: 'h', guestId: 'g', started: false, phase: 'ready' },
+      { roomId: 'room_h', hostId: 'h', guestId: 'g', started: false, phase: 'ready', matchGen: 1 },
     )?.started === false
+    && mergeRoomState(
+      { roomId: 'room_h', hostId: 'h', guestId: 'g', started: true, phase: 'playing' },
+      { roomId: 'room_h', hostId: 'h', guestId: 'g', started: false, phase: 'ready' },
+    )?.started === true
+    && presenceStartedFlag({ matchStarted: false, roomStarted: true })
+    && !presenceStartedFlag({ matchStarted: false, roomStarted: false })
+    && shouldReplayHostStart({
+      isHost: true, matchStarted: true, guestStarted: false, hasOpponent: true,
+    })
+    && !shouldReplayHostStart({
+      isHost: true, matchStarted: true, guestStarted: true, hasOpponent: true,
+    })
+    && !shouldApplyPresenceOpponentLoss({
+      roomHasOpponent: true, presenceHasOpponent: false, confirmedLeave: false,
+    })
+    && !shouldApplyPresenceOpponentLoss({
+      roomHasOpponent: true, presenceHasOpponent: false, confirmedLeave: true,
+    })
+    && shouldApplyPresenceOpponentLoss({
+      roomHasOpponent: false, presenceHasOpponent: false, confirmedLeave: true,
+    })
+    && shouldPollGuestStart({ awaitingStart: true, inPvp: true })
+    && !shouldPollGuestStart({ awaitingStart: false, inPvp: true })
+    && shouldPollGuestStart({ awaitingStart: false, inPvp: true, boardReady: false })
+    && !isPeerBoardReady([
+      { userId: 'guest', status: 'playing', roomId: 'dotori-pvp', started: true },
+    ], { myId: 'host', roomId: 'dotori-pvp', matchGen: 1 })
+    && isPeerBoardReady([
+      {
+        userId: 'guest', status: 'playing', roomId: 'dotori-pvp',
+        started: true, boardReady: true, matchGen: 1,
+      },
+    ], { myId: 'host', roomId: 'dotori-pvp', matchGen: 1 })
+    && !shouldPublishLeaveOnUnload(
+      { type: 'pagehide', persisted: false },
+      { visibilityState: 'hidden' },
+    )
+    && shouldPublishLeaveOnUnload({ type: 'beforeunload' })
     && incomingStaleAfterRematch(
       { roomId: 'room_h', guestId: 'g', started: false, matchGen: 1 },
       { roomId: 'room_h', guestId: 'g', started: true, matchGen: 0 },
@@ -312,6 +372,25 @@ export function pvpInviteAcceptClinicOk() {
     && shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp', started: false })
     && !shouldRepublishOpenRoom({ inRoom: true, mode: 'pvp', started: true })
     && canApplyRemoteBoard({ localPhase: PHASE.RESOLVING, remotePhase: PHASE.RESOLVING })
+    && shouldIgnoreLateStartReplay({ localPhase: PHASE.AIMING, remoteEvent: 'start' })
+    && !shouldIgnoreLateStartReplay({
+      localPhase: PHASE.AIMING,
+      remoteEvent: 'start',
+      localTurn: STONE_COLOR.WHITE,
+      remoteTurn: STONE_COLOR.BLACK,
+    })
+    && !canApplyRemoteBoard({
+      localPhase: PHASE.AIMING,
+      remotePhase: PHASE.IDLE,
+      remoteEvent: 'start',
+    })
+    && canApplyRemoteBoard({
+      localPhase: PHASE.AIMING,
+      remotePhase: PHASE.IDLE,
+      remoteEvent: 'start',
+      localTurn: STONE_COLOR.WHITE,
+      remoteTurn: STONE_COLOR.BLACK,
+    })
     && !canApplyRemoteBoard({
       localPhase: PHASE.RESOLVING,
       remotePhase: PHASE.AIMING,
@@ -451,7 +530,7 @@ export function lobbyInviteClinicOk(input = {}) {
 }
 
 export function pvpExpireClinicOk() {
-  return PVP_WAIT_EXPIRE_MS === 10 * 60 * 1000;
+  return PVP_WAIT_EXPIRE_MS === 0;
 }
 
 export function runLobbyClinic(input = {}) {
@@ -508,9 +587,9 @@ export function runLobbyClinic(input = {}) {
     ),
     item(
       'expire',
-      '1:1 10분 만료',
+      '1:1 만료 없음',
       pvpExpireClinicOk(),
-      pvpExpireClinicOk() ? '10분 미시작이면 대기실' : '만료 시간 없음',
+      pvpExpireClinicOk() ? '미시작 강제 퇴장 없음' : '만료 시간이 남아 있음',
     ),
     item(
       'nick',
@@ -527,9 +606,8 @@ export function runLobbyClinic(input = {}) {
     item(
       'first',
       '선공 규칙',
-      String(PVP_START_HINT).includes('반반')
-        && tossFirstPlayerId({ roomId: 'r', hostId: 'h', guestId: 'g', matchGen: 0 })
-          === tossFirstPlayerId({ roomId: 'r', hostId: 'h', guestId: 'g', matchGen: 0 })
+      String(PVP_START_HINT).includes('호스트')
+        && tossFirstPlayerId({ roomId: 'r', hostId: 'h', guestId: 'g', matchGen: 0 }) === 'h'
         && firstPlayerId([], { hostId: 'u1', guestId: 'g' }, { mode: 'solo', userId: 'u1' }) === 'u1',
       PVP_START_HINT,
     ),
@@ -547,7 +625,7 @@ export function runLobbyClinic(input = {}) {
           settleKey: acornSettleKey({ roomId: 'room_h', matchGen: 0, winner: 'black' }),
           lastSettledKey: acornSettleKey({ roomId: 'room_h', matchGen: 0, winner: 'black' }),
         }),
-      `시작 10 · 1:1·도토리봇 ±1 · 연습 AI 제외 (${SESSION_ACORNS})`,
+      `시작 10 · 사람 1:1 ±1 · 연습 AI 제외 (${SESSION_ACORNS})`,
     ),
     item(
       'forfeit',
@@ -568,8 +646,24 @@ export function runLobbyClinic(input = {}) {
         })
         && incomingResetsForRematch(
           { roomId: 'room_h', guestId: 'g', started: true },
+          { roomId: 'room_h', guestId: 'g', started: false, matchGen: 1 },
+        )
+        && incomingResetsForRematch(
+          { roomId: 'room_h', guestId: 'g', started: true },
+          { roomId: 'room_h', guestId: 'g', started: true, matchGen: 1 },
+        )
+        && !incomingResetsForRematch(
+          { roomId: 'room_h', guestId: 'g', started: true },
           { roomId: 'room_h', guestId: 'g', started: false },
         )
+        && isRematchWait({ matchGen: 1, roomStarted: false, matchStarted: false })
+        && !isRematchWait({ matchGen: 0, roomStarted: false, matchStarted: false })
+        && !shouldFollowPeerStart({
+          awaitingStart: true, started: false, peerStarted: true, mode: 'pvp', rematchWait: true,
+        })
+        && shouldApplyRematchStart({
+          localPhase: PHASE.GAME_OVER, remoteEvent: 'start', remoteGen: 1, localGen: 0,
+        })
         && incomingStaleAfterRematch(
           { roomId: 'room_h', guestId: 'g', started: false, matchGen: 1 },
           { roomId: 'room_h', guestId: 'g', started: true },

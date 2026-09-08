@@ -3,6 +3,16 @@
  */
 
 import { PHASE } from '../physics/GameEngine.js';
+import { PVP_ROOM_ID, normalizePvpRoomId } from './RoomState.js';
+
+export function sameMatchSyncRoom(a, b) {
+  if (!a || !b) return false;
+  if (String(a) === String(b)) return true;
+  const left = normalizePvpRoomId(a);
+  const right = normalizePvpRoomId(b);
+  return Boolean(left && right && left === right
+    && (String(a) === PVP_ROOM_ID || String(b) === PVP_ROOM_ID));
+}
 
 export const MATCH_SYNC_EVENT = 'spectator_update';
 export const TURN_END_WATCHDOG_MS = 900;
@@ -126,7 +136,7 @@ export function shouldApplyMatchSync(payload, {
 } = {}) {
   if (!payload) return false;
   if (myId && payload.senderId && String(payload.senderId) === String(myId)) return false;
-  if (roomId && payload.roomId && String(payload.roomId) !== String(roomId)) return false;
+  if (roomId && payload.roomId && !sameMatchSyncRoom(payload.roomId, roomId)) return false;
   const incomingGen = matchSyncGen(payload.matchGen);
   const localGen = matchSyncGen(matchGen);
   if (localGen && incomingGen < localGen) return false;
@@ -164,6 +174,32 @@ export function shouldPulseMatchSync({
   return false;
 }
 
+/** 이미 조준 중이면 호스트 start 재전송이 백돌 조준을 지운다. 턴이 다르면 다시하기 시작이다. */
+export function shouldIgnoreLateStartReplay({
+  localPhase,
+  remoteEvent = '',
+  localTurn,
+  remoteTurn,
+  boardReady = true,
+} = {}) {
+  if (boardReady !== true) return false;
+  if (remoteEvent !== 'start' || localPhase !== PHASE.AIMING) return false;
+  if (remoteTurn && localTurn && remoteTurn !== localTurn) return false;
+  return true;
+}
+
+/** 1국 GAME_OVER에 다시하기 start(gen++)가 오면 판을 리셋한다. */
+export function shouldApplyRematchStart({
+  localPhase,
+  remoteEvent = '',
+  remoteGen = 0,
+  localGen = 0,
+} = {}) {
+  return remoteEvent === 'start'
+    && localPhase === PHASE.GAME_OVER
+    && matchSyncGen(remoteGen) > matchSyncGen(localGen);
+}
+
 export function canApplyRemoteBoard({
   localPhase,
   remotePhase,
@@ -171,7 +207,10 @@ export function canApplyRemoteBoard({
   remoteTurn,
   remoteEvent = '',
 } = {}) {
-  if (shouldHoldEndedBoard({ localPhase, remotePhase })) return false;
+  if (shouldHoldEndedBoard({ localPhase, remotePhase, remoteEvent })) return false;
+  if (shouldIgnoreLateStartReplay({
+    localPhase, remoteEvent, localTurn, remoteTurn,
+  })) return false;
   if (
     remoteEvent === 'turnEnd'
     || remoteEvent === 'gameOver'
@@ -190,8 +229,9 @@ export function canApplyRemoteBoard({
   return true;
 }
 
-/** 결과창(GAME_OVER)은 다시하기 IDLE/AIMING으로 덮음 금지. */
-export function shouldHoldEndedBoard({ localPhase, remotePhase } = {}) {
+/** 결과창(GAME_OVER)은 다시하기 IDLE/AIMING으로 덮음 금지. start는 새 국. */
+export function shouldHoldEndedBoard({ localPhase, remotePhase, remoteEvent = '' } = {}) {
+  if (remoteEvent === 'start') return false;
   return localPhase === PHASE.GAME_OVER
     && (remotePhase === PHASE.IDLE || remotePhase === PHASE.AIMING);
 }

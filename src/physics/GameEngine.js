@@ -184,7 +184,15 @@ export const REST = Object.freeze({
 export const TURN = Object.freeze({
   LIMIT_MS: 15000,
   URGENT_MS: 5000,
+  DELTA_CAP_MS: 100,
 });
+
+export function capTurnDeltaMs(delta, cap = TURN.DELTA_CAP_MS) {
+  const n = Number(delta);
+  const limit = Number(cap) > 0 ? Number(cap) : TURN.DELTA_CAP_MS;
+  if (!Number.isFinite(n) || n <= 0) return SLINGSHOT.ENGINE_DELTA_MS;
+  return Math.min(n, limit);
+}
 
 export const GAME_MODE = Object.freeze({
   AI: 'ai',
@@ -1740,7 +1748,15 @@ export class GameEngine {
     const remoteTurn = gameState.currentTurn;
     if (
       localPhase === PHASE.GAME_OVER
+      && gameState.event !== 'start'
       && (remotePhase === PHASE.AIMING || remotePhase === PHASE.IDLE)
+    ) {
+      return false;
+    }
+    if (
+      localPhase === PHASE.AIMING
+      && gameState.event === 'start'
+      && !(remoteTurn && localTurn && remoteTurn !== localTurn)
     ) {
       return false;
     }
@@ -1791,7 +1807,11 @@ export class GameEngine {
     if (gameState.turnRemainingMs !== undefined) {
       this.turnRemainingMs = gameState.turnRemainingMs;
     }
-    if (gameState.winner) this.winner = gameState.winner;
+    if (gameState.event === 'start') {
+      this.winner = gameState.winner ?? null;
+    } else if (gameState.winner) {
+      this.winner = gameState.winner;
+    }
     if (asSpectator) {
       this.emit('spectatorUpdate', { gameState, snapshot: this.getSnapshot() });
     } else if (gameState.winner && localPhase !== PHASE.GAME_OVER) {
@@ -2223,7 +2243,7 @@ export class GameEngine {
   }
 
   _handleAfterUpdate() {
-    this._tickTurnTimer(this.engine.timing?.lastDelta ?? SLINGSHOT.ENGINE_DELTA_MS);
+    this._tickTurnTimer(capTurnDeltaMs(this.engine.timing?.lastDelta ?? SLINGSHOT.ENGINE_DELTA_MS));
     this._checkFallenStones();
 
     if (this.phase === PHASE.AIMING && this.aim) {

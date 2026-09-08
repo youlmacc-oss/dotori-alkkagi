@@ -577,7 +577,7 @@ body {
   gap: 10px;
   width: auto;
   height: 50px;
-  pointer-events: auto;
+  pointer-events: none;
   z-index: 5;
 }
 

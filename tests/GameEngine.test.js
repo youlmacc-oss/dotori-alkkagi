@@ -26,6 +26,7 @@ import {
   STONES_PER_SIDE,
   TOUCH_FEEL,
   TURN,
+  capTurnDeltaMs,
   VIRTUAL_HEIGHT,
   VIRTUAL_WIDTH,
   canControlPowerRatio,
@@ -534,6 +535,9 @@ describe('GameEngine 통합', () => {
   it('15초 턴 타이머가 0이 되면 조준을 취소하고 턴을 넘긴다', () => {
     engine = createEngine();
     expect(TURN.LIMIT_MS).toBe(15000);
+    expect(TURN.DELTA_CAP_MS).toBe(100);
+    expect(capTurnDeltaMs(2500)).toBe(100);
+    expect(capTurnDeltaMs(16)).toBe(16);
     expect(engine.getSnapshot().timer.remainingMs).toBe(TURN.LIMIT_MS);
 
     const stone = engine.getAliveStones(STONE_COLOR.BLACK)[0];

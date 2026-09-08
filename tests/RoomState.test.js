@@ -12,8 +12,10 @@ import {
   incomingClearsOpponent,
   incomingResetsForRematch,
   mergeRoomState,
+  shouldAdoptHostRoom,
   pvpSeatColor,
   roomHasOpponent,
+  shouldApplyPresenceOpponentLoss,
   shouldApplyRoomState,
   shouldKeepInviteShareFromRoom,
   shouldKeepPvpRematch,
@@ -61,6 +63,20 @@ describe('1:1 방 상태', () => {
     expect(shouldApplyRoomState(merged, { myId: 'other', roomId: 'room_host' })).toBe(false);
     expect(ROOM_STATE_EVENT).toBe('room_state');
     expect(mergeRoomState(host, { roomId: 'room_other', hostId: 'x', guestId: 'guest' }).guestId).toBeNull();
+    const started = {
+      roomId: 'room_host', hostId: 'host', guestId: 'guest', started: true, phase: 'playing',
+    };
+    expect(shouldApplyRoomState(started, {
+      myId: 'guest', roomId: 'room_guest', inRoom: true,
+    })).toBe(true);
+    expect(shouldApplyRoomState(started, {
+      myId: 'other', roomId: 'room_guest', inRoom: true,
+    })).toBe(false);
+    const localOwn = createRoomState({ roomId: 'room_guest', hostId: 'guest' });
+    expect(shouldAdoptHostRoom(localOwn, started)).toBe(true);
+    expect(mergeRoomState(localOwn, started)).toMatchObject({
+      roomId: 'room_host', guestId: 'guest', started: true,
+    });
   });
 
   it('게스트는 백, 호스트는 흑으로 앉는다', () => {
@@ -100,11 +116,35 @@ describe('1:1 방 상태', () => {
       { guestId: 'guest' },
     ));
     expect(seated.acked).toBe(true);
+    const lateInvite = applyRoomInvite(
+      createRoomState({ roomId: 'room_host', hostId: 'host' }),
+      'guest',
+    );
+    expect(incomingClearsOpponent(seated, lateInvite)).toBe(false);
+    expect(mergeRoomState(seated, lateInvite).guestId).toBe('guest');
     const rematch = applyRoomRematch(playing);
     expect(rematch).toMatchObject({
       guestId: 'guest', started: false, phase: 'ready', matchGen: 1, seq: 0, acked: true,
     });
     expect(incomingResetsForRematch(playing, rematch)).toBe(true);
+    expect(incomingResetsForRematch(playing, {
+      ...rematch, started: true, phase: 'playing',
+    })).toBe(true);
+    expect(shouldApplyPresenceOpponentLoss({
+      roomHasOpponent: true, presenceHasOpponent: false, confirmedLeave: false,
+    })).toBe(false);
+    expect(shouldApplyPresenceOpponentLoss({
+      roomHasOpponent: true, presenceHasOpponent: false, confirmedLeave: true,
+    })).toBe(false);
+    expect(shouldApplyPresenceOpponentLoss({
+      roomHasOpponent: false, presenceHasOpponent: false, confirmedLeave: false,
+    })).toBe(false);
+    expect(shouldApplyPresenceOpponentLoss({
+      roomHasOpponent: false, presenceHasOpponent: false, confirmedLeave: true,
+    })).toBe(true);
+    expect(incomingResetsForRematch(playing, {
+      roomId: playing.roomId, hostId: 'host', guestId: 'guest', started: false, matchGen: 0,
+    })).toBe(false);
     expect(mergeRoomState(playing, rematch).started).toBe(false);
     expect(mergeRoomState(rematch, { ...playing, hostAcorns: 11, guestAcorns: 9 }).started).toBe(false);
     expect(mergeRoomState(rematch, { ...rematch, started: true, phase: 'playing' }).started).toBe(true);

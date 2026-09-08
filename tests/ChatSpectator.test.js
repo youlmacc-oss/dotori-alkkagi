@@ -397,7 +397,7 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     const live = Array.from(guest.onlineUsers.values());
     const rooms = roomsFromPresence(live.length ? live : seen.at(-1));
     expect(rooms.some((r) => r.id === 'room_host_pvp' && r.mode === 'pvp')).toBe(true);
-    expect(canJoinPvpFromLobby(rooms.find((r) => r.id === 'room_host_pvp'), 'guest_pvp')).toBe(true);
+    expect(canJoinPvpFromLobby(rooms.find((r) => r.id === 'room_host_pvp'), 'guest_pvp')).toBe(false);
     const invitees = idleLobbyInvitees(Array.from(host.onlineUsers.values()), 'host_pvp');
     expect(invitees.some((u) => (u.userId ?? u.id) === 'guest_pvp')).toBe(true);
   });
@@ -666,6 +666,42 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     expect(seen.at(-1)?.some((u) => u.id === 'guest_n' && u.nick === '달이')).toBe(true);
   });
 
+  test('닉 변경 lobby_state는 같은 시각의 옛 Presence에 덮이지 않는다', async () => {
+    const client = new MockSupabaseClient();
+    const host = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'nick-stale',
+      userId: 'host_s',
+      userNickname: '호치',
+    });
+    expect(await host.connect()).toBe('SUBSCRIBED');
+    const at = Date.now();
+    host.channel._presenceState.set('guest_s', [{
+      userId: 'guest_s',
+      presenceKey: 'guest_s',
+      nickname: '도토리2',
+      status: 'lobby',
+      lastSeen: at,
+      joinedAt: at - 60_000,
+    }]);
+    host.resyncPresence({ force: true });
+    expect(host.onlineUsers.get('guest_s')?.nickname).toBe('도토리2');
+    host._handleLobbyState({
+      user: {
+        userId: 'guest_s',
+        presenceKey: 'guest_s',
+        nickname: '달이',
+        status: 'lobby',
+        lastSeen: at,
+        joinedAt: at - 60_000,
+      },
+      left: false,
+    });
+    expect(host.onlineUsers.get('guest_s')?.nickname).toBe('달이');
+    host.resyncPresence({ force: true });
+    expect(host.onlineUsers.get('guest_s')?.nickname).toBe('달이');
+  });
+
   test('한 클라이언트가 나가면 다른 목록에서 바로 빠진다', async () => {
     const client = new MockSupabaseClient();
     const seen = [];
@@ -716,6 +752,32 @@ describe('대기실 접속자 관리 (Lobby Presence)', () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(manager.isConnected).toBe(false);
     expect(client.removed).toContain('unload-sync');
+    unbind();
+  });
+
+  test('페이지 숨김 pagehide는 대국 퇴장으로 보지 않는다', async () => {
+    const listeners = new Map();
+    const target = {
+      addEventListener(type, fn) {
+        listeners.set(type, fn);
+      },
+      removeEventListener(type) {
+        listeners.delete(type);
+      },
+      document: { visibilityState: 'hidden' },
+    };
+    const client = new MockSupabaseClient();
+    const manager = new RealtimeManager({
+      supabaseClient: client,
+      channelName: 'hide-sync',
+      userId: 'hide_1',
+      userNickname: '호치',
+    });
+    expect(await manager.connect()).toBe('SUBSCRIBED');
+    const unbind = bindPresenceUnload(manager, target);
+    listeners.get('pagehide')({ type: 'pagehide', persisted: false });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(manager.isConnected).toBe(true);
     unbind();
   });
 
@@ -868,7 +930,7 @@ describe('관전 데이터 브로드캐스트', () => {
 
     // Mock 환경에서 브로드캐스트 수신 확인
     await new Promise(resolve => setTimeout(resolve, 100));
-    expect(spectatorUpdates.length).toBe(1);
+    expect(spectatorUpdates.length).toBeGreaterThanOrEqual(1);
     
     const received = spectatorUpdates[0];
     expect(received.matchId).toBe('match_001');

@@ -82,6 +82,16 @@ export function isRetrackPresenceLeave({
   return presenceLeaveAt(hint) >= leftAt;
 }
 
+/** 휴대폰 슬립·탭 정지의 pagehide는 퇴장 방송으로 보지 않는다. 탭 닫기는 beforeunload. */
+export function shouldPublishLeaveOnUnload(event, { visibilityState } = {}) {
+  const type = String(event?.type || '');
+  if (type === 'beforeunload') return true;
+  if (type !== 'pagehide') return false;
+  if (event?.persisted) return false;
+  if (visibilityState === 'hidden') return false;
+  return false;
+}
+
 export function shouldConfirmPresenceLeave(opts = {}) {
   if (opts.explicitLeft) return true;
   if (opts.selfLeave) return false;

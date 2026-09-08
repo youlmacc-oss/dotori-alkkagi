@@ -89,7 +89,7 @@ describe('대기실 게임방', () => {
     ]);
     expect(startedAlone[0].status).toBe('playing');
     expect(canJoinPvpRoom(startedAlone[0], 'guest')).toBe(false);
-    expect(canJoinPvpFromLobby(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(true);
+    expect(canJoinPvpFromLobby(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(false);
     expect(lobbySeatUsers([
       user('a', { mode: 'solo', nickname: '호치' }),
       user('b', { mode: 'ai', nickname: '달이' }),
@@ -188,6 +188,9 @@ describe('대기실 게임방', () => {
     expect(presenceFromMatch({
       userId: 'u1', mode: 'pvp', phase: 'idle', started: true,
     }).started).toBe(true);
+    expect(presenceFromMatch({
+      userId: 'u1', mode: 'pvp', phase: 'idle', started: true, matchGen: 1, boardReady: true,
+    })).toMatchObject({ matchGen: 1, boardReady: true });
     expect(presenceFromMatch({
       userId: 'u1', mode: 'pvp', phase: 'idle', inRoom: false, started: true,
     }).started).toBe(false);
@@ -306,6 +309,26 @@ describe('대기실 게임방', () => {
       { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_g', lastSeen: 120 },
       { userId: 'g', status: 'playing', mode: 'pvp', roomId: 'room_g', lastSeen: 90 },
     )).toBe(true);
+    expect(preferNewerPresence(
+      { userId: 'g', nickname: '도토리2', status: 'lobby', lastSeen: 100, joinedAt: 50 },
+      { userId: 'g', nickname: '달이', status: 'lobby', lastSeen: 100, joinedAt: 50 },
+    ).nickname).toBe('달이');
+    expect(shouldReplacePresenceHint(
+      { userId: 'g', nickname: '도토리2', status: 'lobby', lastSeen: 100, joinedAt: 50 },
+      { userId: 'g', nickname: '달이', status: 'lobby', lastSeen: 100, joinedAt: 50 },
+    )).toBe(false);
+    expect(preferNewerPresence(
+      { userId: 'h', status: 'playing', mode: 'pvp', roomId: 'dotori-pvp', started: false, lastSeen: 100 },
+      { userId: 'h', status: 'playing', mode: 'pvp', roomId: 'dotori-pvp', started: true, lastSeen: 100 },
+    ).started).toBe(true);
+    expect(shouldReplacePresenceHint(
+      { userId: 'h', status: 'playing', mode: 'pvp', roomId: 'dotori-pvp', started: false, lastSeen: 100 },
+      { userId: 'h', status: 'playing', mode: 'pvp', roomId: 'dotori-pvp', started: true, lastSeen: 100 },
+    )).toBe(false);
+    expect(mergePresenceWithHints(
+      [{ userId: 'g', nickname: '도토리2', status: 'lobby', lastSeen: 100, joinedAt: 50 }],
+      [{ userId: 'g', nickname: '달이', status: 'lobby', lastSeen: 100, joinedAt: 50 }],
+    )[0].nickname).toBe('달이');
     expect(presenceFromMatch({
       userId: 'h', mode: 'pvp', phase: 'idle', inviteTargetId: 'guest', inviteAt: 9,
     })).toMatchObject({ inviteTargetId: 'guest', status: 'playing' });

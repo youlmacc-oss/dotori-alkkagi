@@ -38,12 +38,12 @@ describe('대기실 도토리봇', () => {
     expect(isLobbyAiUser(bot)).toBe(true);
     expect(bot.nickname).toBe(AI_LOBBY_NICKNAME);
     expect(bot.userId).toBe(AI_LOBBY_USER_ID);
-    expect(mergeLobbyAiSeat([{ userId: 'host', status: 'lobby' }, bot])).toHaveLength(2);
-    expect(canInviteLobbyAi({ started: false, hasOpponent: false })).toBe(true);
+    expect(mergeLobbyAiSeat([{ userId: 'host', status: 'lobby' }, bot])).toHaveLength(1);
+    expect(canInviteLobbyAi({ started: false, hasOpponent: false })).toBe(false);
     expect(canInviteLobbyAi({ started: true })).toBe(false);
     expect(canInviteLobbyUser({
       mode: 'ai', inRoom: false, started: false, isHost: false, hasOpponent: false, target: bot,
-    })).toBe(true);
+    })).toBe(false);
     expect(canInviteLobbyUser({
       mode: 'pvp', inRoom: false, started: false, isHost: false, hasOpponent: false,
       target: { userId: 'guest', status: 'lobby' },
