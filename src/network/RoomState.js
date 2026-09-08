@@ -25,7 +25,31 @@ export function createRoomState({
     acked: false,
     hostAcorns: null,
     guestAcorns: null,
+    firstId: null,
   };
+}
+
+/**
+ * 도토리 금화 시드 동전. 화면 메시 없음.
+ * 짝수=앞면=호스트(흑), 홀수=뒷면=게스트(백).
+ */
+export function tossFirstPlayerId({ hostId, guestId, roomId, matchGen } = {}) {
+  const host = String(hostId || '').trim();
+  const guest = String(guestId || '').trim();
+  if (!host || !guest || host === guest) return null;
+  const gen = roomMatchGen({ matchGen });
+  const key = `${String(roomId || '')}:${gen}:${host}:${guest}`;
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) % 2 === 0 ? host : guest;
+}
+
+export function assignFirstPlayer(state) {
+  if (!state) return state;
+  return { ...state, firstId: tossFirstPlayerId(state) };
 }
 
 export function roomSeq(state) {
@@ -74,13 +98,13 @@ export function applyRoomGuest(state, { guestId, guestName } = {}) {
   const guest = String(guestId || '').trim();
   if (!guest || guest === state.hostId) return state;
   if (state.guestId && state.guestId !== guest) return state;
-  return {
+  return assignFirstPlayer({
     ...state,
     guestId: guest,
     guestName: String(guestName || state.guestName || '').trim() || null,
     inviteTargetId: null,
     phase: state.started ? 'playing' : 'ready',
-  };
+  });
 }
 
 export function applyRoomStart(state) {
@@ -106,6 +130,7 @@ export function applyRoomLeave(state, { leaverId } = {}) {
     acked: false,
     leaverId: who || null,
     leftoverId: leftoverId || null,
+    firstId: null,
   };
 }
 
@@ -140,7 +165,7 @@ export function applyRoomRematch(state) {
   const nextGen = state.started === true
     ? roomMatchGen(state) + 1
     : Math.max(roomMatchGen(state), 1);
-  return {
+  return assignFirstPlayer({
     ...state,
     started: false,
     phase: 'ready',
@@ -150,7 +175,7 @@ export function applyRoomRematch(state) {
     inviteTargetId: null,
     leaverId: null,
     leftoverId: null,
-  };
+  });
 }
 
 export function incomingResetsForRematch(current, incoming) {
@@ -229,8 +254,9 @@ export function mergeRoomState(current, incoming) {
       ? null
       : (incoming.inviteTargetId || withGuest.inviteTargetId || null),
   };
-  if (next.started) return applyRoomStart({ ...next, guestId: next.guestId || incoming.guestId });
-  return next;
+  const seated = assignFirstPlayer(next);
+  if (seated.started) return applyRoomStart({ ...seated, guestId: seated.guestId || incoming.guestId });
+  return seated;
 }
 
 export function shouldApplyRoomState(payload, { myId, roomId, inRoom } = {}) {

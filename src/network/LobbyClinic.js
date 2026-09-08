@@ -35,6 +35,7 @@ import { INVITE_ONLY_NOTICE, shouldOfferInviteOnlyNotice } from '../ui/GuideBook
 import {
   PVP_START_HINT,
   PVP_WAIT_HINT,
+  firstPlayerId,
   hasPvpOpponent,
   isPeerMatchStarted,
   matchPlayersFromPresence,
@@ -84,6 +85,7 @@ import {
   incomingResetsForRematch,
   incomingStaleAfterRematch,
   mergeRoomState,
+  tossFirstPlayerId,
   shouldKeepInviteShareFromRoom,
   shouldKeepPvpRematch,
   shouldReturnToPvpWait,
@@ -131,7 +133,7 @@ export function readyClinicOk() {
   const lastTick = stepMatchReady(yes, REARRANGE_MS - 1);
   const done = stepMatchReady(yes, REARRANGE_MS);
   return READY_ASK.includes('재배치')
-    && FIRST_HINT.includes('도토리가 적은 사람')
+    && FIRST_HINT.includes('반반')
     && READY_ASK_MS === 5000
     && REARRANGE_MS === 10000
     && rearrangeCountDown(REARRANGE_MS) === 10
@@ -525,7 +527,10 @@ export function runLobbyClinic(input = {}) {
     item(
       'first',
       '선공 규칙',
-      String(PVP_START_HINT).includes('도토리가 적은 사람'),
+      String(PVP_START_HINT).includes('반반')
+        && tossFirstPlayerId({ roomId: 'r', hostId: 'h', guestId: 'g', matchGen: 0 })
+          === tossFirstPlayerId({ roomId: 'r', hostId: 'h', guestId: 'g', matchGen: 0 })
+        && firstPlayerId([], { hostId: 'u1', guestId: 'g' }, { mode: 'solo', userId: 'u1' }) === 'u1',
       PVP_START_HINT,
     ),
     item(

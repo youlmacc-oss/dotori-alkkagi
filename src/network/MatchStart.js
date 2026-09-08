@@ -1,14 +1,16 @@
 /**
  * 대기실에서 고른 모드의 선공·시작 권한.
- * 1:1은 도토리가 적은 쪽이 선공이며, 선공만 시작할 수 있다.
+ * 1:1은 방 시드 동전으로 선공을 정하며, 선공만 시작할 수 있다.
  */
 
 import { parseAcorn, SESSION_ACORNS } from './AcornPolicy.js';
+import { isLobbyAiUser } from './LobbyAi.js';
+import { tossFirstPlayerId } from './RoomState.js';
 
 export const ACORN_KEY = 'dotori-alkkagi-acorns';
 export const DEFAULT_ACORNS = SESSION_ACORNS;
 
-export const PVP_START_HINT = '도토리가 적은 사람이 선공입니다. 선공이 시작 버튼을 눌러야 게임이 시작됩니다.';
+export const PVP_START_HINT = '동전 앞뒤는 반반입니다. 선공이 시작 버튼을 눌러야 게임이 시작됩니다.';
 export const PVP_WAIT_HINT = '상대 게이머가 들어올 때까지 대기합니다.';
 
 export function uniquePlayerIds(players) {
@@ -79,23 +81,21 @@ export function readAcornCount(_storage, fallback = DEFAULT_ACORNS) {
   return parseAcorn(fallback, DEFAULT_ACORNS);
 }
 
-export function firstPlayerId(players) {
-  const list = (Array.isArray(players) ? players : [])
-    .map((p) => ({
-      userId: p?.userId ?? p?.id ?? '',
-      acorns: acornOf(p),
-    }))
-    .filter((p) => p.userId);
-  if (!list.length) return null;
-  list.sort((a, b) => {
-    const ac = a.acorns - b.acorns;
-    if (ac !== 0) return ac;
-    return String(a.userId).localeCompare(String(b.userId));
-  });
-  return list[0].userId;
+export function firstPlayerId(players, room, extras = {}) {
+  if (extras.mode === 'solo') {
+    return String(room?.hostId || extras.userId || '')
+      || [...uniquePlayerIds(players)][0]
+      || null;
+  }
+  const tossed = tossFirstPlayerId(room);
+  if (tossed) return tossed;
+  const ids = [...uniquePlayerIds(players)];
+  if (ids.length < 2) return null;
+  ids.sort((a, b) => String(a).localeCompare(String(b)));
+  return tossFirstPlayerId({ hostId: ids[0], guestId: ids[1], roomId: room?.roomId, matchGen: room?.matchGen });
 }
 
-export function canStartMatch({ mode, userId, players } = {}) {
+export function canStartMatch({ mode, userId, players, room } = {}) {
   if (mode === 'solo' || mode === 'ai') return true;
   if (mode !== 'pvp') return false;
   const mine = userId;
@@ -105,7 +105,18 @@ export function canStartMatch({ mode, userId, players } = {}) {
     ? list
     : [{ userId: mine, acorns: DEFAULT_ACORNS }, ...list];
   if (!hasPvpOpponent(seat)) return false;
-  return firstPlayerId(seat) === mine;
+  const lead = firstPlayerId(seat, room);
+  if (!lead) return false;
+  if (lead === mine) return true;
+  return isLobbyAiUser(lead) && !isLobbyAiUser(mine);
+}
+
+/** 1인은 흑(호스트). 1:1은 동전 선공 색. */
+export function firstStoneColor({ mode, players, room, userId } = {}) {
+  if (mode === 'solo') return 'black';
+  const lead = firstPlayerId(players, room, { mode, userId });
+  if (!lead || !room?.hostId) return 'black';
+  return String(lead) === String(room.hostId) ? 'black' : 'white';
 }
 
 /** 같은 1:1 방에서 상대가 이미 시작했는지. */

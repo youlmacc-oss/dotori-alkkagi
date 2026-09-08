@@ -43,6 +43,7 @@ import {
 } from '../src/network/MatchSync.js';
 import { SESSION_ACORNS, acornSettleKey, settleSessionAcorns, shouldSettleAcorns } from '../src/network/AcornPolicy.js';
 import { canStartMatch, firstPlayerId, hasPvpOpponent, matchPlayersFromPresence, overlayRoomAcorns } from '../src/network/MatchStart.js';
+import { tossFirstPlayerId } from '../src/network/RoomState.js';
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -265,8 +266,9 @@ describe('1:1 한 바퀴', () => {
     const players = overlayRoomAcorns([], {
       ...hostRoom, hostAcorns: 8, guestAcorns: 10,
     }, { myId: 'host', myAcorns: 8 });
-    expect(firstPlayerId(players)).toBe('host');
-    expect(canStartMatch({ mode: 'pvp', userId: 'host', players })).toBe(true);
+    const lead = tossFirstPlayerId(hostRoom);
+    expect(firstPlayerId(players, hostRoom)).toBe(lead);
+    expect(canStartMatch({ mode: 'pvp', userId: lead, players, room: hostRoom })).toBe(true);
 
     const hostEngine = new GameEngine({ autoStart: false });
     const guestEngine = new GameEngine({ autoStart: false });

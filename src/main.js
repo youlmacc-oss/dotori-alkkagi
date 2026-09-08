@@ -89,6 +89,7 @@ import {
   PVP_WAIT_HINT,
   canStartMatch,
   firstPlayerId,
+  firstStoneColor,
   overlayRoomAcorns,
   isHostStartPending,
   shouldArmCampWait,
@@ -748,6 +749,7 @@ function canStartNow() {
     mode: engine.gameMode,
     userId: realtimeManager.userId,
     players: matchPlayers(),
+    room: matchRoom,
   });
 }
 
@@ -840,7 +842,7 @@ function syncStartGate() {
   if (btn) {
     btn.hidden = !view.startVisible;
     btn.disabled = !canStartNow();
-    const lead = firstPlayerId(matchPlayers());
+    const lead = firstPlayerId(matchPlayers(), matchRoom, { mode: engine.gameMode, userId: realtimeManager.userId });
     btn.title = !ready
       ? PVP_WAIT_HINT
       : pvp && lead && lead !== realtimeManager.userId ? '선공만 시작할 수 있습니다' : '시작';
@@ -864,7 +866,7 @@ function syncStartGate() {
   })) {
     hintText = START_WAIT_HINT;
     hintShow = true;
-  } else if (view.startVisible && view.firstHint) {
+  } else if (pvp && view.startVisible && view.firstHint) {
     hintText = FIRST_HINT;
     hintShow = true;
   }
@@ -974,9 +976,12 @@ function syncPresenceInvites(users) {
 }
 
 function firstPlayerColor() {
-  const lead = firstPlayerId(matchPlayers());
-  if (!lead || !matchRoom?.hostId) return STONE_COLOR.BLACK;
-  return String(lead) === String(matchRoom.hostId) ? STONE_COLOR.BLACK : STONE_COLOR.WHITE;
+  return firstStoneColor({
+    mode: engine.gameMode,
+    players: matchPlayers(),
+    room: matchRoom,
+    userId: realtimeManager.userId,
+  });
 }
 
 function ownCampStones() {

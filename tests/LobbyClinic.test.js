@@ -119,7 +119,10 @@ describe('대기실 자가진단', () => {
     expect(GUIDE_PAGES.find((page) => page.id === 'cover')?.points.some((line) => line.includes('초대만'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('참가하기는 없고'))).toBe(false);
     expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.title).toContain('다시 놓기');
-    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.title).toContain('먼저');
+    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.title).toContain('동전');
+    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.lead).toContain('도토리 금화');
+    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.points.some((line) => line.includes('앞면') && line.includes('뒷면'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.points.some((line) => line.includes('다시 던집니다'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.points.some((line) => line.includes('도토리봇'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'fall')?.points.some((line) => line.includes('액션캠'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'sound')?.title).toContain('액션캠');

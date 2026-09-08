@@ -19,6 +19,7 @@ import {
   shouldKeepPvpRematch,
   shouldReturnToPvpWait,
   stampRoomAcorns,
+  tossFirstPlayerId,
 } from '../src/network/RoomState.js';
 
 describe('1:1 방 상태', () => {
@@ -35,6 +36,10 @@ describe('1:1 방 상태', () => {
     expect(applyRoomClearInvite(invited).inviteTargetId).toBeNull();
     const joined = applyRoomGuest(invited, { guestId: 'guest', guestName: '달이' });
     expect(joined.guestId).toBe('guest');
+    expect(joined.firstId).toBe(tossFirstPlayerId(joined));
+    expect(tossFirstPlayerId(joined)).toBe(tossFirstPlayerId({
+      roomId: joined.roomId, hostId: joined.hostId, guestId: joined.guestId, matchGen: joined.matchGen,
+    }));
     expect(joined.inviteTargetId).toBeNull();
     expect(roomHasOpponent(joined)).toBe(true);
     expect(shouldKeepInviteShareFromRoom(joined, {
@@ -70,7 +75,9 @@ describe('1:1 방 상태', () => {
       { guestId: 'guest' },
     ));
     const left = applyRoomLeave(playing, { leaverId: 'guest' });
+    expect(playing.firstId).toBe(tossFirstPlayerId(playing));
     expect(left.guestId).toBeNull();
+    expect(left.firstId).toBeNull();
     expect(left.started).toBe(false);
     expect(left.phase).toBe('waiting');
     expect(left.leftoverId).toBe('host');

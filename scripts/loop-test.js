@@ -228,7 +228,7 @@ try {
       const prev = hint?.textContent;
       if (hint) {
         hint.hidden = false;
-        hint.textContent = '도토리가 적은 사람이 시작 버튼을 누르고 선공합니다.';
+        hint.textContent = '동전 앞뒤는 반반입니다. 선공이 시작 버튼을 누릅니다.';
       }
       const hintOk = oneLine(hint);
       if (hint) {

@@ -53,7 +53,7 @@ describe('대전방 재배치·시작 타이밍', () => {
 
   it('시작 버튼이 나온 뒤 3초가 지나도 시작하지 않으면 선공 안내를 켠다', () => {
     const state = createMatchReady(0);
-    expect(FIRST_HINT).toContain('도토리가 적은 사람');
+    expect(FIRST_HINT).toContain('동전');
     expect(FIRST_HINT).toContain('시작 버튼');
     expect(FIRST_HINT).toContain('선공');
     expect(START_WAIT_HINT).toContain('진형');
