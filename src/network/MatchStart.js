@@ -98,6 +98,19 @@ export function usesPeerStart(mode) {
   return mode === 'pvp';
 }
 
+/** 1인·설정 AI는 시작 클릭이 곧 국 시작이다. 상대 camp를 기다리지 않는다. */
+export function shouldStartWithoutPeer(mode) {
+  return usesPeerStart(mode) !== true;
+}
+
+/** 결과판에서 다시 열 때 1인·AI를 1:1로 바꾸지 않는다. */
+export function startResetMode(mode) {
+  if (mode === 'solo') return 'solo';
+  if (mode === 'pvp') return 'pvp';
+  if (mode === 'spectate') return 'spectate';
+  return 'ai';
+}
+
 export function tossCoinFace(room) {
   return tossFirstPlayerId(room) ? 'host' : '';
 }
@@ -274,7 +287,8 @@ export function shouldArmCampWait(timerOn = false) {
   return timerOn !== true;
 }
 
-/** 시작된 대국은 상대 Presence가 잠깐 빠져도 시작 대기로 되돌리지 않는다. */
-export function shouldHoldPvpStartGate({ started, hasOpponent } = {}) {
+/** 시작된 대국은 상대 Presence가 잠깐 빠져도 시작 대기로 되돌리지 않는다. 1인·AI는 상대 없음으로 게이트를 다시 열지 않는다. */
+export function shouldHoldPvpStartGate({ started, hasOpponent, mode } = {}) {
+  if (mode != null && usesPeerStart(mode) !== true) return false;
   return started !== true && hasOpponent !== true;
 }

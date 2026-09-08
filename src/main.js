@@ -102,6 +102,8 @@ import {
   shouldHoldPvpStartGate,
   shouldReplayHostStart,
   shouldPollGuestStart,
+  shouldStartWithoutPeer,
+  startResetMode,
   usesPeerStart,
 } from './network/MatchStart.js';
 import {
@@ -1120,13 +1122,17 @@ function emitHostStartBoard() {
 
 function applyMatchStarted({ publishStart = false } = {}) {
   if (!awaitingStart) return false;
+  const localStart = shouldStartWithoutPeer(engine.gameMode);
   if (engine.phase === PHASE.GAME_OVER || engine.winner) {
-    engine.setHost(pvpSeatColor({
+    engine.setHost(localStart || pvpSeatColor({
       myId: realtimeManager.userId,
       hostId: matchRoom?.hostId,
       roomId: matchRoom?.roomId,
     }) === STONE_COLOR.BLACK);
-    engine.setMatchConfig({ mode: GAME_MODE.PVP, difficulty: engine.aiDifficulty });
+    engine.setMatchConfig({
+      mode: startResetMode(engine.gameMode),
+      difficulty: engine.aiDifficulty,
+    });
   }
   awaitingStart = false;
   matchStarted = true;
@@ -1137,13 +1143,13 @@ function applyMatchStarted({ publishStart = false } = {}) {
   pvpOpenedAt = null;
   clearPvpWaitExpire();
   clearMatchReady();
-  matchRoom = applyRoomStart(matchRoom);
+  if (!localStart) matchRoom = applyRoomStart(matchRoom);
   soundEngine.playStart();
   syncStartGate();
   syncSceneMode();
   renderer.snapSeat(engine.getSnapshot());
   publishPresence();
-  publishRoomState();
+  if (!localStart) publishRoomState();
   if (publishStart && isMatchHost()) {
     publishMatchSync({ force: true, event: 'start' });
   }
@@ -1310,7 +1316,7 @@ function flushMatchView() {
 
 function beginMatchIfAllowed() {
   if (!awaitingStart || !canStartNow()) return false;
-  if (!usesPeerStart(engine.gameMode)) {
+  if (shouldStartWithoutPeer(engine.gameMode)) {
     return applyMatchStarted({ publishStart: false });
   }
   if (isLobbyAiUser(matchRoom?.guestId)) {
@@ -1745,11 +1751,12 @@ function seatHostFromPeerPresence(users = lobbyUserList) {
 }
 
 function syncPvpWait() {
-  if (engine.gameMode !== GAME_MODE.PVP || !inMatchRoom || engine.phase === PHASE.SPECTATING) return;
+  if (!usesPeerStart(engine.gameMode) || !inMatchRoom || engine.phase === PHASE.SPECTATING) return;
   if (seatHostFromPeerPresence()) return;
   if (replayHostStartForGuest()) return;
   if (beginMatchFromPeer()) return;
   if (shouldHoldPvpStartGate({
+    mode: engine.gameMode,
     started: matchStarted,
     hasOpponent: roomHasOpponent(matchRoom),
   })) {
@@ -1766,6 +1773,13 @@ function enterMatchRoom() {
   matchStarted = false;
   matchBoardReady = false;
   campSentForStart = false;
+  if (shouldStartWithoutPeer(engine.gameMode) && (engine.phase === PHASE.GAME_OVER || engine.winner)) {
+    engine.setHost(true);
+    engine.setMatchConfig({
+      mode: startResetMode(engine.gameMode),
+      difficulty: engine.aiDifficulty,
+    });
+  }
   clearSentLobbyInvite();
   const joinedId = joinedMatchRoomId({
     joiningRoomId,

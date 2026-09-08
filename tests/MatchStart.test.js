@@ -23,6 +23,8 @@ import {
   shouldFollowPeerStart,
   shouldGuestFollowHostStart,
   shouldHoldPvpStartGate,
+  shouldStartWithoutPeer,
+  startResetMode,
   tossCoinFace,
   tossCoinHint,
   usesPeerStart,
@@ -43,6 +45,16 @@ describe('선공·시작 권한', () => {
     expect(usesPeerStart('solo')).toBe(false);
     expect(usesPeerStart('ai')).toBe(false);
     expect(usesPeerStart('pvp')).toBe(true);
+    expect(shouldStartWithoutPeer('solo')).toBe(true);
+    expect(shouldStartWithoutPeer('ai')).toBe(true);
+    expect(shouldStartWithoutPeer('pvp')).toBe(false);
+    expect(startResetMode('solo')).toBe('solo');
+    expect(startResetMode('ai')).toBe('ai');
+    expect(startResetMode('pvp')).toBe('pvp');
+    expect(startResetMode('pvp')).not.toBe('ai');
+    expect(shouldHoldPvpStartGate({ mode: 'solo', started: false, hasOpponent: false })).toBe(false);
+    expect(shouldHoldPvpStartGate({ mode: 'ai', started: false, hasOpponent: false })).toBe(false);
+    expect(shouldHoldPvpStartGate({ mode: 'pvp', started: false, hasOpponent: false })).toBe(true);
     expect(applyRoomStart(createRoomState({ roomId: 'room_u1', hostId: 'u1' })).started).toBe(false);
     expect(firstPlayerId([], { hostId: 'u1', guestId: 'ai_dotori' }, { mode: 'solo', userId: 'u1' })).toBe('u1');
     expect(firstPlayerId([{ userId: 'u1' }], null, { mode: 'solo', userId: 'u1' })).toBe('u1');
