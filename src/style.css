@@ -949,12 +949,12 @@ body {
 }
 
 .lobby-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 4px 8px 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .lobby-footer {
@@ -1059,21 +1059,9 @@ body {
   font-size: 12px;
 }
 
-.lobby-empty {
-  padding: 10px 16px 2px;
-  text-align: center;
-  color: #8a5a28;
-  font-size: 13px;
-  font-style: italic;
-}
-
+.lobby-empty,
 .lobby-pvp-hint {
-  padding: 0 16px 10px;
-  text-align: center;
-  color: #8a5a28;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.4;
+  display: none;
 }
 
 .lobby-room {

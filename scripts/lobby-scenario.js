@@ -45,14 +45,13 @@ try {
 
   await page.waitForTimeout(2500);
   const lobby = await page.evaluate(() => {
-    const rooms = [...document.querySelectorAll('.lobby-room-name')].map((el) => el.textContent.trim());
-    const count = document.getElementById('user-count')?.textContent;
-    const waiting = [...document.querySelectorAll('.lobby-user-status')]
-      .some((el) => el.textContent.includes('대기중'));
-    return { rooms, count, waiting, roomN: rooms.length };
+    const title = document.getElementById('lobby-book-open')?.textContent || '';
+    const users = document.querySelectorAll('.lobby-user').length;
+    const hint = document.getElementById('lobby-location-guide')?.textContent || '';
+    return { title, users, hint };
   });
-  if (lobby.roomN < 9 || lobby.count !== '9' || !lobby.waiting) {
-    throw new Error(`lobby monitor failed: ${JSON.stringify(lobby)}`);
+  if (!lobby.title.includes('도토리') || lobby.users > 0 || !lobby.hint.includes('1인')) {
+    throw new Error(`lobby menu failed: ${JSON.stringify(lobby)}`);
   }
 
   await page.evaluate(() => {
@@ -76,11 +75,11 @@ try {
   await page.waitForTimeout(800);
   const back = await page.evaluate(() => {
     const panel = document.getElementById('lobby-users');
-    const rooms = document.querySelectorAll('.lobby-room-name').length;
-    const count = document.getElementById('user-count')?.textContent;
-    return { open: panel && !panel.hidden, rooms, count };
+    const title = document.getElementById('lobby-book-open')?.textContent || '';
+    const users = document.querySelectorAll('.lobby-user').length;
+    return { open: panel && !panel.hidden, title, users };
   });
-  if (!back.open || back.rooms < 9 || back.count !== '9') {
+  if (!back.open || !back.title.includes('도토리') || back.users > 0) {
     throw new Error(`return lobby failed: ${JSON.stringify(back)}`);
   }
 

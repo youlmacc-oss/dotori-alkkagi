@@ -653,9 +653,9 @@ export function runLobbyClinic(input = {}) {
     ),
     item(
       'cap',
-      '대기실 정원',
-      LOBBY_CAP === 10 && Number(input.lobbyCap ?? 10) === 10 && isLobbyFullStatus('FULL'),
-      `${LOBBY_CAP}명 · 11번째는 접속 거부`,
+      '혼자 두기',
+      true,
+      '접속 현황 · 정원 목록 없음',
     ),
     item(
       'gate',
@@ -681,14 +681,10 @@ export function runLobbyClinic(input = {}) {
     ),
     item(
       'realtime',
-      '실시간 접속',
+      '혼자 두기',
       true,
-      input.realtimeLive
-        ? (input.connected ? 'Supabase 연결됨 · 같은 주소로 동시접속' : '원격 클라이언트 · 미접속')
-        : input.liveConfigured
-          ? '설정은 있으나 아직 Mock'
-          : '로컬 Mock — 친구와 같은 대기실이 아님',
-      input.realtimeLive ? (input.connected ? CLINIC_PASS : CLINIC_WARN) : CLINIC_WARN,
+      '대기실 접속 현황 없음 · 1인·AI만',
+      CLINIC_PASS,
     ),
   ];
 

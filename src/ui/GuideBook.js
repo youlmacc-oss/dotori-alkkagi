@@ -79,7 +79,7 @@ export const GUIDE_PAGES = Object.freeze([
     title: '도토리 알까기',
     visual: 'cover',
     lead: '원목 판 위에서 알을 당기고 튕깁니다.',
-    points: ['1인 연습', 'AI 대국', '바로시작은 대기방 · 다음 접속 숨김 가능'],
+    points: ['1인 연습', 'AI 대국', '바로시작은 시작 화면 · 다음 접속 숨김 가능'],
   }),
   Object.freeze({
     id: 'pull',
@@ -199,7 +199,7 @@ export function renderClinicList(report) {
   return `
     <p class="book-kicker">연동 점검</p>
     <h3 class="book-heading">${report?.summary || '점검'}</h3>
-    <p class="clinic-lead">물리 · 1인·AI · 조준선 · 대기방 · 실시간</p>
+    <p class="clinic-lead">물리 · 1인·AI · 조준선 · 설정</p>
     <ul class="clinic-list">${rows}</ul>
   `;
 }

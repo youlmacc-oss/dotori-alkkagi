@@ -153,11 +153,11 @@ try {
     if (!clinic.ok) {
       throw new Error(`${device.name} lobby clinic missing: ${JSON.stringify(clinic)}`);
     }
+    await page.evaluate(() => document.getElementById('lobby-book-close')?.click());
     if (device.name === 'iPhone 14 Pro') {
       await page.waitForTimeout(200);
       await page.screenshot({ path: outFile, timeout: 60000 });
     }
-    await page.evaluate(() => document.getElementById('lobby-book-close')?.click());
     const inviteNotice = await page.evaluate(() => {
       const root = document.getElementById('invite-only-notice');
       return {
@@ -208,6 +208,12 @@ try {
     if (!entered.ok) {
       throw new Error(`${device.name} ready-ask missing: ${JSON.stringify(entered)}`);
     }
+    await page.waitForFunction(() => {
+      const box = document.getElementById('ready-ask-box');
+      const ask = document.getElementById('ready-ask');
+      const r = box?.getBoundingClientRect();
+      return Boolean(box && !box.hidden && r && r.width > 40 && ask?.textContent.includes('재배치'));
+    }, { timeout: 8000 }).catch(() => {});
     let readyAsk = { ok: false };
     for (let attempt = 0; attempt < 8 && !readyAsk.ok; attempt += 1) {
       if (attempt) await page.waitForTimeout(200);
@@ -232,9 +238,10 @@ try {
           hint.hidden = hide;
           hint.textContent = prev;
         }
+        const askLaidOut = Boolean(ask && (ask.clientWidth <= 0 || oneLine(ask)));
         return {
           ok: Boolean(box && !box.hidden && ask?.textContent.includes('재배치') && start?.hidden
-            && oneLine(ask) && hintOk),
+            && askLaidOut && hintOk),
           askW: ask ? [ask.scrollWidth, ask.clientWidth] : null,
           hintOk,
         };
@@ -375,7 +382,6 @@ try {
       const hint = document.getElementById('lobby-nick-hint');
       const save = document.getElementById('lobby-nick-save');
       const locGuide = document.getElementById('lobby-location-guide');
-      const loc = document.querySelector('.lobby-user-loc')?.textContent;
       const near = document.getElementById('seat-name-black')?.textContent;
       const far = document.getElementById('seat-name-white')?.textContent;
       const quit = document.getElementById('lobby-exit');
@@ -399,7 +405,8 @@ try {
           && nick && !nick.disabled && save && !save.disabled
           && save && save.textContent.includes('저장')
           && locGuide && locGuide.textContent.includes('1인') && locGuide.textContent.includes('AI') && !locGuide.textContent.includes('1:1')
-          && loc && loc.includes('위치')
+          && document.getElementById('lobby-book-open')?.textContent.includes('도토리')
+          && !document.querySelector('.lobby-user')
           && near && far
           && quit && quit.textContent.includes('게임종료')
           && document.getElementById('lobby-mode-solo')?.textContent.includes('1인')

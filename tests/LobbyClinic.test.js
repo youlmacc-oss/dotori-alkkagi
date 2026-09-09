@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CLINIC_FAIL,
-  CLINIC_WARN,
+  CLINIC_PASS,
   actionCamClinicOk,
   bookSkipClinicOk,
   isLiveRealtime,
@@ -86,7 +86,8 @@ describe('대기실 자가진단', () => {
     expect(report.items.find((row) => row.id === 'nick')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'acorn')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'acorn')?.detail).toContain('AI 대전');
-    expect(report.items.find((row) => row.id === 'realtime')?.status).toBe(CLINIC_WARN);
+    expect(report.items.find((row) => row.id === 'realtime')?.status).toBe(CLINIC_PASS);
+    expect(report.items.find((row) => row.id === 'cap')?.detail).toContain('접속 현황');
     expect(report.items.find((row) => row.id === 'actionCam')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'ready')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'pull')?.ok).toBe(true);

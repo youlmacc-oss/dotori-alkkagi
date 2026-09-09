@@ -50,7 +50,6 @@ import {
   mergeSelfPresence,
   applyLivePresence,
   retainKnownPeers,
-  lobbySeatUsers,
   presenceFromMatch,
   presenceViewKey,
   roomTitle,
@@ -66,7 +65,6 @@ import {
   hasLivePvpMatch,
   LOBBY_MODE_HINT,
   PVP_BUSY_GUIDE,
-  presenceStatusLabel,
   roomStatusLabel,
   watcherLine,
 } from './network/LobbyRooms.js';
@@ -83,10 +81,7 @@ import {
   canChangeNickname,
   clearPermanentNickname,
   funAiNickname,
-  locationLabel,
   matchSeatNames,
-  playerSeat,
-  sortBySeat,
 } from './network/Nickname.js';
 import {
   PVP_WAIT_HINT,
@@ -2909,41 +2904,6 @@ function renderLobby() {
   hint.id = 'lobby-pvp-hint';
   hint.textContent = LOBBY_MODE_HINT;
   lobbyList.appendChild(hint);
-
-  sortBySeat(lobbySeatUsers(lobbyUserList)).forEach((user) => {
-    const userEl = document.createElement('div');
-    userEl.className = `lobby-user ${user.isOwner ? 'owner' : ''}`;
-
-    const locEl = document.createElement('div');
-    locEl.className = 'lobby-user-loc';
-    locEl.textContent = locationLabel(playerSeat(user));
-
-    const avatarEl = document.createElement('div');
-    avatarEl.className = 'lobby-user-avatar';
-    avatarEl.textContent = user.character || '🐶';
-
-    const nameEl = document.createElement('div');
-    nameEl.className = 'lobby-user-name';
-    nameEl.textContent = user.nickname || `유저${user.id}`;
-
-    const inviteTarget = false && canInviteLobbyUser({
-      ...inviteHostState(),
-      target: user,
-    });
-    const statusEl = document.createElement(inviteTarget ? 'button' : 'div');
-    statusEl.className = inviteTarget ? 'lobby-user-status lobby-user-invite' : 'lobby-user-status';
-    statusEl.textContent = inviteTarget ? LOBBY_INVITE_BTN : presenceStatusLabel(user, rooms);
-    if (inviteTarget) {
-      statusEl.type = 'button';
-      statusEl.addEventListener('click', () => sendLobbyInvite(user));
-    }
-
-    userEl.appendChild(locEl);
-    userEl.appendChild(avatarEl);
-    userEl.appendChild(nameEl);
-    userEl.appendChild(statusEl);
-    lobbyList.appendChild(userEl);
-  });
 }
 
 renderer.setGuideEnabled(readGuideEnabled());
