@@ -1,11 +1,11 @@
 ﻿# [ARCHITECTURE] 무비용 고안정성 웹 1:1 알까기 아키텍처 (dotori-alkkagi)
 
 ## 1. 인프라 및 엔진
-- **배포 & 호스팅**: Vercel (무료 티어 CDN). `vercel.json` 으로 Vite `dist` 를 올린다.
+- **배포 & 호스팅**: GitHub Pages. `main` 푸시가 `dist` 를 `https://youlmacc-oss.github.io/dotori-alkkagi/` 에 올린다.
 - **네트워크**: Supabase Realtime. 채널 `dotori-lobby`.
 - **동시접속**: `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` 가 있으면 실 클라이언트, 없으면 로컬 Mock.
 - **클라이언트**: Vanilla JS + Matter.js (물리) + Howler.js (사운드) + Three.js (판)
-- **배포는 화면만**: Vercel은 `dist` CDN. 방 권위와 무관하다.
+- **배포는 화면만**: GitHub Pages는 `dist` 정적 호스트. 방 권위와 무관하다.
 
 ## 1-1. 방 하나 = 상태 하나
 - **고정방**: 1:1 `roomId`는 상수 `dotori-pvp` 하나. 호스트는 1:1을 연 사람(초대한 사람). 대국 좌석 2. 사이트 접속 상한은 2가 아니다.
