@@ -6,10 +6,49 @@ import { ndcBoundsFitBox, ndcBoxToCss, ndcLiftToClearBottom, playfieldNdcBox, PL
 export { visualShellRect };
 
 export const GUIDE_LINE_KEY = 'dotori_guide_enabled';
+export const GUIDE_COLOR_KEY = 'dotori_guide_color';
+export const GUIDE_COLOR_DEFAULT = '#ffcc00';
+export const GUIDE_COLOR_PRESETS = Object.freeze(['#ffcc00', '#7cff6b', '#4de4ff', '#ff6b9a', '#fff4cc']);
 export const GUIDE_BTN_ON = 'ON';
 export const GUIDE_BTN_OFF = 'OFF';
 export const GUIDE_BTN_ON_HINT = '조준선 사용중';
 export const GUIDE_BTN_OFF_HINT = '조준선 미사용';
+
+export function parseGuideColor(value, fallback = GUIDE_COLOR_DEFAULT) {
+  const raw = String(value || '').trim();
+  const hex = raw.startsWith('#') ? raw : `#${raw}`;
+  if (/^#[0-9a-fA-F]{6}$/.test(hex)) return `#${hex.slice(1).toLowerCase()}`;
+  if (/^#[0-9a-fA-F]{3}$/.test(hex)) {
+    const r = hex[1];
+    const g = hex[2];
+    const b = hex[3];
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  const fb = String(fallback || GUIDE_COLOR_DEFAULT);
+  return /^#[0-9a-fA-F]{6}$/.test(fb) ? fb.toLowerCase() : GUIDE_COLOR_DEFAULT;
+}
+
+export function guideColorNumber(hex) {
+  return Number.parseInt(parseGuideColor(hex).slice(1), 16);
+}
+
+export function loadGuideColor(storage = globalThis.localStorage) {
+  try {
+    return parseGuideColor(storage?.getItem?.(GUIDE_COLOR_KEY));
+  } catch {
+    return GUIDE_COLOR_DEFAULT;
+  }
+}
+
+export function saveGuideColor(hex, storage = globalThis.localStorage) {
+  const next = parseGuideColor(hex);
+  try {
+    storage?.setItem?.(GUIDE_COLOR_KEY, next);
+  } catch {
+    /* private mode */
+  }
+  return next;
+}
 
 export function guideButtonChrome(on) {
   const enabled = Boolean(on);
@@ -487,6 +526,7 @@ export class ThreeRenderer {
   constructor(canvas) {
     this.canvas = canvas || document.getElementById('board');
     this.guideEnabled = true;
+    this.guideColor = GUIDE_COLOR_DEFAULT;
     this.actionCamEnabled = isActionCamEnabled();
     this.aimScale = POWER_RATIO.DEFAULT;
     this.boardColor = BOARD_COLOR_DEFAULT;
@@ -557,6 +597,7 @@ export class ThreeRenderer {
     this._initLighting();
     this._createWoodBoard();
     this._createAimGuideLine();
+    this.setGuideColor(loadGuideColor());
     this._createRearrangeGuides();
     this._fitQuarterView();
   }
@@ -1081,6 +1122,14 @@ export class ThreeRenderer {
       if (this.pullLineMesh) this.pullLineMesh.visible = false;
       if (this.aimTargetDot) this.aimTargetDot.visible = false;
     }
+  }
+
+  setGuideColor(hex) {
+    this.guideColor = parseGuideColor(hex);
+    const n = guideColorNumber(this.guideColor);
+    this.aimLineMesh?.material?.color?.setHex(n);
+    this.aimTargetDot?.material?.color?.setHex(n);
+    return this.guideColor;
   }
 
   setActionCamEnabled(enabled) {

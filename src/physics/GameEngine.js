@@ -33,6 +33,38 @@ export function pickNearestOwnStone(stones, point, radius = STONE_RADIUS, slop =
   }
   return best;
 }
+
+/** 원격 샷은 id가 바뀌어도 색·좌표로 같은 돌을 찾는다. */
+export function findLaunchStone(stones, shot = {}) {
+  const list = (Array.isArray(stones) ? stones : []).filter((stone) => stone && !stone.fallen);
+  if (shot.stoneId != null) {
+    const byId = list.find((stone) => String(stone.id) === String(shot.stoneId));
+    if (byId) return byId;
+  }
+  const colored = shot.color ? list.filter((stone) => stone.color === shot.color) : list;
+  const px = Number(shot.x ?? shot.position?.x);
+  const py = Number(shot.y ?? shot.position?.y);
+  if (Number.isFinite(px) && Number.isFinite(py) && colored.length) {
+    return pickNearestOwnStone(colored, { x: px, y: py }, 80, 8) || colored[0];
+  }
+  return colored[0] || null;
+}
+
+export function sameStoneId(a, b) {
+  if (a == null || b == null) return false;
+  return String(a) === String(b);
+}
+
+/** turnEnd 스냅샷은 id를 문자열로도 같은 돌에 붙인다. */
+export function findRemoteStone(stones, data, index) {
+  const list = Array.isArray(stones) ? stones : [];
+  if (data?.id != null) {
+    const found = list.find((stone) => sameStoneId(stone.id, data.id));
+    if (found) return found;
+  }
+  return list[index] || null;
+}
+
 export const STONES_PER_SIDE = 5;
 
 export const STONE_COLOR = Object.freeze({
@@ -207,7 +239,6 @@ export function defaultGameModeForLobbyCount(count) {
 }
 
 export function intendedGameMode(mode) {
-  if (mode === GAME_MODE.PVP) return GAME_MODE.PVP;
   if (mode === GAME_MODE.SOLO) return GAME_MODE.SOLO;
   if (mode === GAME_MODE.SPECTATE) return GAME_MODE.SPECTATE;
   return GAME_MODE.AI;
@@ -1177,6 +1208,11 @@ export class GameEngine {
     this._pointerId = null;
     this._running = false;
     this._paused = false;
+    this._remoteLaunchStoneId = null;
+    this._remoteLaunchTs = 0;
+    this._shotFromRemote = false;
+    this.localTimer = true;
+    this.timerAuthority = true;
     this.turnRemainingMs = TURN.LIMIT_MS;
     this.gameMode = options.gameMode === GAME_MODE.PVP
       ? GAME_MODE.PVP
@@ -1716,8 +1752,7 @@ export class GameEngine {
     if (!Array.isArray(remoteStones) || remoteStones.length === 0) return false;
     if (this.stones.length !== remoteStones.length) return true;
     return remoteStones.some((data, index) => {
-      const stone = (data?.id != null && this.stones.find((s) => s.id === data.id))
-        || this.stones[index];
+      const stone = findRemoteStone(this.stones, data, index);
       if (!stone) return true;
       if (data.color && stone.color && data.color !== stone.color) return true;
       return false;
@@ -1726,6 +1761,7 @@ export class GameEngine {
 
   _rebuildFromRemoteStones(remoteStones) {
     const layout = remoteStones.map((stone) => ({
+      id: stone.id,
       x: Number(stone.position?.x ?? stone.x),
       y: Number(stone.position?.y ?? stone.y),
       color: stone.color === STONE_COLOR.WHITE ? STONE_COLOR.WHITE : STONE_COLOR.BLACK,
@@ -1740,8 +1776,25 @@ export class GameEngine {
     return true;
   }
 
+  setLocalTimer(on) {
+    this.localTimer = on !== false;
+    return this.localTimer;
+  }
+
+  setTimerAuthority(on) {
+    this.timerAuthority = on !== false;
+    return this.timerAuthority;
+  }
+
   applyRemoteMatchState(gameState, { asSpectator = false } = {}) {
     if (!gameState) return false;
+    if (gameState.event === 'timer') {
+      if (gameState.currentTurn) this.currentTurn = gameState.currentTurn;
+      if (gameState.turnRemainingMs !== undefined) {
+        this.turnRemainingMs = gameState.turnRemainingMs;
+      }
+      return true;
+    }
     const localPhase = this.phase;
     const remotePhase = gameState.phase;
     const localTurn = this.currentTurn;
@@ -1754,9 +1807,20 @@ export class GameEngine {
       return false;
     }
     if (
-      localPhase === PHASE.AIMING
+      (localPhase === PHASE.AIMING || localPhase === PHASE.RESOLVING)
       && gameState.event === 'start'
       && !(remoteTurn && localTurn && remoteTurn !== localTurn)
+    ) {
+      return false;
+    }
+    const launchTs = Number(this._remoteLaunchTs) || 0;
+    const remoteTs = Number(gameState.timestamp) || 0;
+    if (
+      localPhase === PHASE.RESOLVING
+      && gameState.event === 'turnEnd'
+      && launchTs
+      && remoteTs
+      && remoteTs < launchTs
     ) {
       return false;
     }
@@ -1779,8 +1843,7 @@ export class GameEngine {
         this._rebuildFromRemoteStones(gameState.stones);
       }
       gameState.stones.forEach((stoneData, index) => {
-        const stone = (stoneData?.id != null && this.stones.find((s) => s.id === stoneData.id))
-          || this.stones[index];
+        const stone = findRemoteStone(this.stones, stoneData, index);
         if (!stone?.body) return;
         const pos = stoneData.position || { x: stoneData.x, y: stoneData.y };
         if (Number.isFinite(pos?.x) && Number.isFinite(pos?.y)) {
@@ -1788,6 +1851,8 @@ export class GameEngine {
         }
         const vel = stoneData.velocity || { x: 0, y: 0 };
         Body.setVelocity(stone.body, { x: vel.x || 0, y: vel.y || 0 });
+        Body.setAngularVelocity(stone.body, 0);
+        if (restAuthority) Sleeping.set(stone.body, true);
         stone.fallen = Boolean(stoneData.fallen);
         if (stone.fallen) {
           stone.body.collisionFilter.mask = 0;
@@ -1812,6 +1877,11 @@ export class GameEngine {
     } else if (gameState.winner) {
       this.winner = gameState.winner;
     }
+    if (gameState.event === 'turnEnd' || gameState.event === 'start') {
+      this._remoteLaunchStoneId = null;
+      this._remoteLaunchTs = 0;
+      this._shotFromRemote = false;
+    }
     if (asSpectator) {
       this.emit('spectatorUpdate', { gameState, snapshot: this.getSnapshot() });
     } else if (gameState.winner && localPhase !== PHASE.GAME_OVER) {
@@ -1824,20 +1894,37 @@ export class GameEngine {
     return this.applyRemoteMatchState(gameState, { asSpectator: true });
   }
 
-  applyRemoteLaunch(shot = {}) {
-    if (
-      this._paused
-      || this.phase === PHASE.GAME_OVER
-      || this.phase === PHASE.SPECTATING
-      || this.phase === PHASE.RESOLVING
-    ) return false;
-    const stone = this.stones.find((s) => String(s.id) === String(shot.stoneId) && !s.fallen);
+  applyRemoteLaunch(shot = {}, { ignorePause = false, wake = false } = {}) {
+    if (this.phase === PHASE.GAME_OVER || this.phase === PHASE.SPECTATING) return false;
+    if (this._paused) {
+      if (ignorePause !== true && wake !== true) return false;
+      this._paused = false;
+    }
+    if (Array.isArray(shot.stones) && shot.stones.length) {
+      shot.stones.forEach((stoneData, index) => {
+        const remote = findRemoteStone(this.stones, stoneData, index);
+        if (!remote?.body || remote.fallen) return;
+        const pos = stoneData.position || { x: stoneData.x, y: stoneData.y };
+        if (Number.isFinite(pos?.x) && Number.isFinite(pos?.y)) {
+          Body.setPosition(remote.body, { x: pos.x, y: pos.y });
+        }
+      });
+    }
+    const stone = findLaunchStone(this.stones, shot);
     if (!stone?.body) return false;
+    if (this.phase === PHASE.RESOLVING && this._remoteLaunchStoneId === stone.id) return false;
     const force = shot.force;
     const vel = shot.velocity;
-    const hasForce = Number.isFinite(force?.x) && Number.isFinite(force?.y);
-    const hasVel = Number.isFinite(vel?.x) && Number.isFinite(vel?.y);
+    const hasForce = Number.isFinite(force?.x) && Number.isFinite(force?.y)
+      && (Number(force.x) !== 0 || Number(force.y) !== 0);
+    const hasVel = Number.isFinite(vel?.x) && Number.isFinite(vel?.y)
+      && (Number(vel.x) !== 0 || Number(vel.y) !== 0);
     if (!hasForce && !hasVel) return false;
+    const originX = Number(shot.x ?? shot.position?.x);
+    const originY = Number(shot.y ?? shot.position?.y);
+    if (Number.isFinite(originX) && Number.isFinite(originY)) {
+      Body.setPosition(stone.body, { x: originX, y: originY });
+    }
     this._cancelAim();
     Sleeping.set(stone.body, false);
     Body.setVelocity(stone.body, { x: 0, y: 0 });
@@ -1846,6 +1933,9 @@ export class GameEngine {
     else Body.setVelocity(stone.body, { x: vel.x, y: vel.y });
     this.aim = null;
     this.phase = PHASE.RESOLVING;
+    this._remoteLaunchStoneId = stone.id;
+    this._remoteLaunchTs = Number(shot.timestamp) > 0 ? Number(shot.timestamp) : Date.now();
+    this._shotFromRemote = true;
     this.restFrames = 0;
     if (shot.currentTurn) this.currentTurn = shot.currentTurn;
     this.emit('launch', {
@@ -1940,10 +2030,18 @@ export class GameEngine {
   }
 
   _spawnStones(layout) {
-    nextStoneId = 1;
+    const used = new Set();
     const stones = [];
+    let auto = 1;
 
     for (const spot of layout) {
+      let id = Number(spot.id);
+      if (!Number.isFinite(id) || id <= 0 || used.has(id)) {
+        while (used.has(auto)) auto += 1;
+        id = auto;
+      }
+      used.add(id);
+      auto = Math.max(auto, id + 1);
       const body = Bodies.circle(spot.x, spot.y, this.stoneRadius, {
         ...STONE_BODY_OPTIONS,
         label: 'stone',
@@ -1955,7 +2053,7 @@ export class GameEngine {
       });
 
       const stone = {
-        id: nextStoneId++,
+        id,
         color: spot.color,
         fallen: false,
         body,
@@ -1967,6 +2065,7 @@ export class GameEngine {
     }
 
     this.stones = stones;
+    nextStoneId = (used.size ? Math.max(...used) : 0) + 1;
     Composite.add(this.world, stones.map((s) => s.body));
   }
 
@@ -2145,11 +2244,17 @@ export class GameEngine {
 
     this.aim = null;
     this.phase = PHASE.RESOLVING;
+    this._remoteLaunchStoneId = stone.id;
+    this._remoteLaunchTs = Date.now();
+    this._shotFromRemote = false;
     this.restFrames = 0;
 
     this.emit('launch', {
       stoneId: stone.id,
       color: stone.color,
+      x: origin.x,
+      y: origin.y,
+      position: { x: origin.x, y: origin.y },
       velocity: { x: vx, y: vy },
       force: shot.force,
       tension: shot.tension,
@@ -2324,11 +2429,12 @@ export class GameEngine {
   }
 
   _tickTurnTimer(deltaMs) {
+    if (this.localTimer === false) return;
     if (this.phase !== PHASE.IDLE && this.phase !== PHASE.AIMING) return;
     this.turnRemainingMs -= deltaMs;
     if (this.turnRemainingMs <= 0) {
       this.turnRemainingMs = 0;
-      this.expireTurn();
+      if (this.timerAuthority !== false) this.expireTurn();
     }
   }
 
@@ -2402,12 +2508,17 @@ export class GameEngine {
     const previous = this.currentTurn;
     this.currentTurn = previous === STONE_COLOR.BLACK ? STONE_COLOR.WHITE : STONE_COLOR.BLACK;
     this.phase = PHASE.IDLE;
+    this._remoteLaunchStoneId = null;
+    this._remoteLaunchTs = 0;
     this.restFrames = 0;
     this.turnRemainingMs = TURN.LIMIT_MS;
+    const remoteShot = this._shotFromRemote === true;
+    this._shotFromRemote = false;
     this.emit('turnEnd', {
       previous,
       nextTurn: this.currentTurn,
       scores: { black: blackLeft, white: whiteLeft },
+      remote: remoteShot,
     });
   }
 }

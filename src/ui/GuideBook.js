@@ -68,29 +68,18 @@ export function markInviteOnlyNoticeSeen(storage = globalThis.sessionStorage) {
   }
 }
 
-export function shouldOfferInviteOnlyNotice({
-  alreadyShown = false,
-  inviteJoin = false,
-  guidebookClosed = false,
-  tutorialEnded = false,
-  tutorialSkipped = false,
-  guidebookSkippedOnConnect = false,
-} = {}) {
-  if (alreadyShown || inviteJoin) return false;
-  return guidebookClosed === true
-    || tutorialEnded === true
-    || tutorialSkipped === true
-    || guidebookSkippedOnConnect === true;
+export function shouldOfferInviteOnlyNotice(_reason = {}) {
+  return false;
 }
 
 export const GUIDE_PAGES = Object.freeze([
   Object.freeze({
     id: 'cover',
-    kicker: '비공개 대기실',
+    kicker: '대기실',
     title: '도토리 알까기',
     visual: 'cover',
     lead: '원목 판 위에서 알을 당기고 튕깁니다.',
-    points: ['1인 연습', 'AI 대국', '1:1은 초대 또는 링크', '바로시작은 대기방 · 다음 접속 숨김 가능', '가이드를 닫거나 튜토리얼을 끝내면 초대만 가능하다는 안내'],
+    points: ['1인 연습', 'AI 대국', '바로시작은 대기방 · 다음 접속 숨김 가능'],
   }),
   Object.freeze({
     id: 'pull',
@@ -103,10 +92,10 @@ export const GUIDE_PAGES = Object.freeze([
   Object.freeze({
     id: 'modes',
     kicker: '방 만들기',
-    title: '세 가지 대전',
+    title: '두 가지 대전',
     visual: 'modes',
     lead: '대기실에서 고른 모드가 곧 방입니다.',
-    points: ['1인: 흑·백 모두 나 · 호스트(흑)가 먼저', 'AI: 위는 봇, 아래는 나', '1:1: 호스트(흑)가 먼저 · 초대/링크로 한 명', '호스트는 흑, 초대 입장은 백', '다시하기는 같은 방 · 같은 상대 · 호스트 선공'],
+    points: ['1인: 흑·백 모두 나 · 호스트(흑)가 먼저', 'AI: 위는 봇, 아래는 나', '다시하기는 같은 모드로 한 판 더'],
   }),
   Object.freeze({
     id: 'ready',
@@ -121,8 +110,8 @@ export const GUIDE_PAGES = Object.freeze([
     kicker: '선공 · 도토리',
     title: '호스트가 먼저',
     visual: 'acorn',
-    lead: '1:1 선공은 항상 호스트(흑). 도토리는 시작 10, 승 +1 / 패 −1.',
-    points: ['초대한 사람이 흑·선공, 손님은 백·후공', '다시해도 호스트가 먼저입니다', '선공(호스트)이 시작 버튼을 누릅니다', '1인은 호스트(흑)가 먼저입니다', '1인·설정 AI 연습은 도토리를 건드리지 않습니다', '사람 1:1만 ±1 정산합니다', '창을 닫거나 끊겨도 시작된 1:1은 기권승으로 정산합니다', '같은 탭에서 F5를 눌러도 닉과 도토리는 남습니다'],
+    lead: '선공은 호스트(흑). 도토리는 접속마다 10개, AI 대전만 승 +1 / 패 −1.',
+    points: ['1인은 호스트(흑)가 먼저입니다', 'AI는 내가 흑·선공입니다', '1인 연습은 도토리를 건드리지 않습니다', 'AI 대전만 ±1 정산합니다', '창을 닫으면 도토리는 다시 10개입니다'],
   }),
   Object.freeze({
     id: 'fall',
@@ -133,36 +122,12 @@ export const GUIDE_PAGES = Object.freeze([
     points: ['장외 알은 판 밖 액션캠으로 따라갑니다', '⚙️에서 액션캠을 끄면 클로즈업이 없습니다', '마지막 알은 액션캠 뒤 한 박자 쉬고 결과', '기권은 바로 승부가 갈립니다'],
   }),
   Object.freeze({
-    id: 'leave',
-    kicker: '매너',
-    title: '시작된 1:1은 나가면 패',
-    visual: 'leave',
-    lead: '시작된 판에서 나가거나 창을 닫거나 연결이 끊기면 기권입니다.',
-    points: ['남은 사람은 승을 정산한 뒤 메인으로 갑니다', '상대를 기다리는 중 나가기는 정산 없음', '대기 중 끊기면 호스트는 빈 방, 게스트는 대기실', '다시하기는 같은 방 · 같은 상대 · 호스트 선공', '이미 끝난 판에서 대기실은 그냥 복귀', '대기실 ✕는 게임 종료'],
-  }),
-  Object.freeze({
-    id: 'room',
-    kicker: '대기실',
-    title: '방 · 위치',
-    visual: 'room',
-    lead: '대기실 접속은 최대 10명. 대국 좌석은 2명입니다.',
-    points: ['1:1 방은 하나 · 초대 또는 링크로만 입장', '참가하기·관전은 없습니다', '세 번째는 대기실만 보이며 방은 못 들어갑니다', '이미 시작된 방·가득 찬 방에는 참가할 수 없습니다', '방장이 대기방 친구를 초대할 수 있음', '받은 초대를 수락하면 호스트 방에 바로 붙습니다', '내 자리는 내닉네임으로 표시', '기본 닉은 접속 중 도토리 최후 번호 다음 · 최대 5글자', '같은 닉은 저장 때 다른 이름으로 바꿉니다', '접속이 5분 끊기면 대기실에서 나갑니다', '대기실에서 닉네임을 바꿀 수 있고 대전 중에는 잠깁니다'],
-  }),
-  Object.freeze({
     id: 'sound',
     kicker: '설정',
     title: '소리·액션캠·재배치',
     visual: 'sound',
     lead: '⚙️에서 음량·판 색·감도·액션캠·시작 전 재배치를 맞춥니다.',
-    points: ['액션캠을 끄면 장외 클로즈업이 없습니다', '재배치를 끄면 시작 버튼이 바로 나옵니다', '대국 중에는 설정을 적용할 수 없습니다', '첫 터치로 소리가 열립니다', '모바일은 세로로 잡는 것이 기준입니다', '다음 접속시 이 창을 숨길 수 있습니다'],
-  }),
-  Object.freeze({
-    id: 'invite',
-    kicker: '1:1 초대',
-    title: '대기방 친구도 초대',
-    visual: 'invite',
-    lead: '이 게임은 초대에 의해서만 둘 수 있습니다. 대전방을 연 뒤 상대를 초대하세요.',
-    points: ['방장이 친구 초대에서 대기 중인 사람을 고릅니다', '카카오톡·다른 앱·링크 복사로도 보냅니다', '받은 쪽은 수락하면 초대한 방에 바로 붙고 호스트 초대 창은 접힙니다', '거절하면 호스트 초대는 지워집니다', '다른 사람을 다시 초대하면 이전 팝업은 닫힙니다', '참가는 한 명만 · 늦은 쪽은 대기실로 돌아갑니다', '이미 시작된 방에는 참가할 수 없습니다', '호스트는 흑, 초대 입장은 백'],
+    points: ['액션캠을 끄면 장외 클로즈업이 없습니다', '재배치를 끄면 시작 버튼이 바로 나옵니다', '조준선 켜기·끄기와 색은 ⚙️에서 맞춥니다', '대국 중에는 설정을 적용할 수 없습니다', '첫 터치로 소리가 열립니다', '모바일은 세로로 잡는 것이 기준입니다', '다음 접속시 이 창을 숨길 수 있습니다'],
   }),
 ]);
 
@@ -182,7 +147,7 @@ export function renderGuideVisual(kind) {
     return '<div class="book-visual is-sling" aria-hidden="true"><span class="book-stone is-black"></span><span class="book-pull"></span><span class="book-stone is-white"></span></div>';
   }
   if (kind === 'modes') {
-    return '<div class="book-visual is-modes" aria-hidden="true"><span>1인</span><span>AI</span><span>1:1</span></div>';
+    return '<div class="book-visual is-modes" aria-hidden="true"><span>1인</span><span>AI</span></div>';
   }
   if (kind === 'acorn') {
     return '<div class="book-visual is-acorn" aria-hidden="true"><span class="book-nut">10</span><span class="book-nut-delta">±1</span></div>';
@@ -234,7 +199,7 @@ export function renderClinicList(report) {
   return `
     <p class="book-kicker">연동 점검</p>
     <h3 class="book-heading">${report?.summary || '점검'}</h3>
-    <p class="clinic-lead">물리 · 1:1 입장·초대·기권 · 대기방 · 실시간</p>
+    <p class="clinic-lead">물리 · 1인·AI · 조준선 · 대기방 · 실시간</p>
     <ul class="clinic-list">${rows}</ul>
   `;
 }

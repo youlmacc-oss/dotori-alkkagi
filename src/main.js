@@ -63,6 +63,9 @@ import {
   isPvpWaiting,
   SPECTATE_LOCAL_HINT,
   lobbyGuideLine,
+  hasLivePvpMatch,
+  LOBBY_MODE_HINT,
+  PVP_BUSY_GUIDE,
   presenceStatusLabel,
   roomStatusLabel,
   watcherLine,
@@ -108,19 +111,34 @@ import {
 } from './network/MatchStart.js';
 import {
   CAMP_WAIT_MS,
+  HOST_CLOCK_MS,
   TURN_END_WATCHDOG_MS,
   canApplyRemoteBoard,
   isLaunchSync,
   isStaleEndedMatchSync,
   mergeCampLayouts,
   packStoneSync,
+  nextMatchBoardReady,
+  resetLiveSyncSession,
+  shouldAcceptMatchBoard,
+  shouldIgnoreLaunchPause,
   shouldApplyMatchSync,
   shouldFireTurnEndWatchdog,
   shouldApplyRematchStart,
   shouldFollowRemoteStart,
+  shouldOpenGuestFromHostLive,
+  shouldHoldGuestUntilHostBoard,
+  shouldPauseMatchRunner,
   shouldIgnoreLateStartReplay,
+  shouldPublishHostClock,
+  shouldSyncSceneAfterHostStart,
   shouldPublishMatchSync,
+  shouldPublishSettledTurnEnd,
   shouldPulseMatchSync,
+  shouldTickLocalTurnTimer,
+  shouldExpireLocalTurn,
+  shouldNoteMatchSyncSeq,
+  shouldWakeMatchOnSync,
 } from './network/MatchSync.js';
 import {
   applyRoomAck,
@@ -131,6 +149,7 @@ import {
   applyRoomRematch,
   applyRoomStart,
   incomingResetsForRematch,
+  resetRoomForIncomingRematch,
   createRoomState,
   PVP_ROOM_ID,
   normalizePvpRoomId,
@@ -196,6 +215,7 @@ import {
   guestInviteNickname,
   idleLobbyInvitees,
   buildInviteReply,
+  announceLobbyInvite,
   buildLobbyInvite,
   guestClaimHeld,
   incomingRejectsMyGuestSeat,
@@ -333,6 +353,9 @@ const realtimeManager = new RealtimeManager({
       acorns: u.acorns,
       rearranging: Boolean(u.rearranging),
       started: Boolean(u.started),
+      matchGen: Number(u.matchGen) > 0 ? Math.floor(Number(u.matchGen)) : 0,
+      boardReady: Boolean(u.boardReady),
+      ended: Boolean(u.ended),
       inviteTargetId: u.inviteTargetId || null,
       inviteAt: u.inviteAt,
       pvpOpenedAt: u.pvpOpenedAt,
@@ -422,8 +445,7 @@ let startingPvp = false;
 let matchRoom = null;
 let pvpOpenedAt = null;
 let pvpExpireTimer = 0;
-let pendingInviteRoom = readInviteRoomId(window.location.search) || readStoredInviteRoom();
-if (pendingInviteRoom) writeStoredInviteRoom(pendingInviteRoom);
+let pendingInviteRoom = '';
 let lastRoomMates = new Set();
 let lastTimerSec = -1;
 let sentLobbyInvite = null;
@@ -445,7 +467,10 @@ let lastLaunchAt = 0;
 let gotShooterTurnEnd = false;
 let emittingStartBoard = false;
 let lastHostStartReplayAt = 0;
+let lastHostClockAt = 0;
 let matchBoardReady = false;
+let pendingHostLaunch = null;
+let lastHostLaunch = null;
 let matchWakeLock = null;
 
 let settingsModal = null;
@@ -600,12 +625,6 @@ function saveNickname() {
   }
   publishPresence();
   syncSeatNames();
-  const inviteId = pendingInviteRoom || readStoredInviteRoom() || readInviteRoomId(window.location.search);
-  if (inviteId && !inMatchRoom) {
-    pendingInviteRoom = inviteId;
-    if (guestNickInput) guestNickInput.value = nickInput.value;
-    enterInviteRoom();
-  }
 }
 
 function showPullBlockToast(message = PULL_BLOCK_NOTICE) {
@@ -1089,6 +1108,8 @@ function replayHostStartForGuest() {
     hasOpponent: roomHasOpponent(matchRoom),
     lastReplayAt: lastHostStartReplayAt,
     now: Date.now(),
+    localPhase: engine.phase,
+    hasLaunched: Boolean(lastHostLaunch),
   })) return false;
   lastHostStartReplayAt = Date.now();
   publishRoomState();
@@ -1113,6 +1134,7 @@ function emitHostStartBoard() {
       started: true,
     });
     applyMatchStarted({ publishStart: false });
+    matchBoardReady = true;
     publishMatchSync({ force: true, event: 'start', stones: merged });
     return true;
   } finally {
@@ -1170,9 +1192,7 @@ function publishMatchSync({ force = false, event = '', launch = null, stones = n
   if (!force && now - lastMatchSyncAt < 180) return false;
   lastMatchSyncAt = now;
   matchSyncSeq += 1;
-  const packed = event === 'launch'
-    ? []
-    : (Array.isArray(stones) ? stones : engine.stones);
+  const packed = Array.isArray(stones) ? stones : engine.getSnapshot().stones;
   return realtimeManager.broadcastSpectatorData({
     ...engine.getSnapshot(),
     stones: packed,
@@ -1185,6 +1205,8 @@ function publishMatchSync({ force = false, event = '', launch = null, stones = n
     kind: event === 'launch' ? 'launch' : event === 'camp' ? 'camp' : 'board',
     launch,
     stoneId: launch?.stoneId,
+    x: launch?.x ?? launch?.position?.x,
+    y: launch?.y ?? launch?.position?.y,
     velocity: launch?.velocity,
     force: launch?.force,
     power: launch?.power,
@@ -1195,12 +1217,43 @@ function publishMatchSync({ force = false, event = '', launch = null, stones = n
 }
 
 function noteIncomingMatchSeq(payload) {
+  if (!shouldNoteMatchSyncSeq({
+    event: isLaunchSync(payload) ? 'launch' : (payload?.event || ''),
+    boardReady: matchBoardReady,
+  })) return;
   lastMatchSyncTs = Number(payload?.timestamp) || lastMatchSyncTs;
   const seq = Number(payload?.seq);
   if (Number.isFinite(seq) && seq > 0) lastMatchSyncSeq = seq;
 }
 
+function flushPendingHostLaunch() {
+  const shot = pendingHostLaunch;
+  if (!shot || awaitingStart || applyingMatchSync) return false;
+  pendingHostLaunch = null;
+  return applyIncomingMatchSync(shot);
+}
+
+let applyingMatchSync = false;
+
 function applyIncomingMatchSync(payload) {
+  if (applyingMatchSync) {
+    if (isLaunchSync(payload)) pendingHostLaunch = payload;
+    return false;
+  }
+  applyingMatchSync = true;
+  let applied = false;
+  try {
+    applied = applyIncomingMatchSyncBody(payload);
+  } catch {
+    applied = false;
+  } finally {
+    applyingMatchSync = false;
+  }
+  if (pendingHostLaunch && !awaitingStart) flushPendingHostLaunch();
+  return applied;
+}
+
+function applyIncomingMatchSyncBody(payload) {
   const spectating = engine.phase === PHASE.SPECTATING;
   if (!shouldApplyMatchSync(payload, {
     myId: realtimeManager.userId,
@@ -1210,6 +1263,16 @@ function applyIncomingMatchSync(payload) {
     matchGen: roomMatchGen(matchRoom),
     spectating,
     inPvp: inMatchRoom && engine.gameMode === GAME_MODE.PVP,
+    boardReady: matchBoardReady,
+    awaitingStart,
+  })) return false;
+  const haveSeats = Boolean(matchRoom?.hostId && payload?.senderId);
+  if (!shouldAcceptMatchBoard({
+    isHost: haveSeats ? isMatchHost() : null,
+    senderIsHost: haveSeats
+      ? String(payload.senderId) === String(matchRoom.hostId)
+      : null,
+    event: isLaunchSync(payload) ? 'launch' : (payload?.event || ''),
   })) return false;
   if (isStaleEndedMatchSync({
     awaitingStart,
@@ -1249,29 +1312,59 @@ function applyIncomingMatchSync(payload) {
     }
     return true;
   }
-  if (payload?.event === 'start' || shouldFollowRemoteStart({
-    awaitingStart,
-    started: matchStarted,
-    remoteStarted: payload?.started === true && payload?.event === 'start',
-    mode: engine.gameMode,
-    remotePhase: payload?.phase,
-    remoteWinner: payload?.winner,
-  })) {
+  if (
+    shouldOpenGuestFromHostLive({
+      awaitingStart,
+      matchStarted,
+      remoteStarted: payload?.started === true,
+      event: isLaunchSync(payload) ? 'launch' : (payload?.event || ''),
+    })
+    || payload?.event === 'start'
+    || shouldFollowRemoteStart({
+      awaitingStart,
+      started: matchStarted,
+      remoteStarted: payload?.started === true && payload?.event === 'start',
+      mode: engine.gameMode,
+      remotePhase: payload?.phase,
+      remoteWinner: payload?.winner,
+    })
+  ) {
     if (awaitingStart) applyMatchStarted({ publishStart: false });
   }
   if (isLaunchSync(payload)) {
+    if (spectating) return false;
+    if (awaitingStart) {
+      pendingHostLaunch = payload;
+      return true;
+    }
+    const launched = engine.applyRemoteLaunch(payload, {
+      ignorePause: shouldIgnoreLaunchPause({
+        matchStarted,
+        awaitingStart,
+        isHost: isMatchHost(),
+      }),
+      wake: true,
+    });
+    if (!launched) return false;
     noteIncomingMatchSeq(payload);
-    if (spectating || awaitingStart) return false;
-    lastLaunchAt = Date.now();
+    lastLaunchAt = Number(payload?.timestamp) > 0 ? Number(payload.timestamp) : Date.now();
     gotShooterTurnEnd = false;
     armTurnEndWatchdog();
-    const launched = engine.applyRemoteLaunch(payload);
-    if (launched) flushMatchView();
-    return launched;
-  }
-  if (payload?.event === 'turnEnd') {
-    gotShooterTurnEnd = true;
-    clearTurnEndWatchdog();
+    const wasReady = matchBoardReady;
+    matchBoardReady = nextMatchBoardReady({
+      applied: true, event: 'launch', previous: matchBoardReady,
+    });
+    if (matchBoardReady) publishPresence();
+    engine.resumeMatch();
+    if (shouldSyncSceneAfterHostStart({
+      event: 'launch',
+      boardReady: matchBoardReady,
+      becameReady: matchBoardReady && !wasReady,
+    })) {
+      syncSceneMode();
+    }
+    flushMatchView();
+    return true;
   }
   if (!spectating && shouldIgnoreLateStartReplay({
     localPhase: engine.phase,
@@ -1279,6 +1372,8 @@ function applyIncomingMatchSync(payload) {
     localTurn: engine.currentTurn,
     remoteTurn: payload?.currentTurn,
     boardReady: matchBoardReady,
+    matchStarted,
+    awaitingStart,
   })) return false;
   if (!spectating && !canApplyRemoteBoard({
     localPhase: engine.phase,
@@ -1286,21 +1381,40 @@ function applyIncomingMatchSync(payload) {
     localTurn: engine.currentTurn,
     remoteTurn: payload?.currentTurn,
     remoteEvent: payload?.event,
+    boardReady: matchBoardReady,
+    matchStarted,
+    awaitingStart,
+    lastLaunchAt,
+    remoteTs: payload?.timestamp,
   })) return false;
   noteIncomingMatchSeq(payload);
   const applied = spectating
     ? engine.updateSpectatorState(payload)
     : engine.applyRemoteMatchState(payload);
   if (applied) {
-    if (payload?.event === 'start') engine.resumeMatch();
-    if (
-      payload?.event === 'start'
-      || payload?.event === 'turnEnd'
-      || payload?.event === 'launch'
-      || isLaunchSync(payload)
-    ) {
-      matchBoardReady = true;
+    if (payload?.event === 'turnEnd') {
+      gotShooterTurnEnd = true;
+      clearTurnEndWatchdog();
+    }
+    const readyEvent = isLaunchSync(payload) ? 'launch' : (payload?.event || '');
+    const wasReady = matchBoardReady;
+    matchBoardReady = nextMatchBoardReady({
+      applied: true,
+      event: readyEvent,
+      previous: matchBoardReady,
+    });
+    if (matchBoardReady && (readyEvent === 'start' || readyEvent === 'turnEnd' || readyEvent === 'launch')) {
       publishPresence();
+    }
+    if (shouldWakeMatchOnSync({ event: readyEvent })) {
+      engine.resumeMatch();
+    }
+    if (shouldSyncSceneAfterHostStart({
+      event: payload?.event,
+      boardReady: matchBoardReady,
+      becameReady: matchBoardReady && !wasReady,
+    })) {
+      syncSceneMode();
     }
     flushMatchView();
   }
@@ -1377,12 +1491,43 @@ function syncSceneMode() {
   const lobbyMode = !spectating && (!inMatchRoom || lobbyVisible);
   stage.classList.toggle('is-lobby', lobbyMode);
   soundEngine.setAmbience(lobbyMode ? 'lobby' : awaitingStart ? 'wait' : spectating ? 'wait' : 'match');
-  if (lobbyMode || (awaitingStart && !spectating)) {
+  if (shouldPauseMatchRunner({
+    lobby: lobbyMode,
+    awaitingStart,
+    roomStarted: Boolean(matchRoom?.started),
+    spectating,
+  })) {
     turnManager.cancel();
+    engine.setLocalTimer(false);
     engine.pauseMatch();
     syncStartGate();
     return;
   }
+  if (shouldHoldGuestUntilHostBoard({
+    isHost: isMatchHost(),
+    inPvp: inMatchRoom && engine.gameMode === GAME_MODE.PVP,
+    boardReady: matchBoardReady,
+    roomStarted: Boolean(matchRoom?.started),
+  })) {
+    turnManager.cancel();
+    engine.setLocalTimer(true);
+    engine.setTimerAuthority(false);
+    engine.resumeMatch();
+    engine.setInputLocked(true);
+    if (!tutorial.active) setTicker('판을 맞추는 중');
+    syncStartGate();
+    return;
+  }
+  engine.setLocalTimer(shouldTickLocalTurnTimer({
+    inPvp: inMatchRoom && engine.gameMode === GAME_MODE.PVP,
+    isHost: isMatchHost(),
+    spectating,
+  }));
+  engine.setTimerAuthority(shouldExpireLocalTurn({
+    inPvp: inMatchRoom && engine.gameMode === GAME_MODE.PVP,
+    isHost: isMatchHost(),
+    spectating,
+  }));
   if (!spectating) {
     engine.resumeMatch();
     turnManager.sync();
@@ -1396,12 +1541,13 @@ function syncLobbyWaitGuide(rooms = lobbyRooms()) {
   const line = lobbyGuideLine(rooms, LOCATION_GUIDE);
   guide.textContent = line.text;
   guide.classList.toggle('is-wait-blink', line.blink);
+  guide.classList.toggle('is-pvp-busy', Boolean(line.busy));
 }
 
 function syncPvpInvite() {
   const pvpBtn = document.getElementById('lobby-mode-pvp');
-  const invite = shouldInvitePvp(lobbyRoomsUsers().length);
-  pvpBtn?.classList.toggle('is-invite-blink', invite);
+  pvpBtn?.classList.remove('is-pvp-busy', 'is-invite-blink');
+  if (pvpBtn) pvpBtn.setAttribute('aria-label', '1:1 배제');
 }
 
 function closePvpGuidePick() {
@@ -1410,28 +1556,15 @@ function closePvpGuidePick() {
 }
 
 function openPvpGuidePick() {
-  const pick = document.getElementById('pvp-guide-pick');
-  const ask = document.getElementById('pvp-guide-ask');
-  if (ask) ask.textContent = PVP_GUIDE_ASK;
-  if (pick) pick.hidden = false;
+  return false;
 }
 
-function confirmPvpGuide(enabled) {
-  settingsModal?.setGuideEnabled(enabled);
+function confirmPvpGuide(_enabled) {
   closePvpGuidePick();
-  startOwnPvpRoom();
 }
 
 function startOwnPvpRoom() {
-  startingPvp = true;
-  try {
-    settingsModal?.setGameMode(GAME_MODE.PVP, { startMatch: true });
-    if (engine.gameMode !== GAME_MODE.PVP) {
-      engine.setMatchConfig({ mode: GAME_MODE.PVP, difficulty: engine.aiDifficulty });
-    }
-  } finally {
-    startingPvp = false;
-  }
+  return false;
 }
 
 function refreshLobbyPresence({ reconnect = false, publish = false } = {}) {
@@ -1504,6 +1637,7 @@ function clinicSnapshot() {
     hasVolume: Boolean(document.getElementById('settings-volume')),
     hasActionCam: Boolean(document.getElementById('settings-action-cam')),
     hasRearrangeAsk: Boolean(document.getElementById('settings-rearrange-ask')),
+    hasGuideColor: Boolean(document.getElementById('guide-color-pick')),
     actionCamOn: renderer.actionCamEnabled !== false && isActionCamEnabled(),
     rearrangeAskOn: isRearrangeAskEnabled(),
     pullOverNotice: PULL_OVER_NOTICE,
@@ -1767,11 +1901,25 @@ function syncPvpWait() {
   syncStartGate();
 }
 
+function applyLiveSyncReset() {
+  const liveSync = resetLiveSyncSession();
+  lastMatchSyncSeq = liveSync.lastMatchSyncSeq;
+  matchSyncSeq = liveSync.matchSyncSeq;
+  lastMatchSyncTs = liveSync.lastMatchSyncTs;
+  lastLaunchAt = liveSync.lastLaunchAt;
+  lastHostStartReplayAt = liveSync.lastHostStartReplayAt;
+  lastHostClockAt = 0;
+  matchBoardReady = liveSync.matchBoardReady;
+  gotShooterTurnEnd = liveSync.gotShooterTurnEnd;
+  pendingHostLaunch = liveSync.pendingHostLaunch;
+  lastHostLaunch = null;
+}
+
 function enterMatchRoom() {
   inMatchRoom = true;
   awaitingStart = true;
   matchStarted = false;
-  matchBoardReady = false;
+  applyLiveSyncReset();
   campSentForStart = false;
   if (shouldStartWithoutPeer(engine.gameMode) && (engine.phase === PHASE.GAME_OVER || engine.winner)) {
     engine.setHost(true);
@@ -1896,8 +2044,7 @@ function returnToPvpWait() {
   campSentForStart = false;
   clearSentLobbyInvite();
   lastPeerCamp = null;
-  lastMatchSyncSeq = 0;
-  matchSyncSeq = 0;
+  applyLiveSyncReset();
   stopHelloRetry();
   clearCampWait();
   clearTurnEndWatchdog();
@@ -1967,11 +2114,8 @@ function restartPvpRematch() {
   matchRoom = applyRoomRematch(matchRoom);
   awaitingStart = true;
   matchStarted = false;
-  matchBoardReady = false;
+  applyLiveSyncReset();
   campSentForStart = false;
-  lastMatchSyncTs = 0;
-  lastMatchSyncSeq = 0;
-  matchSyncSeq = 0;
   lastPeerCamp = null;
   lastAcornSettleKey = '';
   clearTurnEndWatchdog();
@@ -1996,23 +2140,12 @@ function restartPvpRematch() {
 }
 
 function followPvpRematch(payload) {
-  syncMatchRoom(applyRoomRematch({
-    ...matchRoom,
-    ...payload,
-    started: false,
-    roomId: matchRoom?.roomId || payload?.roomId,
-    hostId: matchRoom?.hostId || payload?.hostId,
-    guestId: matchRoom?.guestId || payload?.guestId,
-    matchGen: Math.max(roomMatchGen(payload), roomMatchGen(matchRoom), 1),
-  }));
+  syncMatchRoom(resetRoomForIncomingRematch(matchRoom, payload));
   hideResult();
   awaitingStart = true;
   matchStarted = false;
-  matchBoardReady = false;
+  applyLiveSyncReset();
   campSentForStart = false;
-  lastMatchSyncTs = 0;
-  lastMatchSyncSeq = 0;
-  matchSyncSeq = 0;
   lastPeerCamp = null;
   lastAcornSettleKey = '';
   clearTurnEndWatchdog();
@@ -2265,8 +2398,9 @@ function bounceRejectedJoin() {
   showLobby();
 }
 
-function joinPvpRoom(room, invite) {
-  let live = resolveJoinablePvp(room, invite);
+function joinPvpRoom(_room, _invite) {
+  return false;
+  let live = resolveJoinablePvp(_room, _invite);
   if (!canJoinPvpRoom(live, realtimeManager.userId)) {
     refreshLobbyPresence({ reconnect: false });
     live = resolveJoinablePvp(room, invite);
@@ -2511,10 +2645,11 @@ async function sendLobbyInvite(target) {
     hostId: payload.hostId,
     hostName: payload.hostName,
   }), payload.targetId);
-  let ok = await realtimeManager.broadcastPvpInvite(payload);
-  if (!ok) ok = await realtimeManager.broadcastPvpInvite(payload);
-  void publishPresence();
-  void publishRoomState();
+  const ok = await announceLobbyInvite({
+    publishPresence: () => { void publishPresence(); },
+    publishRoom: () => { void publishRoomState(); },
+    broadcast: () => realtimeManager.broadcastPvpInvite(payload),
+  });
   if (ok) setTicker(LOBBY_INVITE_SENT);
 }
 
@@ -2546,7 +2681,8 @@ async function acceptLobbyInvite() {
   if (!result.ok) setTicker(INVITE_ROOM_GONE_HINT);
 }
 
-function joinRoom(roomId, extras = {}) {
+function joinRoom(_roomId, extras = {}) {
+  return false;
   if (extras.nickname != null) {
     const named = guestInviteNickname(
       extras.nickname,
@@ -2575,6 +2711,7 @@ function joinRoom(roomId, extras = {}) {
 }
 
 async function enterInviteRoom() {
+  return false;
   const roomId = pendingInviteRoom || readStoredInviteRoom() || readInviteRoomId(window.location.search);
   if (!roomId) return false;
   pendingInviteRoom = roomId;
@@ -2765,12 +2902,12 @@ function renderLobby() {
   const empty = document.createElement('div');
   empty.className = 'lobby-empty';
   empty.id = 'lobby-empty';
-  empty.textContent = '1:1은 초대 또는 링크로 입장합니다';
+  empty.textContent = LOBBY_MODE_HINT;
   lobbyList.appendChild(empty);
   const hint = document.createElement('div');
   hint.className = 'lobby-pvp-hint';
   hint.id = 'lobby-pvp-hint';
-  hint.textContent = PVP_ROOM_HINT;
+  hint.textContent = LOBBY_MODE_HINT;
   lobbyList.appendChild(hint);
 
   sortBySeat(lobbySeatUsers(lobbyUserList)).forEach((user) => {
@@ -2789,7 +2926,7 @@ function renderLobby() {
     nameEl.className = 'lobby-user-name';
     nameEl.textContent = user.nickname || `유저${user.id}`;
 
-    const inviteTarget = canInviteLobbyUser({
+    const inviteTarget = false && canInviteLobbyUser({
       ...inviteHostState(),
       target: user,
     });
@@ -2840,6 +2977,7 @@ engine.on('launch', (payload) => {
   noteTutorial('launch');
   if (!tutorial.active) setTicker('발사!');
   if (payload?.remote) return;
+  lastHostLaunch = payload;
   lastLaunchAt = Date.now();
   gotShooterTurnEnd = false;
   armTurnEndWatchdog();
@@ -2861,12 +2999,17 @@ engine.on('stoneFallen', (payload) => {
   if (!tutorial.active) setTicker('장외 탈락!');
 });
 
-engine.on('turnEnd', () => {
+engine.on('turnEnd', (payload) => {
   matchBadge.textContent = engine.currentTurn === 'black' ? '흑 턴' : '백 턴';
   if (!tutorial.active) {
     setTicker(engine.currentTurn === 'black' ? '흑 차례입니다' : '백 차례입니다');
   }
   soundEngine.playTurn();
+  if (!shouldPublishSettledTurnEnd({
+    remoteShot: payload?.remote,
+    inPvp: inMatchRoom && engine.gameMode === GAME_MODE.PVP,
+    isHost: isMatchHost(),
+  })) return;
   gotShooterTurnEnd = true;
   clearTurnEndWatchdog();
   publishMatchSync({ force: true, event: 'turnEnd' });
@@ -2947,11 +3090,29 @@ let gameExited = false;
 
 function frame() {
   if (gameExited) return;
-  tickMatchReady();
-  publishMatchSync();
-  const snapshot = engine.getSnapshot();
-  renderer.draw(snapshot);
-  syncHud(snapshot);
+  try {
+    tickMatchReady();
+    const now = Date.now();
+    if (shouldPublishHostClock({
+      inPvp: inMatchRoom && engine.gameMode === GAME_MODE.PVP && engine.phase !== PHASE.SPECTATING,
+      isHost: isMatchHost(),
+      phase: engine.phase,
+      lastAt: lastHostClockAt,
+      now,
+      intervalMs: HOST_CLOCK_MS,
+      matchStarted,
+      awaitingStart,
+    })) {
+      lastHostClockAt = now;
+      publishMatchSync({ force: true, event: 'timer' });
+    }
+    publishMatchSync();
+    const snapshot = engine.getSnapshot();
+    renderer.draw(snapshot);
+    syncHud(snapshot);
+  } catch {
+    /* 한 프레임 오류가 휴대폰 루프를 죽이지 않게 한다 */
+  }
   frameId = requestAnimationFrame(frame);
 }
 
@@ -2986,7 +3147,7 @@ settingsModal = new SettingsModal({
     if (!payload?.toLobby) publishPresence();
     noteRoomMates(false);
   },
-  onPvpPick: openPvpGuidePick,
+  onPvpPick: () => {},
   shouldBlockApply: () => shouldBlockSettingsToLobby({
     inRoom: inMatchRoom,
     started: matchStarted,
@@ -3007,8 +3168,7 @@ try {
 
 turnManager.attach();
 syncSceneMode();
-if (pendingInviteRoom) openInviteNickModal(pendingInviteRoom);
-else showLobby();
+showLobby();
 
 document.getElementById('match-start')?.addEventListener('click', () => {
   beginMatchIfAllowed();
@@ -3218,6 +3378,9 @@ function pollGuestStart() {
     inPvp: inMatchRoom && engine.gameMode === GAME_MODE.PVP,
     spectating: engine.phase === PHASE.SPECTATING,
     boardReady: matchBoardReady,
+    isHost: isMatchHost(),
+    matchStarted,
+    roomStarted: Boolean(matchRoom?.started),
   })) return false;
   realtimeManager.resyncPresence({ force: true });
   if (beginMatchFromPeer()) return true;
@@ -3225,7 +3388,14 @@ function pollGuestStart() {
     publishCampLayout();
     publishRoomState();
   }
-  if (realtimeManager.channelNeedsReconnect() && !realtimeManager._connecting) bootRealtime();
+  if (
+    !matchStarted
+    && !matchRoom?.started
+    && realtimeManager.channelNeedsReconnect()
+    && !realtimeManager._connecting
+  ) {
+    bootRealtime();
+  }
   return false;
 }
 

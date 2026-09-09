@@ -3,7 +3,7 @@
  * 관전 데이터 브로드캐스트와 Presence 관리를 담당한다.
  */
 
-import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, isSparsePresenceSnapshot, mergePresenceWithHints, preferNewerPresence, presenceViewKey, retainKnownPeers, shouldReplacePresenceHint, usersFromPresenceState } from './LobbyRooms.js';
+import { LOBBY_CAP, PRESENCE_STATUS, canAdmitUser, dedupePresenceUsers, isSparsePresenceSnapshot, mergePresenceWithHints, preferNewerPresence, presencePlayFlags, presenceViewKey, retainKnownPeers, shouldReplacePresenceHint, usersFromPresenceState } from './LobbyRooms.js';
 import { MATCH_SYNC_EVENT, packMatchSync } from './MatchSync.js';
 import { PVP_INVITE_EVENT } from './PvpInvite.js';
 import { ROOM_STATE_EVENT } from './RoomState.js';
@@ -638,6 +638,7 @@ export class RealtimeManager {
       acorns: parseAcorn(this.presence.acorns),
       rearranging: Boolean(this.presence.rearranging),
       started: Boolean(this.presence.started),
+      ...presencePlayFlags(this.presence),
       inviteTargetId: this.presence.inviteTargetId ? String(this.presence.inviteTargetId) : null,
       inviteAt: Number(this.presence.inviteAt) > 0 ? this.presence.inviteAt : null,
       pvpOpenedAt: Number(this.presence.pvpOpenedAt) > 0 ? this.presence.pvpOpenedAt : null,

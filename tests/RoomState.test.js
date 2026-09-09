@@ -130,6 +130,9 @@ describe('1:1 방 상태', () => {
     expect(incomingResetsForRematch(playing, {
       ...rematch, started: true, phase: 'playing',
     })).toBe(true);
+    expect(mergeRoomState(playing, {
+      ...rematch, started: true, phase: 'playing',
+    })).toMatchObject({ started: true, matchGen: 1 });
     expect(shouldApplyPresenceOpponentLoss({
       roomHasOpponent: true, presenceHasOpponent: false, confirmedLeave: false,
     })).toBe(false);

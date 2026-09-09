@@ -10,11 +10,27 @@ import {
   remoteStonesNeedRebuild,
   sameMatchSyncRoom,
   shouldApplyMatchSync,
+  shouldBypassStaleMatchSeq,
   shouldFireTurnEndWatchdog,
+  shouldNoteMatchSyncSeq,
+  shouldWakeMatchOnSync,
+  shouldOpenGuestFromHostLive,
   shouldApplyRematchStart,
   shouldFollowRemoteStart,
+  shouldHoldStaleTurnEnd,
   shouldIgnoreLateStartReplay,
   shouldPublishMatchSync,
+  shouldPublishSettledTurnEnd,
+  shouldHoldGuestUntilHostBoard,
+  shouldPauseMatchRunner,
+  shouldTickLocalTurnTimer,
+  shouldExpireLocalTurn,
+  shouldPublishHostClock,
+  shouldAcceptMatchBoard,
+  nextMatchBoardReady,
+  shouldIgnoreLaunchPause,
+  shouldSyncSceneAfterHostStart,
+  resetLiveSyncSession,
   shouldPulseMatchSync,
   findRemoteStone,
 } from '../src/network/MatchSync.js';
@@ -54,7 +70,22 @@ describe('1:1 판 동기', () => {
       localPhase: PHASE.AIMING, remoteEvent: 'start',
     })).toBe(true);
     expect(shouldIgnoreLateStartReplay({
+      localPhase: PHASE.AIMING, remoteEvent: 'start', matchStarted: true, boardReady: false,
+    })).toBe(false);
+    expect(shouldIgnoreLateStartReplay({
       localPhase: PHASE.IDLE, remoteEvent: 'start',
+    })).toBe(false);
+    expect(shouldIgnoreLateStartReplay({
+      localPhase: PHASE.RESOLVING, remoteEvent: 'start',
+    })).toBe(true);
+    expect(shouldIgnoreLateStartReplay({
+      localPhase: PHASE.IDLE, remoteEvent: 'start', matchStarted: true, boardReady: true,
+    })).toBe(true);
+    expect(shouldIgnoreLateStartReplay({
+      localPhase: PHASE.IDLE, remoteEvent: 'start', matchStarted: true, boardReady: false,
+    })).toBe(false);
+    expect(shouldIgnoreLateStartReplay({
+      localPhase: PHASE.GAME_OVER, remoteEvent: 'start', matchStarted: true, boardReady: true,
     })).toBe(false);
     expect(shouldIgnoreLateStartReplay({
       localPhase: PHASE.AIMING,
@@ -101,11 +132,27 @@ describe('1:1 판 동기', () => {
     expect(canApplyRemoteBoard({ localPhase: PHASE.AIMING, remotePhase: PHASE.RESOLVING })).toBe(true);
     expect(canApplyRemoteBoard({ localPhase: PHASE.RESOLVING, remotePhase: PHASE.RESOLVING })).toBe(true);
     expect(canApplyRemoteBoard({ localPhase: PHASE.RESOLVING, remotePhase: PHASE.IDLE })).toBe(false);
+    expect(shouldHoldStaleTurnEnd({
+      remoteEvent: 'turnEnd', localPhase: PHASE.RESOLVING,
+    })).toBe(false);
+    expect(shouldHoldStaleTurnEnd({
+      remoteEvent: 'turnEnd', localPhase: PHASE.RESOLVING, lastLaunchAt: 80, remoteTs: 40,
+    })).toBe(true);
+    expect(shouldHoldStaleTurnEnd({
+      remoteEvent: 'turnEnd', localPhase: PHASE.IDLE, lastLaunchAt: 80, remoteTs: 40,
+    })).toBe(false);
     expect(canApplyRemoteBoard({
       localPhase: PHASE.RESOLVING,
       remotePhase: PHASE.IDLE,
       remoteEvent: 'turnEnd',
     })).toBe(true);
+    expect(canApplyRemoteBoard({
+      localPhase: PHASE.RESOLVING,
+      remotePhase: PHASE.IDLE,
+      remoteEvent: 'turnEnd',
+      lastLaunchAt: 80,
+      remoteTs: 40,
+    })).toBe(false);
     expect(canApplyRemoteBoard({
       localPhase: PHASE.RESOLVING,
       remotePhase: PHASE.IDLE,
@@ -124,7 +171,91 @@ describe('1:1 판 동기', () => {
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'launch' })).toBe(true);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'turnEnd' })).toBe(true);
-    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(false);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'timer' })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'timer' })).toBe(false);
+    expect(shouldHoldGuestUntilHostBoard({
+      isHost: false, inPvp: true, roomStarted: true, boardReady: false,
+    })).toBe(true);
+    expect(shouldHoldGuestUntilHostBoard({
+      isHost: false, inPvp: true, roomStarted: true, boardReady: true,
+    })).toBe(false);
+    expect(shouldPauseMatchRunner({
+      awaitingStart: true, roomStarted: true,
+    })).toBe(false);
+    expect(shouldPauseMatchRunner({
+      awaitingStart: true, roomStarted: false,
+    })).toBe(true);
+    expect(shouldTickLocalTurnTimer({ inPvp: true, isHost: false })).toBe(true);
+    expect(shouldTickLocalTurnTimer({ inPvp: true, isHost: true })).toBe(true);
+    expect(shouldExpireLocalTurn({ inPvp: true, isHost: false })).toBe(false);
+    expect(shouldExpireLocalTurn({ inPvp: true, isHost: true })).toBe(true);
+    expect(shouldPublishHostClock({
+      inPvp: true, isHost: true, phase: PHASE.IDLE, lastAt: 0, now: 10,
+    })).toBe(false);
+    expect(shouldPublishHostClock({
+      inPvp: true, isHost: true, phase: PHASE.IDLE, lastAt: 0, now: 10, matchStarted: true,
+    })).toBe(true);
+    expect(shouldPublishHostClock({
+      inPvp: true, isHost: true, phase: PHASE.IDLE, lastAt: 0, now: 10,
+      matchStarted: true,
+    })).toBe(true);
+    expect(shouldNoteMatchSyncSeq({ event: 'timer', boardReady: false })).toBe(false);
+    expect(shouldWakeMatchOnSync({ event: 'timer' })).toBe(false);
+    expect(shouldWakeMatchOnSync({ event: 'launch' })).toBe(true);
+    expect(shouldApplyMatchSync({
+      event: 'timer', seq: 8, roomId: 'dotori-pvp', senderId: 'host',
+    }, {
+      myId: 'guest', roomId: 'dotori-pvp', inPvp: true,
+      lastSeq: 0, boardReady: false, awaitingStart: true,
+    })).toBe(true);
+    expect(shouldBypassStaleMatchSeq({
+      event: 'start', boardReady: false, awaitingStart: true,
+    })).toBe(true);
+    expect(shouldApplyMatchSync({
+      event: 'start', seq: 2, roomId: 'dotori-pvp', senderId: 'host',
+    }, {
+      myId: 'guest', roomId: 'dotori-pvp', inPvp: true,
+      lastSeq: 8, boardReady: false, awaitingStart: true,
+    })).toBe(true);
+    expect(shouldOpenGuestFromHostLive({
+      awaitingStart: true, matchStarted: false, remoteStarted: true, event: 'launch',
+    })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'gameOver' })).toBe(true);
+    expect(shouldAcceptMatchBoard({
+      isHost: false, senderIsHost: true, event: 'turnEnd',
+    })).toBe(true);
+    expect(shouldAcceptMatchBoard({
+      isHost: true, senderIsHost: false, event: 'turnEnd',
+    })).toBe(false);
+    expect(shouldAcceptMatchBoard({
+      isHost: true, senderIsHost: false, event: 'gameOver',
+    })).toBe(true);
+    expect(nextMatchBoardReady({ applied: true, event: 'start', previous: false })).toBe(true);
+    expect(shouldSyncSceneAfterHostStart({ event: 'start', boardReady: false })).toBe(false);
+    expect(shouldSyncSceneAfterHostStart({ event: 'start', boardReady: true })).toBe(true);
+    expect(shouldSyncSceneAfterHostStart({
+      event: 'turnEnd', boardReady: true, becameReady: true,
+    })).toBe(true);
+    expect(shouldIgnoreLaunchPause({
+      matchStarted: true, awaitingStart: false, isHost: false,
+    })).toBe(true);
+    expect(shouldIgnoreLaunchPause({
+      matchStarted: true, awaitingStart: false, isHost: true,
+    })).toBe(false);
+    expect(shouldHoldGuestUntilHostBoard({
+      isHost: false, inPvp: true, roomStarted: true, boardReady: false,
+    })).toBe(true);
+    expect(shouldSyncSceneAfterHostStart({ event: 'start', boardReady: false })).toBe(false);
+    expect(shouldHoldGuestUntilHostBoard({
+      isHost: false, inPvp: true, roomStarted: true,
+      boardReady: nextMatchBoardReady({ applied: true, event: 'start', previous: false }),
+    })).toBe(false);
+    expect(shouldHoldGuestUntilHostBoard({
+      isHost: false, inPvp: true, roomStarted: true, boardReady: true,
+    })).toBe(false);
+    expect(resetLiveSyncSession().matchBoardReady).toBe(false);
+    expect(resetLiveSyncSession().lastMatchSyncSeq).toBe(0);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'camp' })).toBe(true);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'start' })).toBe(true);
@@ -170,6 +301,15 @@ describe('1:1 판 동기', () => {
     engine.currentTurn = STONE_COLOR.WHITE;
     expect(engine.isHumanInputBlocked()).toBe(false);
     expect(findRemoteStone(engine.stones, { id: first.id }, 9)).toBe(first);
+    expect(findRemoteStone(engine.stones, { id: String(first.id) }, 9)).toBe(first);
+    expect(shouldPublishSettledTurnEnd({ remoteShot: true })).toBe(false);
+    expect(shouldPublishSettledTurnEnd({ remoteShot: false })).toBe(true);
+    expect(shouldPublishSettledTurnEnd({
+      remoteShot: true, inPvp: true, isHost: true,
+    })).toBe(true);
+    expect(shouldPublishSettledTurnEnd({
+      remoteShot: false, inPvp: true, isHost: false,
+    })).toBe(false);
     expect(packMatchSync(engine.getSnapshot(), { roomId: 'room_h', senderId: 'g' }).scores)
       .toEqual(engine.getSnapshot().scores);
   });

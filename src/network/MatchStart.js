@@ -153,9 +153,17 @@ export function shouldReplayHostStart({
   lastReplayAt = 0,
   now = 0,
   minIntervalMs = HOST_START_REPLAY_MS,
+  localPhase = '',
+  hasLaunched = false,
 } = {}) {
   if (isHost !== true || matchStarted !== true || hasOpponent !== true) return false;
   if (guestStarted === true) return false;
+  if (hasLaunched === true) return false;
+  if (
+    localPhase === 'resolving'
+    || localPhase === 'aiming'
+    || localPhase === 'gameOver'
+  ) return false;
   const gap = Number(now) - Number(lastReplayAt);
   return !Number(lastReplayAt) || gap >= (Number(minIntervalMs) || HOST_START_REPLAY_MS);
 }
@@ -166,9 +174,15 @@ export function shouldPollGuestStart({
   inPvp = false,
   spectating = false,
   boardReady = true,
+  isHost = false,
+  matchStarted = false,
+  roomStarted = false,
 } = {}) {
   if (inPvp !== true || spectating === true) return false;
-  return awaitingStart === true || boardReady !== true;
+  if (isHost === true) return false;
+  if (matchStarted === true || roomStarted === true) return false;
+  if (awaitingStart === true) return true;
+  return boardReady !== true;
 }
 
 /** 방 started가 먼저 켜져도 Presence는 그걸 올려야 후공이 따라온다. */

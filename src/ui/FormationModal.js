@@ -36,8 +36,12 @@ import {
   BOARD_COLOR_KEY,
   BOARD_MESH_SIZE,
   BOARD_WORLD_INSET,
+  GUIDE_COLOR_DEFAULT,
   GUIDE_LINE_KEY,
   applyGuideButtonChrome,
+  loadGuideColor,
+  parseGuideColor,
+  saveGuideColor,
   boardFaceToMatter,
   boardTonePalette,
   matterToBoardFace,
@@ -122,11 +126,9 @@ export function saveMyFormation(payload) {
 function loadMatchConfig() {
   try {
     const rawMode = localStorage.getItem(GAME_MODE_KEY);
-    const mode = rawMode === GAME_MODE.PVP
-      ? GAME_MODE.PVP
-      : rawMode === GAME_MODE.SOLO
-        ? GAME_MODE.SOLO
-        : GAME_MODE.AI;
+    const mode = rawMode === GAME_MODE.SOLO
+      ? GAME_MODE.SOLO
+      : GAME_MODE.AI;
     const raw = localStorage.getItem(AI_DIFFICULTY_KEY);
     const difficulty = raw === AI_DIFFICULTY.BEGINNER || raw === AI_DIFFICULTY.EXPERT
       ? raw
@@ -213,6 +215,9 @@ export class SettingsModal {
     this.drag = null;
     this.color = loadBoardColorState();
     this.committedColor = { ...this.color };
+    this.guideColor = loadGuideColor();
+    this.committedGuideColor = this.guideColor;
+    this.renderer.setGuideColor(this.guideColor);
     const match = loadMatchConfig();
     this.gameMode = engine.gameMode ?? match.mode;
     this.aiDifficulty = engine.aiDifficulty ?? match.difficulty;
@@ -265,14 +270,12 @@ export class SettingsModal {
     this.settingsGuide.addEventListener('click', () => this.toggleGuide());
     this.bindVolumeControls();
     this.bindPlayToggles();
+    this.bindGuideColor();
 
     for (const btn of root.querySelectorAll('[data-mode]')) {
       btn.addEventListener('click', () => {
         if (btn.dataset.mode === 'pvp' || btn.id === 'lobby-mode-pvp') {
-          if (this.onPvpPick) {
-            this.onPvpPick();
-            return;
-          }
+          return;
         }
         this.setGameMode(btn.dataset.mode, { startMatch: Boolean(btn.id?.startsWith('lobby-mode')) });
       });
@@ -352,6 +355,36 @@ export class SettingsModal {
     if (rearrange) rearrange.checked = isRearrangeAskEnabled();
   }
 
+  bindGuideColor() {
+    const pick = this.root.querySelector('#guide-color-pick');
+    pick?.addEventListener('input', () => this.previewGuideColor(pick.value));
+    this.root.querySelector('#guide-color-reset')?.addEventListener('click', () => {
+      this.previewGuideColor(GUIDE_COLOR_DEFAULT);
+    });
+    for (const chip of this.root.querySelectorAll('[data-guide-hex]')) {
+      chip.addEventListener('click', () => this.previewGuideColor(chip.dataset.guideHex));
+    }
+    this.syncGuideColorChrome();
+  }
+
+  previewGuideColor(hex) {
+    this.guideColor = parseGuideColor(hex);
+    this.renderer.setGuideColor(this.guideColor);
+    this.syncGuideColorChrome();
+    this.drawPreview();
+    return this.guideColor;
+  }
+
+  syncGuideColorChrome() {
+    const pick = this.root.querySelector('#guide-color-pick');
+    if (pick) pick.value = this.guideColor;
+    const swatch = this.root.querySelector('#guide-color-swatch');
+    if (swatch) swatch.style.background = this.guideColor;
+    for (const chip of this.root.querySelectorAll('[data-guide-hex]')) {
+      chip.classList.toggle('is-on', parseGuideColor(chip.dataset.guideHex) === this.guideColor);
+    }
+  }
+
   commitPlayPrefs() {
     const action = this.root.querySelector('#settings-action-cam');
     const rearrange = this.root.querySelector('#settings-rearrange-ask');
@@ -377,6 +410,7 @@ export class SettingsModal {
     this.count = this.engine.formation?.count ?? this.count;
     this.shape = this.engine.formation?.shape ?? this.shape;
     this.committedColor = { ...this.color };
+    this.committedGuideColor = this.guideColor;
     this.modal.hidden = false;
     this.root.classList.add('is-settings');
     if (this.tonePanel) this.tonePanel.hidden = false;
@@ -426,6 +460,8 @@ export class SettingsModal {
     if (revertColor) {
       this.color = { ...this.committedColor };
       this.renderer.setBoardColor(shiftBoardHex(this.color.base, this.color.hue, this.color.bright));
+      this.guideColor = this.committedGuideColor;
+      this.renderer.setGuideColor(this.guideColor);
     }
   }
 
@@ -660,6 +696,8 @@ export class SettingsModal {
     this.renderer.setBoardColor(this.resolvedColor());
     this.committedColor = { ...this.color };
     saveBoardColorState(this.color);
+    this.committedGuideColor = saveGuideColor(this.guideColor);
+    this.renderer.setGuideColor(this.committedGuideColor);
     this.commitPlayPrefs();
     this.onApply?.({ ...result, toLobby: true });
     this.close(false);
@@ -712,6 +750,7 @@ export class SettingsModal {
     this.root.querySelector('.settings-dock')?.classList.toggle('is-custom', this.mode === FORMATION_MODE.CUSTOM);
     this.syncColorChips();
     this.syncGuideButtons();
+    this.syncGuideColorChrome();
     this.syncPlayToggles();
     this.syncModeChrome();
     this.sizeSettingsBoard();
@@ -992,7 +1031,7 @@ export class SettingsModal {
         this.aimPreview.origin.x + (shot.velocity.x / speed) * travel,
         this.aimPreview.origin.y + (shot.velocity.y / speed) * travel,
       );
-      ctx.strokeStyle = 'rgba(255, 204, 0, 0.95)';
+      ctx.strokeStyle = this.guideColor || 'rgba(255, 204, 0, 0.95)';
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(end.x, end.y);

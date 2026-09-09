@@ -1,5 +1,5 @@
 /**
- * 접속 중 도토리: 시작 10, 1:1 승 +1 / 패 -1, 음수 허용. 이력 저장 없음.
+ * 접속 중 도토리: 시작 10, AI 대전 승 +1 / 패 -1, 음수 허용. 이력 저장 없음.
  */
 
 export const SESSION_ACORNS = 10;
@@ -30,7 +30,7 @@ export function acornSettleKey({ roomId, matchGen, winner } = {}) {
 }
 
 export function shouldSettleAcorns(result = {}) {
-  if (result.mode !== 'pvp') return false; // 1인·설정 AI 연습은 증감 없음
+  if (result.mode !== 'ai') return false;
   if (result.started !== true) return false;
   if (result.spectating) return false;
   if (result.winner == null || result.winner === 'draw') return false;
@@ -39,15 +39,11 @@ export function shouldSettleAcorns(result = {}) {
   return result.myColor === 'black' || result.myColor === 'white';
 }
 
-export function shouldForfeitOnLeave(state = {}) {
-  if (state.mode !== 'pvp') return false;
-  if (state.started !== true) return false;
-  if (state.spectating) return false;
-  if (state.phase === 'gameOver') return false;
-  return true;
+export function shouldForfeitOnLeave(_state = {}) {
+  return false;
 }
 
-/** 시작된 1:1에서 상대가 사라지면 남은 사람은 기권승을 받는다. */
+/** 1:1 기권 정산은 운영하지 않는다. */
 export function shouldForfeitOnOpponentGone(state = {}) {
   return shouldForfeitOnLeave(state)
     && state.hadOpponent === true

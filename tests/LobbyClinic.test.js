@@ -20,8 +20,6 @@ import {
 import {
   BOOK_SEEN_KEY,
   GUIDE_PAGES,
-  INVITE_ONLY_NOTICE,
-  INVITE_ONLY_OK,
   INVITE_ONLY_SEEN_KEY,
   guidePageAt,
   guidePageCount,
@@ -61,6 +59,7 @@ describe('대기실 자가진단', () => {
       hasVolume: true,
       hasActionCam: true,
       hasRearrangeAsk: true,
+      hasGuideColor: true,
       actionCamOn: true,
       rearrangeAskOn: true,
       pullOverNotice: '바둑돌위로 당길수 없습니다',
@@ -80,17 +79,13 @@ describe('대기실 자가진단', () => {
     });
     expect(report.ok).toBe(true);
     expect(report.fails).toBe(0);
-    expect(report.total).toBe(28);
-    expect(report.items.find((row) => row.id === 'pvpJoin')?.ok).toBe(true);
-    expect(report.items.find((row) => row.id === 'pvpAccept')?.ok).toBe(true);
-    expect(report.items.find((row) => row.id === 'pvpPresence')?.ok).toBe(true);
-    expect(report.items.find((row) => row.id === 'pvpPlace')?.ok).toBe(true);
-    expect(report.items.find((row) => row.id === 'invite')?.ok).toBe(true);
-    expect(report.items.find((row) => row.id === 'pvpHold')?.ok).toBe(true);
+    expect(report.total).toBe(21);
+    expect(report.items.find((row) => row.id === 'product')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'volume')?.detail).toContain('조준선');
     expect(report.items.find((row) => row.id === 'bookSkip')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'nick')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'acorn')?.ok).toBe(true);
-    expect(report.items.find((row) => row.id === 'acorn')?.detail).toContain('연습 AI');
+    expect(report.items.find((row) => row.id === 'acorn')?.detail).toContain('AI 대전');
     expect(report.items.find((row) => row.id === 'realtime')?.status).toBe(CLINIC_WARN);
     expect(report.items.find((row) => row.id === 'actionCam')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'ready')?.ok).toBe(true);
@@ -99,36 +94,32 @@ describe('대기실 자가진단', () => {
     expect(isLiveRealtime({ constructor: { name: 'DualMockSupabaseClient' } })).toBe(false);
   });
 
-  it('엔진이 없으면 실패하고, 가이드 페이지는 9장이다', () => {
+  it('엔진이 없으면 실패하고, 가이드 페이지는 7장이다', () => {
     const report = runLobbyClinic({});
     expect(report.ok).toBe(false);
     expect(report.items.find((row) => row.id === 'engine')?.status).toBe(CLINIC_FAIL);
-    expect(guidePageCount()).toBe(10);
+    expect(guidePageCount()).toBe(7);
     expect(guidePageAt(0).id).toBe('cover');
-    expect(guidePageAt(10).id).toBe('cover');
+    expect(guidePageAt(7).id).toBe('cover');
     expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.points.some((line) => line.includes('첫째 선'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.points.some((line) => line.includes('10부터'))).toBe(true);
-    expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('링크'))).toBe(true);
-    expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.lead).toContain('초대에 의해서만');
-    expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('거절'))).toBe(true);
-    expect(GUIDE_PAGES.find((page) => page.id === 'leave')?.points.some((line) => line.includes('다시하기'))).toBe(true);
-    expect(GUIDE_PAGES.find((page) => page.id === 'leave')?.lead).toContain('기권');
-    expect(GUIDE_PAGES.find((page) => page.id === 'room')?.points.some((line) => line.includes('관전은 없습니다'))).toBe(true);
-    expect(GUIDE_PAGES.find((page) => page.id === 'room')?.lead).toContain('좌석은 2명');
+    expect(GUIDE_PAGES.find((page) => page.id === 'invite')).toBeUndefined();
+    expect(GUIDE_PAGES.find((page) => page.id === 'leave')).toBeUndefined();
+    expect(GUIDE_PAGES.find((page) => page.id === 'room')).toBeUndefined();
     expect(GUIDE_PAGES.find((page) => page.id === 'sound')?.points.some((line) => line.includes('대국 중'))).toBe(true);
-    expect(GUIDE_PAGES.find((page) => page.id === 'cover')?.points.some((line) => line.includes('초대만'))).toBe(true);
-    expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.points.some((line) => line.includes('참가하기'))).toBe(false);
+    expect(GUIDE_PAGES.find((page) => page.id === 'sound')?.points.some((line) => line.includes('조준선'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'cover')?.points.some((line) => line.includes('1인'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'cover')?.points.some((line) => line.includes('1:1'))).toBe(false);
     expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.title).toContain('다시 놓기');
     expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.title).toContain('호스트');
     expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.lead).toContain('호스트');
-    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.points.some((line) => line.includes('흑') && line.includes('백'))).toBe(true);
-    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.points.some((line) => line.includes('호스트가 먼저'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.lead).toContain('AI 대전');
+    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.points.some((line) => line.includes('AI 대전만'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.points.some((line) => line.includes('호스트가 먼저'))).toBe(false);
     expect(GUIDE_PAGES.find((page) => page.id === 'acorn')?.points.some((line) => line.includes('도토리봇'))).toBe(false);
     expect(GUIDE_PAGES.find((page) => page.id === 'fall')?.points.some((line) => line.includes('액션캠'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'sound')?.title).toContain('액션캠');
-    expect(GUIDE_PAGES.find((page) => page.id === 'invite')?.title).toContain('대기방');
     expect(GUIDE_PAGES.find((page) => page.id === 'cover')?.points.some((line) => line.includes('바로시작'))).toBe(true);
-    expect(renderGuidePage(GUIDE_PAGES.find((page) => page.id === 'invite'))).toContain('초대');
     expect(renderGuidePage(guidePageAt(0))).toContain('튜토리얼 시작');
     expect(renderGuidePage(guidePageAt(1))).toContain('당기고');
     expect(renderGuidePage(guidePageAt(3))).toContain('재배치');
@@ -144,13 +135,10 @@ describe('대기실 자가진단', () => {
     expect(nickClinicOk()).toBe(true);
     expect(pvpExpireClinicOk()).toBe(true);
     expect(bookSkipClinicOk({ hasBookSkip: true, hasBookPlay: true })).toBe(true);
-    expect(INVITE_ONLY_NOTICE).toContain('초대에 의해서만');
-    expect(INVITE_ONLY_NOTICE).toContain('대전방 개설후');
-    expect(INVITE_ONLY_OK).toBe('확인');
-    expect(shouldOfferInviteOnlyNotice({ guidebookClosed: true })).toBe(true);
-    expect(shouldOfferInviteOnlyNotice({ tutorialEnded: true })).toBe(true);
-    expect(shouldOfferInviteOnlyNotice({ tutorialSkipped: true })).toBe(true);
-    expect(shouldOfferInviteOnlyNotice({ guidebookSkippedOnConnect: true })).toBe(true);
+    expect(shouldOfferInviteOnlyNotice({ guidebookClosed: true })).toBe(false);
+    expect(shouldOfferInviteOnlyNotice({ tutorialEnded: true })).toBe(false);
+    expect(shouldOfferInviteOnlyNotice({ tutorialSkipped: true })).toBe(false);
+    expect(shouldOfferInviteOnlyNotice({ guidebookSkippedOnConnect: true })).toBe(false);
     expect(shouldOfferInviteOnlyNotice({ guidebookClosed: true, alreadyShown: true })).toBe(false);
     expect(shouldOfferInviteOnlyNotice({ tutorialSkipped: true, inviteJoin: true })).toBe(false);
     expect(shouldOfferInviteOnlyNotice({})).toBe(false);
@@ -161,12 +149,7 @@ describe('대기실 자가진단', () => {
       hasLobbyInviteModal: true,
       hasInviteOnlyNotice: true,
     })).toBe(true);
-    expect(lobbyInviteClinicOk({
-      hasInviteCopy: true,
-      hasInviteNick: true,
-      hasLobbyInvite: true,
-      hasLobbyInviteModal: true,
-    })).toBe(false);
+    expect(lobbyInviteClinicOk({})).toBe(true);
     expect(actionCamClinicOk({ hasActionCam: true, killCamOffSkips: true })).toBe(true);
     expect(actionCamClinicOk({ hasActionCam: true, killCamOffSkips: false })).toBe(false);
     expect(pullClinicOk({

@@ -196,6 +196,30 @@ export function incomingResetsForRematch(current, incoming) {
   return roomMatchGen(incoming) > roomMatchGen(current);
 }
 
+/** 다시하기+시작이 한 패킷이어도 gen을 한 번만 올린다. started는 호출 쪽이 연다. */
+export function resetRoomForIncomingRematch(current, incoming = {}) {
+  if (!current?.roomId) return current;
+  return applyRoomRematch({
+    ...current,
+    ...incoming,
+    started: false,
+    roomId: current.roomId || incoming.roomId,
+    hostId: current.hostId || incoming.hostId,
+    guestId: current.guestId || incoming.guestId,
+    guestName: current.guestName || incoming.guestName,
+    hostAcorns: incoming.hostAcorns ?? current.hostAcorns,
+    guestAcorns: incoming.guestAcorns ?? current.guestAcorns,
+    matchGen: Math.max(roomMatchGen(incoming), roomMatchGen(current), 1),
+  });
+}
+
+/** 게스트가 받은 다시하기. 호스트가 이미 started를 켜면 그다음 시작만 연다. */
+export function applyIncomingRematchRoom(current, incoming) {
+  if (!incomingResetsForRematch(current, incoming)) return current;
+  const rematch = resetRoomForIncomingRematch(current, incoming);
+  return incoming?.started === true ? applyRoomStart(rematch) : rematch;
+}
+
 /** 다시하기 뒤에 도착한 1국 started=true는 시작으로 되돌리지 않는다. */
 export function incomingStaleAfterRematch(current, incoming) {
   if (!current?.roomId || !incoming?.roomId) return false;
@@ -247,14 +271,7 @@ export function mergeRoomState(current, incoming) {
     return applyRoomLeave(current, { leaverId: incoming.leaverId || current.guestId });
   }
   if (incomingResetsForRematch(current, incoming)) {
-    return applyRoomRematch({
-      ...current,
-      ...incoming,
-      guestId: current.guestId,
-      guestName: current.guestName || incoming.guestName,
-      hostAcorns: incoming.hostAcorns ?? current.hostAcorns,
-      guestAcorns: incoming.guestAcorns ?? current.guestAcorns,
-    });
+    return applyIncomingRematchRoom(current, incoming);
   }
   if (incomingStaleAfterRematch(current, incoming)) {
     return {

@@ -43,6 +43,7 @@ import {
   shouldKeepHostInviteSheet,
   peerJoiningHostRoom,
   shouldDismissInviteModal,
+  announceLobbyInvite,
   attemptInviteJoin,
   lobbyInviteAsk,
   presenceInvitePayload,
@@ -329,6 +330,26 @@ describe('대기실 1:1 안내', () => {
       hostId: 'host',
       targetId: 'guest',
     });
+  });
+
+  it('초대 Presence는 방송 ack를 기다리지 않는다', async () => {
+    const order = [];
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    const done = announceLobbyInvite({
+      publishPresence: () => order.push('presence'),
+      publishRoom: () => order.push('room'),
+      broadcast: async () => {
+        order.push('broadcast-start');
+        await held;
+        order.push('broadcast-end');
+        return true;
+      },
+    });
+    expect(order).toEqual(['presence', 'room', 'broadcast-start']);
+    release();
+    expect(await done).toBe(true);
+    expect(order).toEqual(['presence', 'room', 'broadcast-start', 'broadcast-end']);
   });
 
   it('수락은 방이 잠깐 없어도 Presence를 다시 보고 붙는다', async () => {

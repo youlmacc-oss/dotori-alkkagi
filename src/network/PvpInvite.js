@@ -274,6 +274,23 @@ export function buildLobbyInvite({
 
 export const INVITE_ACCEPT_RETRY_MS = 200;
 
+/**
+ * 상대 수락 팝업은 Presence/방 상태가 방송 ack를 기다리면 늦는다.
+ * 초대 대상은 로컬에 남긴 뒤 바로 올리고, 방송은 그다음이다.
+ */
+export async function announceLobbyInvite({
+  broadcast,
+  publishPresence,
+  publishRoom,
+} = {}) {
+  publishPresence?.();
+  publishRoom?.();
+  if (typeof broadcast !== 'function') return false;
+  let ok = await broadcast();
+  if (!ok) ok = await broadcast();
+  return Boolean(ok);
+}
+
 /** 수락 직후 방 목록이 비어 있으면 Presence를 한 번 다시 보고 붙는다. */
 export async function attemptInviteJoin({
   roomId,

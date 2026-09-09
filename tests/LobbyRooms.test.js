@@ -10,6 +10,7 @@ import {
   retainKnownPeers,
   mergeSelfPresence,
   presenceFromMatch,
+  presencePlayFlags,
   openRoomCount,
   roomTitle,
   filterOwnIdleRooms,
@@ -30,12 +31,16 @@ import {
   mergePresenceList,
   lobbyGuideLine,
   lobbyPvpWaitGuide,
+  hasLivePvpMatch,
+  isPvpMatchLive,
   presenceStatusLabel,
   roomStatusLabel,
   userStatusLabel,
   watcherLine,
   watchersForRoom,
   LOBBY_MODE_HINT,
+  PVP_BUSY_GUIDE,
+  PVP_BUSY_LABEL,
   PVP_WAIT_GUIDE,
   PVP_WAIT_ROOM_HINT,
 } from '../src/network/LobbyRooms.js';
@@ -74,11 +79,9 @@ describe('대기실 게임방', () => {
     expect(roomTitle(rooms.find((r) => r.mode === 'pvp'))).toBe('금동이 · 1:1');
     expect(rooms.find((r) => r.mode === 'pvp').status).toBe('waiting');
     expect(roomStatusLabel(rooms.find((r) => r.mode === 'pvp'))).toBe(PVP_WAIT_ROOM_HINT);
-    expect(lobbyPvpWaitGuide(rooms)).toBe(PVP_WAIT_GUIDE);
-    expect(PVP_WAIT_GUIDE).toContain('초대 대전');
-    expect(PVP_WAIT_GUIDE).toContain('초대손님을 기다리는 중');
-    expect(PVP_WAIT_ROOM_HINT).toContain('초대 대전');
-    expect(PVP_WAIT_ROOM_HINT).toContain('초대손님을 기다리는 중');
+    expect(lobbyPvpWaitGuide(rooms)).toBe('');
+    expect(PVP_WAIT_GUIDE).toBe('');
+    expect(PVP_WAIT_ROOM_HINT).toBe('');
     expect(canJoinPvpRoom(rooms.find((r) => r.mode === 'pvp'), 'guest')).toBe(true);
     expect(canJoinPvpRoom({
       ...rooms.find((r) => r.mode === 'pvp'),
@@ -138,22 +141,50 @@ describe('대기실 게임방', () => {
     expect(roomStatusLabel(ended[0])).toBe(ROOM_ENDED_HINT);
     expect(canJoinPvpRoom(rooms[0], 'guest')).toBe(false);
     expect(lobbyPvpWaitGuide(rooms)).toBe('');
+    expect(hasLivePvpMatch(rooms)).toBe(true);
     expect(lobbyGuideLine(rooms, '접속된 게이머의 위치는 항상 공개됩니다')).toEqual({
-      text: '접속된 게이머의 위치는 항상 공개됩니다',
+      text: LOBBY_MODE_HINT,
       blink: false,
+      busy: false,
     });
   });
 
-  it('방 없을 때는 모드 한 줄을 쓰고, 1:1 대기면 점멸 안내가 우선한다', () => {
+  it('방 없을 때는 모드 한 줄을 쓰고, 1:1 대기는 안내하지 않는다', () => {
     expect(LOBBY_MODE_HINT).toContain('1인');
     expect(LOBBY_MODE_HINT).toContain('AI');
-    expect(LOBBY_MODE_HINT).toContain('1:1');
-    expect(lobbyGuideLine([], '위치')).toEqual({ text: LOBBY_MODE_HINT, blink: false });
-    expect(lobbyGuideLine(null, '위치')).toEqual({ text: LOBBY_MODE_HINT, blink: false });
+    expect(LOBBY_MODE_HINT).not.toContain('1:1');
+    expect(lobbyGuideLine([], '위치')).toEqual({ text: LOBBY_MODE_HINT, blink: false, busy: false });
+    expect(lobbyGuideLine(null, '위치')).toEqual({ text: LOBBY_MODE_HINT, blink: false, busy: false });
     const waiting = roomsFromPresence([
       user('c', { mode: 'pvp', nickname: '금동이' }),
     ]);
-    expect(lobbyGuideLine(waiting, '위치')).toEqual({ text: PVP_WAIT_GUIDE, blink: true });
+    expect(hasLivePvpMatch(waiting)).toBe(false);
+    expect(lobbyGuideLine(waiting, '위치')).toEqual({ text: LOBBY_MODE_HINT, blink: false, busy: false });
+  });
+
+  it('1:1 대전중이어도 로비 안내는 1인·AI만 보여 준다', () => {
+    expect(PVP_BUSY_LABEL).toBe('');
+    expect(PVP_BUSY_GUIDE).toBe('');
+    const live = roomsFromPresence([
+      user('a', { mode: 'pvp', nickname: '호치', roomId: 'room_live', started: true }),
+      user('b', { mode: 'pvp', nickname: '달이', roomId: 'room_live', started: true }),
+    ]);
+    const waiting = roomsFromPresence([
+      user('c', { mode: 'pvp', nickname: '금동이', roomId: 'room_wait' }),
+    ]);
+    const ended = roomsFromPresence([
+      user('d', { mode: 'pvp', nickname: '호치', roomId: 'room_end', started: true, ended: true }),
+      user('e', { mode: 'pvp', nickname: '달이', roomId: 'room_end', started: true, ended: true }),
+    ]);
+    const mixed = [...live, ...waiting];
+    expect(isPvpMatchLive(live[0])).toBe(true);
+    expect(isPvpMatchLive(waiting[0])).toBe(false);
+    expect(isPvpMatchLive(ended[0])).toBe(false);
+    expect(hasLivePvpMatch(live)).toBe(true);
+    expect(hasLivePvpMatch(waiting)).toBe(false);
+    expect(hasLivePvpMatch(ended)).toBe(false);
+    expect(lobbyGuideLine(mixed, '위치')).toEqual({ text: LOBBY_MODE_HINT, blink: false, busy: false });
+    expect(lobbyGuideLine(ended, '위치')).toEqual({ text: LOBBY_MODE_HINT, blink: false, busy: false });
   });
 
   it('대기·관전은 방을 열지 않는다', () => {
@@ -191,6 +222,14 @@ describe('대기실 게임방', () => {
     expect(presenceFromMatch({
       userId: 'u1', mode: 'pvp', phase: 'idle', started: true, matchGen: 1, boardReady: true,
     })).toMatchObject({ matchGen: 1, boardReady: true });
+    expect(presencePlayFlags({ matchGen: 1, boardReady: true, ended: false })).toEqual({
+      matchGen: 1, boardReady: true, ended: false,
+    });
+    expect(presenceViewKey([
+      { userId: 'a', status: 'playing', mode: 'pvp', roomId: 'room_a', started: true, boardReady: false },
+    ])).not.toBe(presenceViewKey([
+      { userId: 'a', status: 'playing', mode: 'pvp', roomId: 'room_a', started: true, boardReady: true },
+    ]));
     expect(presenceFromMatch({
       userId: 'u1', mode: 'pvp', phase: 'idle', inRoom: false, started: true,
     }).started).toBe(false);

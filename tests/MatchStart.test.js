@@ -147,9 +147,26 @@ describe('선공·시작 권한', () => {
       { userId: 'guest', status: 'playing', mode: 'pvp', roomId: 'dotori-pvp', started: true, matchGen: 0 },
     ], { myId: 'host', roomId: 'dotori-pvp', matchGen: 1 })).toBe(false);
     expect(shouldPollGuestStart({ awaitingStart: false, inPvp: true, boardReady: false })).toBe(true);
+    expect(shouldPollGuestStart({
+      awaitingStart: false, inPvp: true, boardReady: false, isHost: true,
+    })).toBe(false);
+    expect(shouldPollGuestStart({
+      awaitingStart: true, inPvp: true, roomStarted: true,
+    })).toBe(false);
+    expect(shouldPollGuestStart({
+      awaitingStart: false, inPvp: true, boardReady: false, matchStarted: true,
+    })).toBe(false);
     expect(shouldReplayHostStart({
       isHost: true, matchStarted: true, guestStarted: false, hasOpponent: true,
       lastReplayAt: 1000, now: 1500, minIntervalMs: 2000,
+    })).toBe(false);
+    expect(shouldReplayHostStart({
+      isHost: true, matchStarted: true, guestStarted: false, hasOpponent: true,
+      localPhase: 'resolving',
+    })).toBe(false);
+    expect(shouldReplayHostStart({
+      isHost: true, matchStarted: true, guestStarted: false, hasOpponent: true,
+      hasLaunched: true,
     })).toBe(false);
     expect(shouldPollGuestStart({ awaitingStart: true, inPvp: true })).toBe(true);
     expect(shouldPollGuestStart({ awaitingStart: false, inPvp: true })).toBe(false);

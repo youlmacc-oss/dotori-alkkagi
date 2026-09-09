@@ -81,14 +81,16 @@ describe('대기실 도토리봇', () => {
     expect(readAiAcorns(store)).toBe(9);
 
     const pvp = { mode: 'pvp', started: true, winner: 'black', myColor: 'black' };
-    expect(shouldSettleAcorns(pvp)).toBe(true);
+    expect(shouldSettleAcorns(pvp)).toBe(false);
     expect(shouldSettleAiAcorns(pvp)).toBe(false);
-    expect(shouldSettleAiAcorns({ ...pvp, aiOpponent: true })).toBe(true);
-    expect(settleAiAcorns(10, { ...pvp, aiOpponent: true })).toBe(9);
-    expect(settleAiAcorns(10, { ...pvp, winner: 'white', aiOpponent: true })).toBe(11);
-    expect(settleAiAcorns(10, { ...pvp, mode: 'ai', aiOpponent: true })).toBe(10);
-    expect(shouldSettleAcorns({ ...pvp, mode: 'ai' })).toBe(false);
-    expect(shouldSettleAiAcorns({ ...pvp, mode: 'ai', aiOpponent: true })).toBe(false);
+    expect(shouldSettleAiAcorns({ ...pvp, aiOpponent: true })).toBe(false);
+    expect(settleAiAcorns(10, { ...pvp, aiOpponent: true })).toBe(10);
+    expect(settleAiAcorns(10, { ...pvp, winner: 'white', aiOpponent: true })).toBe(10);
+    const ai = { mode: 'ai', started: true, winner: 'black', myColor: 'black' };
+    expect(shouldSettleAcorns(ai)).toBe(true);
+    expect(shouldSettleAiAcorns({ ...ai, aiOpponent: true })).toBe(true);
+    expect(settleAiAcorns(10, { ...ai, aiOpponent: true })).toBe(9);
+    expect(settleAiAcorns(10, { ...ai, winner: 'white', aiOpponent: true })).toBe(11);
   });
 
   it('다른 기기의 봇 지갑은 더 새로운 seq만 받는다', () => {

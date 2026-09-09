@@ -5,7 +5,6 @@
 import {
   LOBBY_CAP,
   LOBBY_MODE_HINT,
-  PVP_WAIT_GUIDE,
   canJoinPvpFromLobby,
   canJoinPvpRoom,
   canSpectatePvpRoom,
@@ -29,9 +28,10 @@ import {
   getFormationZones,
   shouldApplyLobbyDefaultMode,
   finalizeStartedMode,
+  intendedGameMode,
 } from '../physics/GameEngine.js';
 import { MY_NICK_LABEL, NICKNAME_MAX } from './Nickname.js';
-import { INVITE_ONLY_NOTICE, shouldOfferInviteOnlyNotice } from '../ui/GuideBook.js';
+import { shouldOfferInviteOnlyNotice } from '../ui/GuideBook.js';
 import {
   PVP_START_HINT,
   PVP_WAIT_HINT,
@@ -496,7 +496,8 @@ export function pvpHoldClinicOk() {
     && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI) === false
     && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI, { joining: true }) === false
     && shouldApplyLobbyDefaultMode(idle, GAME_MODE.AI, { startingPvp: true }) === false
-    && finalizeStartedMode(GAME_MODE.PVP, GAME_MODE.AI) === GAME_MODE.PVP;
+    && finalizeStartedMode(GAME_MODE.PVP, GAME_MODE.AI) === GAME_MODE.AI
+    && intendedGameMode(GAME_MODE.PVP) === GAME_MODE.AI;
 }
 
 export function nickClinicOk() {
@@ -507,26 +508,14 @@ export function bookSkipClinicOk(input = {}) {
   return Boolean(input.hasBookSkip && input.hasBookPlay)
     && BOOK_SKIP_LABEL.includes('띄우지')
     && BOOK_PLAY_LABEL.includes('바로시작')
-    && INVITE_ONLY_NOTICE.includes('초대에 의해서만')
-    && shouldOfferInviteOnlyNotice({ tutorialSkipped: true })
-    && !shouldOfferInviteOnlyNotice({ tutorialSkipped: true, inviteJoin: true });
+    && !shouldOfferInviteOnlyNotice({ tutorialSkipped: true })
+    && !shouldOfferInviteOnlyNotice({ guidebookClosed: true });
 }
 
-export function lobbyInviteClinicOk(input = {}) {
-  return Boolean(input.hasInviteCopy && input.hasInviteNick && input.hasLobbyInvite && input.hasLobbyInviteModal && input.hasInviteOnlyNotice)
-    && INVITE_ONLY_NOTICE.includes('초대에 의해서만')
-    && shouldApplyInviteDecline(
-      { action: 'decline', hostId: 'host', targetId: 'guest' },
-      { myId: 'host', sentTargetId: 'guest' },
-    )
-    && canInviteLobbyUser({
-      mode: GAME_MODE.PVP,
-      inRoom: true,
-      started: false,
-      isHost: true,
-      hasOpponent: false,
-      target: { userId: 'guest', status: 'lobby' },
-    });
+export function lobbyInviteClinicOk(_input = {}) {
+  return !shouldOfferInviteOnlyNotice({ tutorialSkipped: true })
+    && !shouldOfferInviteOnlyNotice({ guidebookClosed: true })
+    && intendedGameMode(GAME_MODE.PVP) === GAME_MODE.AI;
 }
 
 export function pvpExpireClinicOk() {
@@ -535,7 +524,7 @@ export function pvpExpireClinicOk() {
 
 export function runLobbyClinic(input = {}) {
   const win = {
-    mode: 'pvp',
+    mode: 'ai',
     started: true,
     winner: 'black',
     myColor: 'black',
@@ -566,30 +555,19 @@ export function runLobbyClinic(input = {}) {
     ),
     item(
       'modes',
-      '1인 / AI / 1:1',
-      Boolean(input.hasSolo && input.hasAi && input.hasPvp),
-      input.hasSolo && input.hasAi && input.hasPvp ? LOBBY_MODE_HINT : '모드 버튼 누락',
+      '1인 / AI',
+      Boolean(input.hasSolo && input.hasAi),
+      input.hasSolo && input.hasAi ? LOBBY_MODE_HINT : '모드 버튼 누락',
     ),
     item(
-      'pvpWait',
-      '1:1 상대 대기',
-      String(input.pvpWaitHint || PVP_WAIT_HINT).includes('상대')
-        && String(PVP_WAIT_GUIDE).includes('초대 대전')
-        && String(PVP_WAIT_GUIDE).includes('초대손님을 기다리는 중')
-        && pvpHoldClinicOk(),
-      pvpHoldClinicOk() ? '초대손님을 기다리는 중 · AI로 바뀌지 않음' : '1:1 방이 AI로 덮일 수 있음',
-    ),
-    item(
-      'pvpHold',
-      '1:1 방 유지',
-      pvpHoldClinicOk(),
-      pvpHoldClinicOk() ? '혼자 개설해도 1:1 대기 유지' : '대기 중 AI 전환',
-    ),
-    item(
-      'expire',
-      '1:1 만료 없음',
-      pvpExpireClinicOk(),
-      pvpExpireClinicOk() ? '미시작 강제 퇴장 없음' : '만료 시간이 남아 있음',
+      'product',
+      '1인 · AI만',
+      intendedGameMode(GAME_MODE.PVP) === GAME_MODE.AI
+        && pvpHoldClinicOk()
+        && pvpExpireClinicOk()
+        && !canJoinPvpFromLobby({ mode: 'pvp', status: 'waiting' }, 'guest')
+        && lobbyInviteClinicOk(input),
+      '1:1 참가·초대·대기 안내 없음',
     ),
     item(
       'nick',
@@ -601,7 +579,7 @@ export function runLobbyClinic(input = {}) {
       'bookSkip',
       '가이드 바로시작',
       bookSkipClinicOk(input),
-      bookSkipClinicOk(input) ? '바로시작 · 다음 접속 숨김 · 닫으면 초대 안내' : '바로시작/숨김 UI 없음',
+      bookSkipClinicOk(input) ? '바로시작 · 다음 접속 숨김' : '바로시작/숨김 UI 없음',
     ),
     item(
       'first',
@@ -616,8 +594,9 @@ export function runLobbyClinic(input = {}) {
       '도토리 정산',
       shouldSettleAcorns(win)
         && shouldSettleAiAcorns({ ...win, aiOpponent: true })
-        && !shouldSettleAiAcorns(win)
-        && !shouldSettleAcorns({ ...win, mode: 'ai' })
+        && !shouldSettleAiAcorns({ ...win, mode: 'pvp', aiOpponent: true })
+        && !shouldSettleAcorns({ ...win, mode: 'pvp' })
+        && !shouldSettleAcorns({ ...win, mode: 'solo' })
         && !shouldSettleAcorns({ ...win, started: false })
         && AI_LOBBY_ACORNS === SESSION_ACORNS
         && !shouldSettleAcorns({
@@ -625,50 +604,17 @@ export function runLobbyClinic(input = {}) {
           settleKey: acornSettleKey({ roomId: 'room_h', matchGen: 0, winner: 'black' }),
           lastSettledKey: acornSettleKey({ roomId: 'room_h', matchGen: 0, winner: 'black' }),
         }),
-      `시작 10 · 사람 1:1 ±1 · 연습 AI 제외 (${SESSION_ACORNS})`,
+      `시작 10 · AI 대전 ±1 · 1인 제외 (${SESSION_ACORNS})`,
     ),
     item(
       'forfeit',
-      '시작 후 나가기=패',
-      shouldForfeitOnLeave({ mode: 'pvp', started: true, phase: 'idle' })
-        && !shouldForfeitOnLeave({ mode: 'pvp', started: false, phase: 'idle' })
-        && shouldForfeitOnOpponentGone({
+      '기권 정산 없음',
+      !shouldForfeitOnLeave({ mode: 'pvp', started: true, phase: 'idle' })
+        && !shouldForfeitOnLeave({ mode: 'ai', started: true, phase: 'idle' })
+        && !shouldForfeitOnOpponentGone({
           mode: 'pvp', started: true, phase: 'idle', hadOpponent: true, hasOpponent: false,
-        })
-        && !shouldReturnToPvpWait({
-          inRoom: true, mode: 'pvp', hadOpponent: true, hasOpponent: false, started: true, phase: 'idle',
-        })
-        && shouldReturnToPvpWait({
-          inRoom: true, mode: 'pvp', hadOpponent: true, hasOpponent: false, started: false,
-        })
-        && shouldKeepPvpRematch({
-          mode: 'pvp', inRoom: true, roomId: 'room_h', hostId: 'h', guestId: 'g',
-        })
-        && incomingResetsForRematch(
-          { roomId: 'room_h', guestId: 'g', started: true },
-          { roomId: 'room_h', guestId: 'g', started: false, matchGen: 1 },
-        )
-        && incomingResetsForRematch(
-          { roomId: 'room_h', guestId: 'g', started: true },
-          { roomId: 'room_h', guestId: 'g', started: true, matchGen: 1 },
-        )
-        && !incomingResetsForRematch(
-          { roomId: 'room_h', guestId: 'g', started: true },
-          { roomId: 'room_h', guestId: 'g', started: false },
-        )
-        && isRematchWait({ matchGen: 1, roomStarted: false, matchStarted: false })
-        && !isRematchWait({ matchGen: 0, roomStarted: false, matchStarted: false })
-        && !shouldFollowPeerStart({
-          awaitingStart: true, started: false, peerStarted: true, mode: 'pvp', rematchWait: true,
-        })
-        && shouldApplyRematchStart({
-          localPhase: PHASE.GAME_OVER, remoteEvent: 'start', remoteGen: 1, localGen: 0,
-        })
-        && incomingStaleAfterRematch(
-          { roomId: 'room_h', guestId: 'g', started: false, matchGen: 1 },
-          { roomId: 'room_h', guestId: 'g', started: true },
-        ),
-      '시작된 판 이탈은 기권 · 대기는 상대 대기 · 다시하기는 같은 방',
+        }),
+      '1:1 기권 정산 없음 · AI만 결과 정산',
     ),
     item(
       'result',
@@ -690,38 +636,14 @@ export function runLobbyClinic(input = {}) {
           : '액션캠 설정 없음',
     ),
     item(
-      'pvpJoin',
-      '1:1 참가',
-      pvpJoinClinicOk(),
-      pvpJoinClinicOk() ? '대기 1:1 참가 · 시작된 방 불가 · 늦은 참가 거절' : '1:1 참가 규칙 오류',
-    ),
-    item(
-      'pvpAccept',
-      '1:1 초대 수락',
-      pvpInviteAcceptClinicOk(),
-      pvpInviteAcceptClinicOk() ? '수락은 바로 호스트에 전달 · 초대만으로 입장' : '초대 수락·시작 동기 오류',
-    ),
-    item(
-      'pvpPresence',
-      '1:1 실시간 입장',
-      pvpPresenceClinicOk(),
-      pvpPresenceClinicOk() ? '방 개설 표시 · 시작된 판은 Presence 재전송 없음' : '입장 동기화 오류',
-    ),
-    item(
-      'pvpPlace',
-      '1:1 첫째 선 재배치',
-      pvpRearrangeClinicOk() && Boolean(input.hasReadyAsk && input.hasRearrangeAsk),
-      pvpRearrangeClinicOk()
-        ? (input.rearrangeAskOn === false ? '꺼짐 · 시작 버튼 바로 표시' : '예 하면 10초 내림 카운트 · 첫째 선 안')
-        : '재배치 카운트/첫째 선 오류',
-    ),
-    item(
       'ready',
       '시작 전 재배치',
-      readyClinicOk() && Boolean(input.hasReadyAsk && input.hasRearrangeAsk),
+      readyClinicOk()
+        && pvpRearrangeClinicOk()
+        && Boolean(input.hasReadyAsk && input.hasRearrangeAsk),
       input.rearrangeAskOn === false
         ? '꺼짐 · 시작 버튼 바로 표시'
-        : '5초 질문 · 예 하면 10초 내림 카운트',
+        : '5초 질문 · 예 하면 10초 내림 카운트 · 첫째 선 안',
     ),
     item(
       'pull',
@@ -750,18 +672,12 @@ export function runLobbyClinic(input = {}) {
     item(
       'volume',
       '환경설정',
-      Boolean(input.hasVolume && input.hasActionCam && input.hasRearrangeAsk)
+      Boolean(input.hasVolume && input.hasActionCam && input.hasRearrangeAsk && input.hasGuideColor)
         && shouldBlockSettingsToLobby({ inRoom: true, started: true })
         && !shouldBlockSettingsToLobby({ inRoom: true, started: false }),
-      input.hasVolume && input.hasActionCam && input.hasRearrangeAsk
-        ? `음량 · 액션캠 ${input.actionCamOn === false ? '꺼짐' : '켜짐'} · 재배치 ${input.rearrangeAskOn === false ? '꺼짐' : '켜짐'} · 대국 중 적용 불가`
-        : '음량/액션캠/재배치 설정 누락',
-    ),
-    item(
-      'invite',
-      '초대 · 대기방',
-      lobbyInviteClinicOk(input),
-      lobbyInviteClinicOk(input) ? '링크 · 대기방 초대 · 거절 해제 · 초대만 안내' : '초대 UI 없음',
+      input.hasVolume && input.hasActionCam && input.hasRearrangeAsk && input.hasGuideColor
+        ? `음량 · 액션캠 ${input.actionCamOn === false ? '꺼짐' : '켜짐'} · 조준선 · 재배치 ${input.rearrangeAskOn === false ? '꺼짐' : '켜짐'} · 대국 중 적용 불가`
+        : '음량/액션캠/조준선/재배치 설정 누락',
     ),
     item(
       'realtime',

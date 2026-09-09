@@ -12,7 +12,7 @@
     <meta property="og:description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
     <meta property="og:type" content="website" />
     <meta name="description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
-    <link rel="stylesheet" href="/src/style.css?v=20260909b" />
+    <link rel="stylesheet" href="/src/style.css?v=20260910a" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -106,23 +106,44 @@
       }
       #stage .lobby-mode-btn {
         flex: 1 1 0; height: 36px; border-radius: 18px;
-        border: 1px solid rgba(244, 192, 110, 0.45);
-        background: rgba(16, 10, 8, 0.7); color: #e8c4b0;
+        border: 1px solid #f0c57a;
+        background: linear-gradient(180deg, #fffdf6 0%, #ffe7b0 46%, #f3c56a 100%);
+        color: #6a3a12;
         font-size: 13px; font-weight: 800; cursor: pointer;
+        position: relative;
+        box-shadow: inset 0 2px 0 #fff, 0 3px 0 #c48a32, 0 6px 10px rgba(140, 70, 16, 0.22);
       }
       #stage .lobby-mode-btn.is-on {
-        border-color: #f4c06e; background: #f4c06e; color: #160d0a;
+        border-color: #ffd36a;
+        background: linear-gradient(180deg, #fff4b8 0%, #ffcc55 42%, #ff9d1a 100%);
+        color: #4a2208;
+        box-shadow: inset 0 2px 0 #fff8d2, 0 3px 0 #c46a10, 0 7px 12px rgba(180, 80, 10, 0.28);
       }
       #stage .lobby-mode-btn.is-invite-blink {
         animation: blink 1s step-end infinite;
+      }
+      #stage .lobby-mode-btn.is-pvp-busy::after {
+        content: '대전중';
+        position: absolute;
+        top: 3px;
+        right: 4px;
+        font-size: 9px;
+        font-weight: 900;
+        line-height: 12px;
+        padding: 0 3px;
+        border-radius: 6px;
+        letter-spacing: -0.04em;
+        background: #f4c06e;
+        color: #160d0a;
+        pointer-events: none;
       }
       #stage .lobby-empty {
         padding: 20px 16px 4px;
       }
       #stage .lobby-pvp-hint {
-        padding: 0 16px 16px;
+        padding: 0 16px 12px;
         text-align: center;
-        color: #fff3c8;
+        color: #8a5a28;
         font-size: 12px;
         font-weight: 800;
         line-height: 1.4;
@@ -1113,6 +1134,48 @@
         gap: 4px;
         margin: 0;
       }
+      #stage .guide-color-tools {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      #stage .guide-color-swatch {
+        flex: 0 0 22px;
+        width: 22px;
+        height: 22px;
+        border-radius: 11px;
+        border: 1px solid rgba(255, 243, 200, 0.7);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 2px 4px rgba(0,0,0,0.35);
+        background: #ffcc00;
+      }
+      #stage .guide-color-chip {
+        flex: 0 0 22px;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border-radius: 11px;
+        border: 1px solid rgba(255, 243, 200, 0.35);
+        cursor: pointer;
+      }
+      #stage .guide-color-chip.is-on {
+        box-shadow: 0 0 0 2px #fff3c8;
+      }
+      #stage .guide-color-pick {
+        flex: 0 0 28px;
+        width: 28px;
+        height: 26px;
+        padding: 0;
+        border: 1px solid rgba(244, 192, 110, 0.45);
+        border-radius: 6px;
+        background: #1a100c;
+        cursor: pointer;
+      }
+      #stage #guide-color-reset {
+        height: 26px;
+        min-height: 26px;
+        padding: 0 8px;
+        font-size: 11px;
+      }
       @media (max-height: 740px) {
         #stage .settings-bar { flex-basis: 46px; height: 46px; }
         #stage .settings-dock { padding: 4px 6px 6px; }
@@ -1152,7 +1215,7 @@
             <div class="hud-mode" id="hud-mode">
               <button type="button" class="hud-mode-btn" data-mode="solo">1인</button>
               <button type="button" class="hud-mode-btn is-on" data-mode="ai">AI</button>
-              <button type="button" class="hud-mode-btn" data-mode="pvp">1:1</button>
+              <button type="button" class="hud-mode-btn" data-mode="pvp" hidden>1:1</button>
             </div>
 
             <button type="button" class="settings-btn" id="settings-btn" hidden aria-hidden="true" tabindex="-1" aria-label="설정">⚙️</button>
@@ -1287,7 +1350,7 @@
                   <div class="mode-tabs" id="mode-tabs">
                     <button type="button" class="formation-tab" data-mode="solo" title="혼자서 흑·백 번갈아">1인</button>
                     <button type="button" class="formation-tab is-on" data-mode="ai" title="컴퓨터와 연습">AI 연습</button>
-                    <button type="button" class="formation-tab" data-mode="pvp" title="사람끼리 맞대결">1:1 대전</button>
+                    <button type="button" class="formation-tab" data-mode="pvp" title="사람끼리 맞대결" hidden>1:1 대전</button>
                   </div>
                 </div>
                 <div class="settings-row" id="ai-diff-chips">
@@ -1327,6 +1390,19 @@
                     <button type="button" class="formation-load" id="formation-load" title="선택한 배치 유형의 마지막 진형">진형 열기</button>
                   </div>
                 </div>
+                <div class="settings-row" id="guide-color-row">
+                  <span class="settings-row-label">조준선</span>
+                  <div class="guide-color-tools" id="guide-color-tools">
+                    <span class="guide-color-swatch" id="guide-color-swatch" aria-hidden="true"></span>
+                    <button type="button" class="guide-color-chip is-on" data-guide-hex="#ffcc00" aria-label="금색" style="background:#ffcc00"></button>
+                    <button type="button" class="guide-color-chip" data-guide-hex="#7cff6b" aria-label="연두" style="background:#7cff6b"></button>
+                    <button type="button" class="guide-color-chip" data-guide-hex="#4de4ff" aria-label="하늘" style="background:#4de4ff"></button>
+                    <button type="button" class="guide-color-chip" data-guide-hex="#ff6b9a" aria-label="분홍" style="background:#ff6b9a"></button>
+                    <button type="button" class="guide-color-chip" data-guide-hex="#fff4cc" aria-label="아이보리" style="background:#fff4cc"></button>
+                    <input id="guide-color-pick" class="guide-color-pick" type="color" value="#ffcc00" aria-label="조준선 색 고르기" />
+                    <button type="button" class="color-reset" id="guide-color-reset">기본</button>
+                  </div>
+                </div>
               </section>
             </div>
           </section>
@@ -1359,14 +1435,14 @@
               <div class="lobby-modes" id="lobby-modes" aria-label="대전 모드">
                 <button type="button" class="lobby-mode-btn" id="lobby-mode-solo" data-mode="solo">1인</button>
                 <button type="button" class="lobby-mode-btn is-on" id="lobby-mode-ai" data-mode="ai">AI</button>
-                <button type="button" class="lobby-mode-btn" id="lobby-mode-pvp" data-mode="pvp">1:1</button>
+                <button type="button" class="lobby-mode-btn" id="lobby-mode-pvp" data-mode="pvp" hidden>1:1</button>
               </div>
               <div class="lobby-nick">
                 <label class="lobby-nick-label" for="lobby-nick-input">닉네임</label>
                 <input id="lobby-nick-input" class="lobby-nick-input" type="text" maxlength="5" autocomplete="off" spellcheck="false" aria-describedby="lobby-nick-hint" />
                 <button type="button" class="lobby-nick-save" id="lobby-nick-save" aria-label="닉네임 저장">저장</button>
                 <span class="lobby-nick-hint" id="lobby-nick-hint">닉네임은 5글자 이내</span>
-                <button type="button" class="lobby-location-guide" id="lobby-location-guide" aria-label="안내와 점검">1인 연습 · AI 대국 · 1:1은 참가 또는 초대</button>
+                <button type="button" class="lobby-location-guide" id="lobby-location-guide" aria-label="안내와 점검">1인 연습 · AI 대국</button>
               </div>
               <div class="lobby-book-bar" id="lobby-book-bar">
                 <button type="button" class="lobby-book-bar-btn" id="lobby-book-bar-guide">가이드북</button>
@@ -1449,6 +1525,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260909b"></script>
+    <script type="module" src="/src/main.js?v=20260910a"></script>
   </body>
 </html>

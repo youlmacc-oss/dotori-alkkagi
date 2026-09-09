@@ -1,5 +1,5 @@
 /**
- * 대기실 방 목록: 접속자 10명 정원, 1인/AI/1:1 모두 방 개설.
+ * 대기실 방 목록: 접속자 10명 정원. 제품 모드는 1인/AI.
  */
 
 export const LOBBY_CAP = 10;
@@ -44,6 +44,8 @@ export function presenceViewKey(users) {
       user?.seat ?? '',
       user?.rearranging ? '1' : '0',
       user?.started ? '1' : '0',
+      user?.boardReady ? '1' : '0',
+      user?.matchGen ?? '',
       user?.ended ? '1' : '0',
       user?.inviteTargetId ?? '',
       user?.inviteAt ?? '',
@@ -99,6 +101,16 @@ export function presenceFromMatch(input = {}) {
     inviteTargetId: playing && input.inviteTargetId ? String(input.inviteTargetId) : null,
     inviteAt: playing && Number(input.inviteAt) > 0 ? Math.floor(Number(input.inviteAt)) : null,
     pvpOpenedAt: Number(input.pvpOpenedAt) > 0 ? Math.floor(Number(input.pvpOpenedAt)) : null,
+  };
+}
+
+/** Presence track에 실려야 호스트가 손님 판 수신을 알고 start 재전송을 끊는다. */
+export function presencePlayFlags(presence = {}) {
+  const matchGen = Number(presence?.matchGen);
+  return {
+    matchGen: Number.isFinite(matchGen) && matchGen > 0 ? Math.floor(matchGen) : 0,
+    boardReady: Boolean(presence?.boardReady),
+    ended: Boolean(presence?.ended),
   };
 }
 
@@ -217,25 +229,39 @@ export function canJoinPvpFromLobby(_room, _userId) {
   return false;
 }
 
-export const PVP_WAIT_GUIDE = '1:1 초대 대전 · 초대손님을 기다리는 중';
-export const PVP_WAIT_ROOM_HINT = '초대 대전 · 초대손님을 기다리는 중';
-export const LOBBY_MODE_HINT = '1인 연습 · AI 대국 · 1:1은 초대 또는 링크';
+export const PVP_WAIT_GUIDE = '';
+export const PVP_WAIT_ROOM_HINT = '';
+export const LOBBY_MODE_HINT = '1인 연습 · AI 대국';
+export const PVP_BUSY_LABEL = '';
+export const PVP_BUSY_GUIDE = '';
+
+export function isPvpMatchLive(room) {
+  return Boolean(
+    room
+    && room.mode === 'pvp'
+    && room.status === 'playing'
+    && room.ended !== true
+  );
+}
+
+export function livePvpRooms(rooms) {
+  return (Array.isArray(rooms) ? rooms : []).filter(isPvpMatchLive);
+}
+
+export function hasLivePvpMatch(rooms) {
+  return livePvpRooms(rooms).length > 0;
+}
 
 export function waitingPvpRooms(rooms) {
   return (Array.isArray(rooms) ? rooms : []).filter(isPvpWaiting);
 }
 
-export function lobbyPvpWaitGuide(rooms) {
-  return waitingPvpRooms(rooms).length ? PVP_WAIT_GUIDE : '';
+export function lobbyPvpWaitGuide(_rooms) {
+  return '';
 }
 
-export function lobbyGuideLine(rooms, locationGuide = '') {
-  const wait = lobbyPvpWaitGuide(rooms);
-  if (wait) return { text: wait, blink: true };
-  if (!Array.isArray(rooms) || rooms.length === 0) {
-    return { text: LOBBY_MODE_HINT, blink: false };
-  }
-  return { text: locationGuide, blink: false };
+export function lobbyGuideLine(_rooms, _locationGuide = '') {
+  return { text: LOBBY_MODE_HINT, blink: false, busy: false };
 }
 
 export function roomStatusLabel(room) {

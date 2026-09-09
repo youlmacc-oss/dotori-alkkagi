@@ -21,29 +21,29 @@ describe('접속 중 도토리 정책', () => {
     expect(parseAcorn(undefined)).toBe(10);
   });
 
-  it('1:1이 시작된 뒤에만 승 +1 패 -1이고 음수를 허용한다', () => {
-    const win = { mode: 'pvp', started: true, winner: 'black', myColor: 'black' };
-    const lose = { mode: 'pvp', started: true, winner: 'white', myColor: 'black' };
+  it('AI 대전이 시작된 뒤에만 승 +1 패 -1이고 음수를 허용한다', () => {
+    const win = { mode: 'ai', started: true, winner: 'black', myColor: 'black' };
+    const lose = { mode: 'ai', started: true, winner: 'white', myColor: 'black' };
     expect(settleSessionAcorns(10, win)).toBe(11);
     expect(settleSessionAcorns(10, lose)).toBe(9);
     expect(settleSessionAcorns(0, lose)).toBe(-1);
     expect(settleSessionAcorns(-1, lose)).toBe(-2);
-    expect(shouldSettleAcorns({ mode: 'ai', started: true, winner: 'black', myColor: 'black' })).toBe(false);
+    expect(shouldSettleAcorns({ mode: 'pvp', started: true, winner: 'black', myColor: 'black' })).toBe(false);
     expect(shouldSettleAcorns({ mode: 'solo', started: true, winner: 'black', myColor: 'black' })).toBe(false);
-    expect(settleSessionAcorns(10, { mode: 'ai', started: true, winner: 'black', myColor: 'black' })).toBe(10);
+    expect(settleSessionAcorns(10, { mode: 'pvp', started: true, winner: 'black', myColor: 'black' })).toBe(10);
     expect(settleSessionAcorns(10, { mode: 'solo', started: true, winner: 'white', myColor: 'black' })).toBe(10);
-    expect(settleSessionAcorns(10, { mode: 'pvp', started: false, winner: 'white', myColor: 'black' })).toBe(10);
-    expect(settleSessionAcorns(10, { mode: 'pvp', started: true, winner: 'draw', myColor: 'black' })).toBe(10);
-    expect(settleSessionAcorns(10, { mode: 'pvp', started: true, winner: 'black', spectating: true, myColor: 'black' })).toBe(10);
+    expect(settleSessionAcorns(10, { mode: 'ai', started: false, winner: 'white', myColor: 'black' })).toBe(10);
+    expect(settleSessionAcorns(10, { mode: 'ai', started: true, winner: 'draw', myColor: 'black' })).toBe(10);
+    expect(settleSessionAcorns(10, { mode: 'ai', started: true, winner: 'black', spectating: true, myColor: 'black' })).toBe(10);
     const settleKey = 'room_h:0:black';
     expect(shouldSettleAcorns({ ...win, settleKey, lastSettledKey: settleKey })).toBe(false);
     expect(settleSessionAcorns(11, { ...win, settleKey, lastSettledKey: settleKey })).toBe(11);
     expect(shouldSettleAcorns({ ...win, settleKey: 'room_h:1:black', lastSettledKey: settleKey })).toBe(true);
   });
 
-  it('1:1이 시작된 뒤 나가기·기권만 몰수하고, 대기 중 나가기는 정산하지 않는다', () => {
-    expect(shouldForfeitOnLeave({ mode: 'pvp', started: true, phase: 'idle' })).toBe(true);
-    expect(shouldForfeitOnLeave({ mode: 'pvp', started: true, phase: 'resolving' })).toBe(true);
+  it('나가기·기권은 정산하지 않는다', () => {
+    expect(shouldForfeitOnLeave({ mode: 'pvp', started: true, phase: 'idle' })).toBe(false);
+    expect(shouldForfeitOnLeave({ mode: 'pvp', started: true, phase: 'resolving' })).toBe(false);
     expect(shouldForfeitOnLeave({ mode: 'pvp', started: false, phase: 'idle' })).toBe(false);
     expect(shouldForfeitOnLeave({ mode: 'pvp', started: true, phase: 'gameOver' })).toBe(false);
     expect(shouldForfeitOnLeave({ mode: 'pvp', started: true, spectating: true, phase: 'spectating' })).toBe(false);
@@ -51,7 +51,7 @@ describe('접속 중 도토리 정책', () => {
     expect(shouldForfeitOnLeave({ mode: 'solo', started: true, phase: 'idle' })).toBe(false);
     expect(shouldForfeitOnOpponentGone({
       mode: 'pvp', started: true, phase: 'idle', hadOpponent: true, hasOpponent: false,
-    })).toBe(true);
+    })).toBe(false);
     expect(shouldForfeitOnOpponentGone({
       mode: 'pvp', started: true, phase: 'gameOver', hadOpponent: true, hasOpponent: false,
     })).toBe(false);
@@ -59,6 +59,6 @@ describe('접속 중 도토리 정책', () => {
       mode: 'pvp', started: false, phase: 'idle', hadOpponent: true, hasOpponent: false,
     })).toBe(false);
     const leaveLose = { mode: 'pvp', started: true, winner: 'white', myColor: 'black' };
-    expect(settleSessionAcorns(10, leaveLose)).toBe(9);
+    expect(settleSessionAcorns(10, leaveLose)).toBe(10);
   });
 });

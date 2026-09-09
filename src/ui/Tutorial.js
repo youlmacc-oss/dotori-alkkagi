@@ -22,7 +22,7 @@ export const TUTORIAL_STEPS = Object.freeze([
   Object.freeze({
     id: 'done',
     title: '완료',
-    coach: '잘하셨습니다. 가이드로 돌아가 1인·AI·1:1을 고르면 됩니다.',
+    coach: '잘하셨습니다. 가이드로 돌아가 1인 연습 또는 AI 대국을 고르면 됩니다.',
   }),
 ]);
 

@@ -130,7 +130,7 @@ describe('1:1 한 바퀴', () => {
     expect(isLaunchSync(launch)).toBe(true);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: true })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'launch' })).toBe(true);
-    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(false);
     expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'pulse' })).toBe(false);
     expect(shouldApplyMatchSync(launch, {
       myId: 'guest', roomId: 'room_host', inPvp: true,
@@ -166,11 +166,11 @@ describe('1:1 한 바퀴', () => {
     const win = {
       mode: 'pvp', started: true, winner: STONE_COLOR.BLACK, myColor: STONE_COLOR.BLACK,
     };
-    expect(shouldSettleAcorns(win)).toBe(true);
-    expect(settleSessionAcorns(SESSION_ACORNS, win)).toBe(11);
+    expect(shouldSettleAcorns(win)).toBe(false);
+    expect(settleSessionAcorns(SESSION_ACORNS, win)).toBe(SESSION_ACORNS);
     expect(settleSessionAcorns(SESSION_ACORNS, {
       ...win, myColor: STONE_COLOR.WHITE,
-    })).toBe(9);
+    })).toBe(SESSION_ACORNS);
 
     const rematch = applyRoomRematch(room);
     expect(incomingResetsForRematch(room, rematch)).toBe(true);
@@ -231,7 +231,7 @@ describe('1:1 한 바퀴', () => {
     expect(shouldSettleAcorns({
       mode: 'pvp', started: true, winner: STONE_COLOR.BLACK, myColor: STONE_COLOR.WHITE,
       settleKey: game2Key, lastSettledKey: game1Key,
-    })).toBe(true);
+    })).toBe(false);
 
     const left = applyRoomLeave(applyRoomStart(rematch), { leaverId: 'guest' });
     expect(incomingClearsOpponent(applyRoomStart(rematch), left)).toBe(true);
@@ -326,24 +326,26 @@ describe('1:1 한 바퀴', () => {
     })).toBe(true);
     expect(hostEngine.applyRemoteLaunch(launch)).toBe(true);
     expect(hostEngine.phase).toBe(PHASE.RESOLVING);
-    shooter.body.position.x = 240;
-    shooter.body.position.y = 200;
-    const guestRest = packMatchSync({
+    const hostShooter = hostEngine.stones.find((stone) => stone.id === shooter.id);
+    hostShooter.body.position.x = 240;
+    hostShooter.body.position.y = 200;
+    const hostRest = packMatchSync({
       phase: PHASE.IDLE,
       currentTurn: STONE_COLOR.BLACK,
-      stones: guestEngine.stones.map((stone) => ({
+      stones: hostEngine.stones.map((stone) => ({
         id: stone.id,
         color: stone.color,
         position: { x: stone.body.position.x, y: stone.body.position.y },
       })),
     }, {
-      roomId: 'room_host', senderId: 'guest', started: true, timestamp: 40, seq: 2, event: 'turnEnd',
+      roomId: 'room_host', senderId: 'host', started: true, timestamp: 40, seq: 2, event: 'turnEnd',
     });
-    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(true);
-    expect(hostEngine.applyRemoteMatchState(guestRest)).toBe(true);
-    expect(hostEngine.phase).toBe(PHASE.IDLE);
-    expect(hostEngine.currentTurn).toBe(STONE_COLOR.BLACK);
-    expect(hostEngine.stones.find((stone) => stone.id === shooter.id).body.position.x).toBeCloseTo(240);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: true, force: true, event: 'turnEnd' })).toBe(true);
+    expect(shouldPublishMatchSync({ inPvp: true, isHost: false, force: true, event: 'turnEnd' })).toBe(false);
+    expect(guestEngine.applyRemoteMatchState(hostRest)).toBe(true);
+    expect(guestEngine.phase).toBe(PHASE.IDLE);
+    expect(guestEngine.currentTurn).toBe(STONE_COLOR.BLACK);
+    expect(guestEngine.stones.find((stone) => stone.id === shooter.id).body.position.x).toBeCloseTo(240);
 
     guestEngine.phase = PHASE.RESOLVING;
     expect(shouldFireTurnEndWatchdog({
