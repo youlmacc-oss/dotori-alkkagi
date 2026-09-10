@@ -12,6 +12,7 @@ import {
   AI_ERROR_DEG,
   AI_THINK,
   aimErrorDeg,
+  aimHitsStone,
   calculateShot,
   findDoubleShot,
   bestKnockoutPair,
@@ -42,6 +43,17 @@ function createEngine() {
   });
 }
 
+describe('aimHitsStone', () => {
+  it('정면은 맞고 40도 빗각은 먼 거리에서 빗나간다', () => {
+    const shooter = { x: 200, y: 500 };
+    const target = { x: 400, y: 200 };
+    const direct = Math.atan2(200 - 500, 400 - 200);
+    expect(aimHitsStone(shooter, direct, target)).toBe(true);
+    expect(aimHitsStone(shooter, direct - 40 * Math.PI / 180, target)).toBe(false);
+    expect(aimHitsStone(shooter, direct + Math.PI, target)).toBe(false);
+  });
+});
+
 describe('AIBot 조준 오차', () => {
   it('초급·중급·고급 조준 오차는 0도이다', () => {
     expect(AI_ERROR_DEG[AI_DIFFICULTY.BEGINNER]).toBe(0);
@@ -71,6 +83,10 @@ describe('calculateShot 3/5/7/9알', () => {
       expect(Number.isFinite(shot.velocity.y)).toBe(true);
       expect(Math.abs(shot.errorDeg)).toBeLessThanOrEqual(shot.errorCapDeg + 1e-9);
       expect(shot.power).toBeGreaterThan(0.1);
+      const shooter = ai.find((s) => s.id === shot.shooterId);
+      const target = player.find((s) => s.id === shot.targetId);
+      expect(aimHitsStone(shooter, shot.angle, target)).toBe(true);
+      expect(aimHitsStone(shooter, Math.atan2(shot.velocity.y, shot.velocity.x), target)).toBe(true);
     }
   });
 
@@ -163,6 +179,44 @@ describe('calculateShot 3/5/7/9알', () => {
     expect(shot.kind).toBe('double');
     expect(shot.targetId).toBe(1);
     expect(shot.errorDeg).toBe(0);
+  });
+
+  it('빗나가는 가장자리 여유각 대신 타깃을 맞히는 각을 고른다', () => {
+    const ai = [{ id: 10, x: 200, y: 500 }];
+    const player = [{ id: 1, x: 400, y: 200 }];
+    const direct = Math.atan2(200 - 500, 400 - 200);
+    expect(aimHitsStone(ai[0], direct, player[0])).toBe(true);
+    expect(aimHitsStone(ai[0], direct - 40 * Math.PI / 180, player[0])).toBe(false);
+    for (const difficulty of Object.values(AI_DIFFICULTY)) {
+      const shot = calculateShot(ai, player, difficulty, { rng: () => 0.5, board: BOARD });
+      expect(shot.ok).toBe(true);
+      expect(shot.targetId).toBe(1);
+      expect(aimHitsStone(ai[0], shot.angle, player[0])).toBe(true);
+      expect(aimHitsStone(ai[0], Math.atan2(shot.velocity.y, shot.velocity.x), player[0])).toBe(true);
+    }
+  });
+
+  it('남은 돌이 적어도 모든 난이도가 타깃을 맞힌다', () => {
+    const fixtures = [
+      { ai: [{ id: 10, x: 180, y: 180 }], player: [{ id: 1, x: 520, y: 520 }] },
+      { ai: [{ id: 10, x: 400, y: 200 }], player: [{ id: 1, x: 120, y: 400 }] },
+      {
+        ai: [{ id: 10, x: 360, y: 360 }],
+        player: [{ id: 1, x: 200, y: 180 }, { id: 2, x: 540, y: 520 }],
+      },
+    ];
+    for (const { ai, player } of fixtures) {
+      for (const difficulty of Object.values(AI_DIFFICULTY)) {
+        const shot = calculateShot(ai, player, difficulty, { rng: () => 0.3, board: BOARD });
+        expect(shot.ok).toBe(true);
+        const shooter = ai.find((s) => s.id === shot.shooterId);
+        const target = player.find((s) => s.id === shot.targetId);
+        expect(shooter).toBeTruthy();
+        expect(target).toBeTruthy();
+        expect(aimHitsStone(shooter, shot.angle, target)).toBe(true);
+        expect(aimHitsStone(shooter, Math.atan2(shot.velocity.y, shot.velocity.x), target)).toBe(true);
+      }
+    }
   });
 
   it('pointerFromAim은 발사 반대 방향으로 당긴다', () => {
