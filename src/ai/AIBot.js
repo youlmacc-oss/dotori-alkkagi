@@ -27,7 +27,7 @@ export const AI_THINK = Object.freeze({
 });
 
 const DEG = Math.PI / 180;
-const DOUBLE_ALIGN_COS = Math.cos(18 * DEG);
+const DOUBLE_ALIGN_COS = Math.cos(32 * DEG);
 /** 반지름 합 + 여유. 이 안이면 붙어 있어 바로 충돌한다. */
 export const STONE_CONTACT_SLOP = 6;
 
@@ -222,16 +222,29 @@ function safeLaunchAngle(shooter, target, inner) {
   return { angle: angle + clamp(delta, -max, max), kind: 'safe' };
 }
 
-function expertPower(shooter, target, inner) {
-  const d = dist(shooter, target);
-  const angle = launchAngle(shooter, target);
+function finishPower(shooter, target, inner, angle, level) {
   const dir = { x: Math.cos(angle), y: Math.sin(angle) };
+  const d = dist(shooter, target);
   const targetExit = rayRoom(target, dir, inner);
   const shooterExit = rayRoom(shooter, dir, inner);
-  let power = 0.54 + Math.min(0.44, d / 700);
-  if (targetExit < 110) power = Math.max(power, 0.78);
-  if (shooterExit < d + 48) power = Math.min(power, 0.58);
-  return clamp(power, 0.52, 0.98);
+  const diesBeforeHit = shooterExit < d - 8;
+  let power;
+  if (level === AI_DIFFICULTY.BEGINNER) {
+    power = 0.86 + Math.min(0.12, d / 640);
+    if (targetExit < 220) power = Math.max(power, 0.93);
+    if (diesBeforeHit) power = Math.min(power, 0.84);
+    return clamp(power, 0.82, 0.98);
+  }
+  if (level === AI_DIFFICULTY.INTERMEDIATE) {
+    power = 0.91 + Math.min(0.08, d / 560);
+    if (targetExit < 240) power = Math.max(power, 0.96);
+    if (diesBeforeHit) power = Math.min(power, 0.88);
+    return clamp(power, 0.88, 0.99);
+  }
+  power = 0.95 + Math.min(0.05, d / 480);
+  if (targetExit < 260) power = Math.max(power, 0.98);
+  if (diesBeforeHit) power = Math.min(power, 0.9);
+  return clamp(power, 0.92, 1);
 }
 
 export function scoreKnockoutShot(shooter, target, inner) {
@@ -295,8 +308,7 @@ function escapeCandidates(pos, inner) {
       const n = normalize(d);
       return { d: n, room: rayRoom(pos, n, inner) };
     })
-    .sort((a, b) => a.room - b.room)
-    .slice(0, 3);
+    .sort((a, b) => a.room - b.room);
 }
 
 function cutLaunchAngle(shooter, target, escapeDir) {
@@ -312,27 +324,17 @@ function scoreMasterShot(shooter, target, inner, angle) {
   const d = dist(shooter, target);
   const targetExit = rayRoom(target, dir, inner);
   const shooterExit = rayRoom(shooter, dir, inner);
-  let score = Math.max(0, 320 - targetExit) * 4.2 + Math.max(0, 380 - d) * 0.6;
-  if (targetExit < 100) score += 180;
-  if (shooterExit < d + 16) score -= 400;
-  else if (shooterExit < d + 40) score -= 480;
+  let score = Math.max(0, 360 - targetExit) * 5.2 + Math.max(0, 380 - d) * 0.45;
+  if (targetExit < 140) score += 260;
+  if (targetExit < 80) score += 180;
+  if (shooterExit < d - 8) score -= 720;
+  else if (shooterExit < d + 12) score -= 80;
   return score;
 }
 
-function masterPower(shooter, target, inner, angle) {
-  const dir = { x: Math.cos(angle), y: Math.sin(angle) };
-  const d = dist(shooter, target);
-  const targetExit = rayRoom(target, dir, inner);
-  const shooterExit = rayRoom(shooter, dir, inner);
-  let power = 0.62 + Math.min(0.36, d / 640);
-  if (targetExit < 160) power = Math.max(power, 0.86);
-  if (targetExit < 90) power = Math.max(power, 0.94);
-  if (shooterExit < d + 56) power = Math.min(power, 0.62);
-  if (shooterExit < d + 28) power = Math.min(power, 0.5);
-  return clamp(power, 0.55, 0.99);
-}
-
-export function pickMasterShot(aiStones, playerStones, inner) {
+export function pickMasterShot(aiStones, playerStones, inner, options = {}) {
+  const cutCount = Math.max(1, Number(options.cuts) || 8);
+  const extras = options.extras === true;
   const pool = eligibleShotPairs(aiStones, playerStones);
   let best = null;
   let bestScore = -Infinity;
@@ -343,10 +345,17 @@ export function pickMasterShot(aiStones, playerStones, inner) {
     best = { shooter: dbl.shooter, target: dbl.target, angle, kind: 'double' };
   }
   for (const pair of pool) {
+    const direct = launchAngle(pair.shooter, pair.target);
     const angles = [
-      launchAngle(pair.shooter, pair.target),
-      ...escapeCandidates(pair.target, inner).map((e) => cutLaunchAngle(pair.shooter, pair.target, e.d)),
+      direct,
+      ...escapeCandidates(pair.target, inner).slice(0, cutCount)
+        .map((e) => cutLaunchAngle(pair.shooter, pair.target, e.d)),
     ];
+    if (extras) {
+      for (const d of [8, -8, 12, -12, 16, -16, 24, -24, 32, -32, 40, -40]) {
+        angles.push(direct + d * DEG);
+      }
+    }
     for (const angle of angles) {
       const score = scoreMasterShot(pair.shooter, pair.target, inner, angle);
       if (score > bestScore) {
@@ -386,14 +395,14 @@ function pickClassicExpert(ai, player, inner) {
  * @param {string} difficulty beginner | intermediate | expert
  * @param {{ rng?: () => number, board?: { inner: { x:number, y:number, size:number } } }} [options]
  */
-export function calculateShot(aiStones, playerStones, difficulty = AI_DIFFICULTY.INTERMEDIATE, options = {}) {
+export function calculateShot(aiStones, playerStones, difficulty = AI_DIFFICULTY.EXPERT, options = {}) {
   const rng = options.rng ?? Math.random;
   const inner = options.board?.inner ?? BOARD.inner;
   const ai = livePoints(aiStones);
   const player = livePoints(playerStones);
   const level = Object.values(AI_DIFFICULTY).includes(difficulty)
     ? difficulty
-    : AI_DIFFICULTY.BEGINNER;
+    : AI_DIFFICULTY.EXPERT;
 
   if (ai.length === 0 || player.length === 0) {
     return { ok: false, reason: 'no-stones' };
@@ -405,36 +414,17 @@ export function calculateShot(aiStones, playerStones, difficulty = AI_DIFFICULTY
   let baseAngle;
   let power;
 
-  if (level === AI_DIFFICULTY.BEGINNER) {
-    const pick = pickClassicExpert(ai, player, inner);
-    shooter = pick.shooter;
-    target = pick.target;
-    baseAngle = pick.angle;
-    kind = pick.kind;
-    power = expertPower(shooter, target, inner);
-  } else if (level === AI_DIFFICULTY.INTERMEDIATE) {
-    const dbl = findDoubleShot(ai, player);
-    if (dbl) {
-      shooter = dbl.shooter;
-      target = dbl.target;
-      baseAngle = launchAngle(shooter, target);
-      kind = 'double';
-    } else {
-      const pair = bestStrongKnockoutPair(ai, player, inner);
-      shooter = pair.shooter;
-      target = pair.target;
-      baseAngle = launchAngle(shooter, target);
-      kind = 'knockout';
-    }
-    power = expertPower(shooter, target, inner);
-  } else {
-    const pick = pickMasterShot(ai, player, inner);
-    shooter = pick.shooter;
-    target = pick.target;
-    baseAngle = pick.angle;
-    kind = pick.kind;
-    power = masterPower(shooter, target, inner, baseAngle);
-  }
+  const search = level === AI_DIFFICULTY.BEGINNER
+    ? { cuts: 6, extras: true }
+    : level === AI_DIFFICULTY.INTERMEDIATE
+      ? { cuts: 8, extras: true }
+      : { cuts: 10, extras: true };
+  const pick = pickMasterShot(ai, player, inner, search);
+  shooter = pick.shooter;
+  target = pick.target;
+  baseAngle = pick.angle;
+  kind = pick.kind;
+  power = finishPower(shooter, target, inner, baseAngle, level);
 
   const errorDeg = aimErrorDeg(level, rng);
   let angle = baseAngle + errorDeg * DEG;

@@ -124,6 +124,16 @@ describe('calculateShot 3/5/7/9알', () => {
     expect(beginner.targetId).toBe(2);
     expect(beginner.kind).toBe('knockout');
     expect(beginner.errorDeg).toBe(0);
+    expect(beginner.power).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it('난이도를 생략하면 고급으로 친다', () => {
+    const ai = [{ id: 10, x: 360, y: 400 }];
+    const player = [{ id: 2, x: 108, y: 400 }];
+    const shot = calculateShot(ai, player, undefined, { rng: () => 0.5, board: BOARD });
+    expect(shot.ok).toBe(true);
+    expect(shot.difficulty).toBe(AI_DIFFICULTY.EXPERT);
+    expect(shot.power).toBeGreaterThanOrEqual(0.9);
   });
 
   it('고급은 가장자리로 밀어내기 쉬운 수를 더 세게 친다', () => {
@@ -175,7 +185,7 @@ describe('GameEngine AI 모드·입력 잠금', () => {
   it('기본 gameMode는 ai 이고 setMatchConfig는 판을 리셋한다', () => {
     engine = createEngine();
     expect(engine.gameMode).toBe(GAME_MODE.AI);
-    expect(engine.aiDifficulty).toBe(AI_DIFFICULTY.INTERMEDIATE);
+    expect(engine.aiDifficulty).toBe(AI_DIFFICULTY.EXPERT);
     const firstId = engine.stones[0].body.id;
     engine.currentTurn = STONE_COLOR.WHITE;
     engine.setMatchConfig({ mode: GAME_MODE.PVP, difficulty: AI_DIFFICULTY.BEGINNER });

@@ -80,7 +80,7 @@ const SHAPES_BY_COUNT = {
 };
 
 export const GAME_MODE_KEY = 'dotori_game_mode';
-export const AI_DIFFICULTY_KEY = 'dotori_ai_difficulty';
+export const AI_DIFFICULTY_KEY = 'dotori_ai_difficulty_v2';
 export const PLAY_FORMATION_KEY = 'dotori-alkkagi:play-formation';
 
 function parseFormationPayload(raw, slot = FORMATION_SLOT.MINE) {
@@ -130,12 +130,14 @@ function loadMatchConfig() {
       ? GAME_MODE.SOLO
       : GAME_MODE.AI;
     const raw = localStorage.getItem(AI_DIFFICULTY_KEY);
-    const difficulty = raw === AI_DIFFICULTY.BEGINNER || raw === AI_DIFFICULTY.EXPERT
+    const difficulty = raw === AI_DIFFICULTY.BEGINNER
+      || raw === AI_DIFFICULTY.INTERMEDIATE
+      || raw === AI_DIFFICULTY.EXPERT
       ? raw
-      : AI_DIFFICULTY.INTERMEDIATE;
+      : AI_DIFFICULTY.EXPERT;
     return { mode, difficulty };
   } catch {
-    return { mode: GAME_MODE.AI, difficulty: AI_DIFFICULTY.INTERMEDIATE };
+    return { mode: GAME_MODE.AI, difficulty: AI_DIFFICULTY.EXPERT };
   }
 }
 
@@ -219,8 +221,8 @@ export class SettingsModal {
     this.committedGuideColor = this.guideColor;
     this.renderer.setGuideColor(this.guideColor);
     const match = loadMatchConfig();
-    this.gameMode = engine.gameMode ?? match.mode;
-    this.aiDifficulty = engine.aiDifficulty ?? match.difficulty;
+    this.gameMode = match.mode;
+    this.aiDifficulty = match.difficulty;
 
     this.modal = root.querySelector('#settings-modal');
     this.tonePanel = root.querySelector('#board-tone-panel');

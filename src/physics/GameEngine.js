@@ -1222,9 +1222,10 @@ export class GameEngine {
     this.isHost = options.isHost !== false;
     this.powerScale = clampPowerScale(options.powerScale ?? readStoredPowerScale());
     this.aiDifficulty = options.aiDifficulty === AI_DIFFICULTY.BEGINNER
+      || options.aiDifficulty === AI_DIFFICULTY.INTERMEDIATE
       || options.aiDifficulty === AI_DIFFICULTY.EXPERT
       ? options.aiDifficulty
-      : AI_DIFFICULTY.INTERMEDIATE;
+      : AI_DIFFICULTY.EXPERT;
     this.inputLocked = false;
     this.aiOpponent = false;
     this.aiColor = STONE_COLOR.WHITE;
