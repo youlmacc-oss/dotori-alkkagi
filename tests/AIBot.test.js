@@ -43,13 +43,13 @@ function createEngine() {
 }
 
 describe('AIBot 조준 오차', () => {
-  it('초급 ±12, 중급 ±3, 고급 0도를 지킨다', () => {
-    expect(AI_ERROR_DEG[AI_DIFFICULTY.BEGINNER]).toBe(12);
-    expect(AI_ERROR_DEG[AI_DIFFICULTY.INTERMEDIATE]).toBe(3);
+  it('초급·중급·고급 조준 오차는 0도이다', () => {
+    expect(AI_ERROR_DEG[AI_DIFFICULTY.BEGINNER]).toBe(0);
+    expect(AI_ERROR_DEG[AI_DIFFICULTY.INTERMEDIATE]).toBe(0);
     expect(AI_ERROR_DEG[AI_DIFFICULTY.EXPERT]).toBe(0);
-    expect(aimErrorDeg(AI_DIFFICULTY.BEGINNER, () => 0)).toBeCloseTo(-12);
-    expect(aimErrorDeg(AI_DIFFICULTY.BEGINNER, () => 1)).toBeCloseTo(12);
-    expect(aimErrorDeg(AI_DIFFICULTY.INTERMEDIATE, () => 1)).toBeCloseTo(3);
+    expect(aimErrorDeg(AI_DIFFICULTY.BEGINNER, () => 0)).toBe(0);
+    expect(aimErrorDeg(AI_DIFFICULTY.BEGINNER, () => 1)).toBe(0);
+    expect(aimErrorDeg(AI_DIFFICULTY.INTERMEDIATE, () => 1)).toBe(0);
     expect(aimErrorDeg(AI_DIFFICULTY.EXPERT, () => 0.37)).toBe(0);
   });
 });
@@ -74,16 +74,16 @@ describe('calculateShot 3/5/7/9알', () => {
     }
   });
 
-  it('중급은 최단 거리 상대를 고른다', () => {
-    const ai = [{ id: 10, x: 360, y: 360 }];
+  it('중급은 가장자리로 밀어내기 쉬운 수를 고른다', () => {
+    const ai = [{ id: 10, x: 360, y: 400 }];
     const player = [
-      { id: 1, x: 440, y: 360 },
-      { id: 2, x: 520, y: 520 },
+      { id: 1, x: 360, y: 500 },
+      { id: 2, x: 108, y: 400 },
     ];
-    const shot = calculateShot(ai, player, AI_DIFFICULTY.INTERMEDIATE, { rng: () => 0.5 });
-    expect(shot.targetId).toBe(1);
-    expect(shot.kind).toBe('nearest');
-    expect(Math.abs(shot.errorDeg)).toBeLessThanOrEqual(3);
+    const shot = calculateShot(ai, player, AI_DIFFICULTY.INTERMEDIATE, { rng: () => 0.5, board: BOARD });
+    expect(shot.targetId).toBe(2);
+    expect(shot.kind).toBe('knockout');
+    expect(shot.errorDeg).toBe(0);
   });
 
   it('근접한 돌 축으로 당기는 조준은 옆으로 꺾는다', () => {
@@ -113,7 +113,20 @@ describe('calculateShot 3/5/7/9알', () => {
     }
   });
 
-  it('고급은 가장자리로 밀어내기 쉬운 수를 고른다', () => {
+  it('초급은 예전 고급처럼 가장자리 녹아웃을 고른다', () => {
+    const ai = [{ id: 10, x: 360, y: 400 }];
+    const player = [
+      { id: 1, x: 360, y: 500 },
+      { id: 2, x: 108, y: 400 },
+    ];
+    const beginner = calculateShot(ai, player, AI_DIFFICULTY.BEGINNER, { rng: () => 0.5, board: BOARD });
+    expect(bestKnockoutPair(ai, player, BOARD.inner).target.id).toBe(2);
+    expect(beginner.targetId).toBe(2);
+    expect(beginner.kind).toBe('knockout');
+    expect(beginner.errorDeg).toBe(0);
+  });
+
+  it('고급은 가장자리로 밀어내기 쉬운 수를 더 세게 친다', () => {
     const ai = [{ id: 10, x: 360, y: 400 }];
     const player = [
       { id: 1, x: 360, y: 500 },
@@ -121,8 +134,7 @@ describe('calculateShot 3/5/7/9알', () => {
     ];
     const mid = calculateShot(ai, player, AI_DIFFICULTY.INTERMEDIATE, { rng: () => 0.5, board: BOARD });
     const expert = calculateShot(ai, player, AI_DIFFICULTY.EXPERT, { rng: () => 0.5, board: BOARD });
-    expect(mid.targetId).toBe(1);
-    expect(bestKnockoutPair(ai, player, BOARD.inner).target.id).toBe(2);
+    expect(mid.targetId).toBe(2);
     expect(expert.targetId).toBe(2);
     expect(expert.kind).toBe('knockout');
     expect(expert.errorDeg).toBe(0);
