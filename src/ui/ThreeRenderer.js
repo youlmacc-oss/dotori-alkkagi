@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GAME_MODE, POWER_RATIO, STONE_COLOR, STONE_RADIUS, STONE_VISUAL_SCALE, aimGuideVisualScale, clampPowerScale, isOutsideInnerBoard, rearrangeZoneRects, scaleAimGuideEnd } from '../physics/GameEngine.js';
+import { BOARD_SPIN_MS, BOARD_SPIN_STEP, nextBoardSpin } from './BoardSpin.js';
 import { isActionCamEnabled } from './PlayPrefs.js';
 import { ndcBoundsFitBox, ndcBoxToCss, ndcLiftToClearBottom, playfieldNdcBox, PLAYFIELD_HUD, visualShellRect } from './ViewportShell.js';
 
@@ -560,6 +561,10 @@ export class ThreeRenderer {
     this.yawFrom = 0;
     this.yawTo = 0;
     this.yawT = 1;
+    this.viewYaw = 0;
+    this.viewYawTarget = 0;
+    this.viewYawFrom = 0;
+    this.viewSpinT = 1;
     this.lookBase = new THREE.Vector3(0, 15, 10);
     this.lookTarget = this.lookBase.clone();
     this.frameShiftX = 0;
@@ -721,9 +726,40 @@ export class ThreeRenderer {
     set('--board-bottom', base.bottom);
   }
 
+  seatViewYaw() {
+    return (Number(this.boardYaw) || 0) + (Number(this.viewYaw) || 0);
+  }
+
+  resetViewYaw() {
+    this.viewYaw = 0;
+    this.viewYawTarget = 0;
+    this.viewYawFrom = 0;
+    this.viewSpinT = 1;
+    return 0;
+  }
+
+  nudgeViewYaw(step = BOARD_SPIN_STEP) {
+    if (this.killCam) return this.viewYawTarget;
+    this.viewYawFrom = this.viewYaw;
+    this.viewYawTarget = nextBoardSpin(this.viewYawTarget, step);
+    this.viewSpinT = 0;
+    return this.viewYawTarget;
+  }
+
+  _syncViewSpin(dt) {
+    if (this.viewSpinT >= 1) {
+      this.viewYaw = this.viewYawTarget;
+      return;
+    }
+    const span = BOARD_SPIN_MS / 1000;
+    this.viewSpinT = Math.min(1, this.viewSpinT + (Number(dt) || 0) / span);
+    const e = 0.5 - 0.5 * Math.cos(Math.PI * this.viewSpinT);
+    this.viewYaw = this.viewYawFrom + (this.viewYawTarget - this.viewYawFrom) * e;
+  }
+
   _applySeatCamera(applyToCamera = true) {
     const pose = playSeatPose({
-      yaw: this.boardYaw,
+      yaw: this.seatViewYaw(),
       radius: this.camRadius || 640,
       height: this.camHeight || 780,
       shiftX: this.frameShiftX || 0,
@@ -745,6 +781,7 @@ export class ThreeRenderer {
     this.yawFrom = yaw;
     this.yawTo = yaw;
     this.yawT = 1;
+    this.resetViewYaw();
     this._applySeatCamera(true);
     return yaw;
   }
@@ -1342,7 +1379,7 @@ export class ThreeRenderer {
     let camY = this.camBase.y;
     let camZ = this.camBase.z;
     const restPose = playSeatPose({
-      yaw: this.boardYaw,
+      yaw: this.seatViewYaw(),
       radius: this.camRadius || 640,
       height: this.camHeight || 780,
       shiftX: this.frameShiftX || 0,
@@ -1444,6 +1481,7 @@ export class ThreeRenderer {
     const rawDt = (now - this._lastT) / 1000;
     const dt = Number.isFinite(rawDt) ? Math.min(0.05, Math.max(0, rawDt)) || 0.016 : 0.016;
     this._lastT = now;
+    this._syncViewSpin(dt);
     this.syncSeat(snapshot, dt);
     this.syncRearrangeGuide(snapshot);
     if (!this.killCam) this.pinPlayfieldChrome();

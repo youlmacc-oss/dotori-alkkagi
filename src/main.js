@@ -13,6 +13,7 @@ import {
 import { TurnManager } from './ai/TurnManager.js';
 import { SettingsModal } from './ui/FormationModal.js';
 import { PowerRatioController } from './ui/SettingsPanel.js';
+import { canBoardSpin, isBoardSpinTap, isBoardSpinTarget } from './ui/BoardSpin.js';
 import { GUIDE_LINE_KEY, KILL_CAM, ResponsiveViewport, ThreeRenderer, shouldAttachKillCam } from './ui/ThreeRenderer.js';
 import { isActionCamEnabled, isRearrangeAskEnabled, shouldBlockSettingsToLobby } from './ui/PlayPrefs.js';
 import { aimChargeRatio, applyPowerFill, timerRingOffset } from './ui/HudPower.js';
@@ -325,6 +326,56 @@ const engine = new GameEngine({
   mapPointer: (event) => renderer.pointerToMatter(event),
 });
 const turnManager = new TurnManager({ engine });
+
+let boardSpinPending = null;
+
+function boardSpinState() {
+  return {
+    inMatch: inMatchRoom,
+    matchStarted,
+    paused: Boolean(engine.isPaused?.()),
+    placementOnly: Boolean(engine.placementOnly),
+    killCam: Boolean(renderer.killCam),
+    aiming: Boolean(engine.aim),
+    inputBlocked: engine.isHumanInputBlocked(),
+    phase: engine.phase,
+  };
+}
+
+function onBoardSpinDown(event) {
+  boardSpinPending = null;
+  if (!canBoardSpin(boardSpinState())) return;
+  const point = renderer.pointerToMatter(event);
+  if (!isBoardSpinTarget(point, engine.getAliveStones(), engine.board)) return;
+  boardSpinPending = { id: event.pointerId, x: event.clientX, y: event.clientY };
+}
+
+function onBoardSpinMove(event) {
+  if (!boardSpinPending || event.pointerId !== boardSpinPending.id) return;
+  if (!isBoardSpinTap(boardSpinPending, { x: event.clientX, y: event.clientY })) {
+    boardSpinPending = null;
+  }
+}
+
+function onBoardSpinUp(event) {
+  const pending = boardSpinPending;
+  boardSpinPending = null;
+  if (!pending || event.pointerId !== pending.id) return;
+  if (!isBoardSpinTap(pending, { x: event.clientX, y: event.clientY })) return;
+  if (!canBoardSpin(boardSpinState())) return;
+  const point = renderer.pointerToMatter(event);
+  if (!isBoardSpinTarget(point, engine.getAliveStones(), engine.board)) return;
+  renderer.nudgeViewYaw();
+}
+
+function onBoardSpinCancel(event) {
+  if (!boardSpinPending || event.pointerId === boardSpinPending.id) boardSpinPending = null;
+}
+
+canvas.addEventListener('pointerdown', onBoardSpinDown);
+canvas.addEventListener('pointermove', onBoardSpinMove);
+canvas.addEventListener('pointerup', onBoardSpinUp);
+canvas.addEventListener('pointercancel', onBoardSpinCancel);
 
 let nightClaim = takeNightUserId({ makeId: newNightUserId });
 const realtimeManager = new RealtimeManager({
