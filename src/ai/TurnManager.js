@@ -98,7 +98,7 @@ export class TurnManager {
   }
 
   schedule() {
-    this.cancel();
+    if (this._timers.length) return;
     const token = this._token;
     const span = Math.max(0, this.thinkMaxMs - this.thinkMinMs);
     const think = this.thinkMinMs + rng01(this.rng) * span;
@@ -118,7 +118,11 @@ export class TurnManager {
       { rng: this.rng, board: engine.board },
     );
     if (!shot.ok) return;
-    if (!engine.beginAiAim(shot)) return;
+    const aimed = engine.beginAiAim(shot) || engine.beginAiAim(shot, { force: true });
+    if (!aimed) {
+      this._timers.push(setTimeout(() => this._beginAim(token), 80));
+      return;
+    }
     this._timers.push(setTimeout(() => this._fire(token), this.aimMs));
   }
 

@@ -8,7 +8,7 @@ import { BOARD, PHASE, STONE_PICK_SLOP, STONE_RADIUS } from '../physics/GameEngi
 export const BOARD_SPIN_STEP = Math.PI / 4;
 export const BOARD_SPIN_MS = 260;
 export const BOARD_SPIN_TAP_PX = 14;
-export const BOARD_SPIN_CLEAR_SLOP = 1.6;
+export const BOARD_SPIN_CLEAR_SLOP = 1.85;
 
 export function nextBoardSpin(yaw = 0, step = BOARD_SPIN_STEP) {
   return (Number(yaw) || 0) + (Number(step) || 0);

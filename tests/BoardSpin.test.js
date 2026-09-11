@@ -59,6 +59,7 @@ describe('바둑판 45도 보기 회전', () => {
     expect(isBoardSpinTarget({ x: 80, y: 80 }, stones)).toBe(true);
     expect(isBoardSpinTarget({ x: 360, y: 360 }, stones)).toBe(false);
     expect(isBoardSpinTarget({ x: 390, y: 360 }, stones)).toBe(false);
+    expect(isBoardSpinTarget({ x: 400, y: 360 }, stones)).toBe(false);
     expect(isBoardSpinTarget({ x: 10, y: 360 }, stones)).toBe(false);
     expect(isBoardSpinTarget({ x: 360, y: 360 }, [{ id: 1, x: 360, y: 360, fallen: true }])).toBe(true);
   });

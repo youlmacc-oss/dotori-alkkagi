@@ -337,7 +337,8 @@ try {
         && spin
         && Math.abs(spin.width - 50) <= 2
         && Math.abs(spin.height - 50) <= 2
-        && spin.bottom <= fab.top - 2,
+        && Math.abs(spin.top - guide.top) <= 3
+        && spin.left >= guide.right + 8,
       );
       return {
         ok: rowY

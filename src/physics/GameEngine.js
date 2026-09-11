@@ -15,7 +15,7 @@ export const VIRTUAL_WIDTH = 720;
 export const VIRTUAL_HEIGHT = 1280;
 export const STONE_RADIUS = 24;
 export const STONE_VISUAL_SCALE = 1.14;
-export const STONE_PICK_SLOP = 1.28;
+export const STONE_PICK_SLOP = 1.52;
 
 export function pickNearestOwnStone(stones, point, radius = STONE_RADIUS, slop = STONE_PICK_SLOP) {
   if (!point || !stones?.length) return null;
@@ -1970,7 +1970,7 @@ export class GameEngine {
     return true;
   }
 
-  beginAiAim(shot) {
+  beginAiAim(shot, options = {}) {
     if (!shot?.ok || this.phase === PHASE.GAME_OVER || this.phase === PHASE.RESOLVING) return false;
     const stone = this.stones.find((s) => s.id === shot.shooterId && !s.fallen);
     if (!stone) return false;
@@ -1979,7 +1979,7 @@ export class GameEngine {
       && stone.color !== (this.aiColor || STONE_COLOR.WHITE)
     ) return false;
     const neighbors = this.getAliveStones().filter((s) => s.id !== stone.id);
-    if (resolvePullBlock(stone, shot.pointer, neighbors)) return false;
+    if (options.force !== true && resolvePullBlock(stone, shot.pointer, neighbors)) return false;
     Sleeping.set(stone.body, false);
     this.aim = {
       stone,

@@ -9,6 +9,7 @@ describe('알 집기', () => {
     ];
     expect(pickNearestOwnStone(stones, { x: 100, y: 100 })?.id).toBe('a');
     expect(pickNearestOwnStone(stones, { x: 100 + STONE_RADIUS * 1.2, y: 100 })?.id).toBe('a');
+    expect(pickNearestOwnStone(stones, { x: 100 + STONE_RADIUS * 1.45, y: 100 })?.id).toBe('a');
     expect(pickNearestOwnStone(stones, { x: 100 + STONE_RADIUS * 2, y: 100 })).toBeNull();
   });
 });

@@ -366,4 +366,49 @@ describe('TurnManager 고민·조준 딜레이', () => {
     vi.advanceTimersByTime(AI_THINK.AIM_MS);
     expect(engine.phase).toBe(PHASE.RESOLVING);
   });
+
+  it('고민 중에 sync가 반복되어도 턴 시간 안에 발사한다', () => {
+    vi.useFakeTimers();
+    engine = createEngine();
+    manager = new TurnManager({
+      engine,
+      rng: () => 0.5,
+      thinkMinMs: AI_THINK.MIN_MS,
+      thinkMaxMs: AI_THINK.MIN_MS,
+      aimMs: AI_THINK.AIM_MS,
+    });
+    manager.attach();
+    engine.currentTurn = STONE_COLOR.WHITE;
+    manager.sync();
+    for (let i = 0; i < 10; i++) {
+      vi.advanceTimersByTime(300);
+      manager.sync();
+    }
+    expect(engine.phase).toBe(PHASE.RESOLVING);
+  });
+
+  it('첫 조준이 막혀도 강제 조준으로 턴 안에 쏜다', () => {
+    vi.useFakeTimers();
+    engine = createEngine();
+    const original = engine.beginAiAim.bind(engine);
+    let tries = 0;
+    engine.beginAiAim = (shot, options = {}) => {
+      tries += 1;
+      if (tries === 1 && options.force !== true) return false;
+      return original(shot, options);
+    };
+    manager = new TurnManager({
+      engine,
+      rng: () => 0.5,
+      thinkMinMs: AI_THINK.MIN_MS,
+      thinkMaxMs: AI_THINK.MIN_MS,
+      aimMs: AI_THINK.AIM_MS,
+    });
+    manager.attach();
+    engine.currentTurn = STONE_COLOR.WHITE;
+    manager.sync();
+    vi.advanceTimersByTime(AI_THINK.MIN_MS + AI_THINK.AIM_MS);
+    expect(engine.phase).toBe(PHASE.RESOLVING);
+    expect(tries).toBeGreaterThan(1);
+  });
 });
