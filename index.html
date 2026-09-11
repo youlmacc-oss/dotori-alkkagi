@@ -12,7 +12,7 @@
     <meta property="og:description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
     <meta property="og:type" content="website" />
     <meta name="description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
-    <link rel="stylesheet" href="/src/style.css?v=20260911e" />
+    <link rel="stylesheet" href="/src/style.css?v=20260911f" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -621,6 +621,26 @@
         font-size: 11px; font-weight: 900; cursor: pointer;
       }
       #stage .lobby-leave-fab[hidden] { display: none !important; }
+      #stage .board-spin-fab {
+        position: absolute;
+        left: calc(var(--board-right, 100%) - 8px);
+        top: var(--board-cy, 50%);
+        transform: translate(-100%, -50%);
+        width: 50px; height: 50px; min-width: 50px; max-width: 50px;
+        border-radius: 25px; border: 1.5px solid var(--hud-border);
+        background: var(--hud-dark); color: var(--hud-gold);
+        font-size: 16px; font-weight: 900; letter-spacing: 0.02em;
+        cursor: pointer; z-index: 48; pointer-events: auto;
+        padding: 0;
+      }
+      #stage .board-spin-fab[hidden] { display: none !important; }
+      #stage .board-spin-fab:disabled {
+        opacity: 0.4; cursor: default;
+      }
+      #stage.is-lobby .board-spin-fab,
+      #stage.is-settings .board-spin-fab {
+        visibility: hidden; pointer-events: none;
+      }
       #stage .surrender-fab {
         position: relative;
         flex: 0 0 50px; width: 50px; min-width: 50px; max-width: 50px;
@@ -1237,6 +1257,7 @@
             <button type="button" id="match-start" hidden aria-label="시작">시작</button>
             <button type="button" id="invite-copy" hidden>친구 초대</button>
           </div>
+          <button type="button" class="board-spin-fab" id="board-spin-btn" hidden aria-label="바둑판 45도 회전">턴</button>
           <div class="pull-block-toast" id="pull-block-toast" hidden role="status">붙어 있는 돌 방향으로는 당길 수 없습니다.</div>
           <div class="tutorial-coach" id="tutorial-coach" hidden>
             <div class="tutorial-coach-card">
@@ -1525,6 +1546,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260911e"></script>
+    <script type="module" src="/src/main.js?v=20260911f"></script>
   </body>
 </html>

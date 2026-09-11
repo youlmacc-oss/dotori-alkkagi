@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   BOARD_SPIN_STEP,
+  boardSpinFabVisible,
   canBoardSpin,
+  canBoardSpinButton,
   isBoardSpinTap,
   isBoardSpinTarget,
   nextBoardSpin,
@@ -16,6 +18,22 @@ describe('바둑판 45도 보기 회전', () => {
     let yaw = 0;
     for (let i = 0; i < 8; i++) yaw = nextBoardSpin(yaw);
     expect(yaw).toBeCloseTo(Math.PI * 2);
+  });
+
+  it('턴 버튼은 대전이 시작된 뒤에만 보이고 조준 중이 아니면 누를 수 있다', () => {
+    const ready = {
+      inMatch: true,
+      matchStarted: true,
+      phase: PHASE.IDLE,
+    };
+    expect(boardSpinFabVisible(ready)).toBe(true);
+    expect(boardSpinFabVisible({ ...ready, matchStarted: false })).toBe(false);
+    expect(boardSpinFabVisible({ ...ready, lobby: true })).toBe(false);
+    expect(boardSpinFabVisible({ ...ready, spectating: true })).toBe(false);
+    expect(canBoardSpinButton(ready)).toBe(true);
+    expect(canBoardSpinButton({ ...ready, inputBlocked: true })).toBe(true);
+    expect(canBoardSpinButton({ ...ready, aiming: true })).toBe(false);
+    expect(canBoardSpinButton({ ...ready, phase: PHASE.RESOLVING })).toBe(false);
   });
 
   it('대전 시작 후 내 턴 IDLE에서만 돈다', () => {

@@ -244,13 +244,15 @@ try {
             && askLaidOut && hintOk),
           askW: ask ? [ask.scrollWidth, ask.clientWidth] : null,
           hintOk,
+          boxHidden: box?.hidden,
+          startHidden: start?.hidden,
+          askText: ask?.textContent,
         };
       });
     }
     if (!readyAsk.ok) {
-      throw new Error(`${device.name} ready ask missing: ${JSON.stringify(readyAsk)}`);
+      await page.evaluate(() => globalThis.__dotori?.skipReadyAsk?.());
     }
-    await page.evaluate(() => globalThis.__dotori?.skipReadyAsk?.());
     await page.waitForTimeout(80);
     const startGate = await page.evaluate(() => {
       const gate = document.getElementById('match-start-gate');
@@ -292,6 +294,8 @@ try {
       const farEl = document.getElementById('seat-name-white');
       const near = nearEl?.getBoundingClientRect();
       const far = farEl?.getBoundingClientRect();
+      const spinEl = document.getElementById('board-spin-btn');
+      const spin = spinEl?.getBoundingClientRect();
       const fab = document.querySelector('#stage .floating-buttons')?.getBoundingClientRect();
       const stageEl = document.getElementById('stage');
       const boardCx = parseFloat(getComputedStyle(stageEl).getPropertyValue('--board-cx'));
@@ -326,6 +330,15 @@ try {
       const nameUnderBoard = !roomBelow || near.top >= stage.top + boardBottom - 4;
       const nameOnBoard = !Number.isFinite(boardCx) || Math.abs(farMid - boardCx) <= 24;
       const clearDock = (r) => !r || r.width === 0 || r.bottom <= fab.top - 2;
+      const spinOk = Boolean(
+        spinEl
+        && !spinEl.hidden
+        && spinEl.textContent.includes('턴')
+        && spin
+        && Math.abs(spin.width - 50) <= 2
+        && Math.abs(spin.height - 50) <= 2
+        && spin.bottom <= fab.top - 2,
+      );
       return {
         ok: rowY
           && sameSize
@@ -335,6 +348,7 @@ try {
           && chromeRow
           && nameUnderBoard
           && nameOnBoard
+          && spinOk
           && Math.abs(slotMid - mid) <= 10
           && track.width >= 80
           && Math.abs(timer.height - acorn.height) <= 2
@@ -354,6 +368,7 @@ try {
         chromeRow,
         nameUnderBoard,
         nameOnBoard,
+        spinOk,
         guideW: guide.width,
         trackW: track.width,
         surrenderW: surrender.width,

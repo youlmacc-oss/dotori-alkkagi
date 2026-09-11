@@ -23,6 +23,25 @@ export function canBoardSpin(state = {}) {
   return true;
 }
 
+/** 대전 시작 후 관전·종료가 아니면 턴 버튼을 보여 준다. */
+export function boardSpinFabVisible(state = {}) {
+  return state.inMatch === true
+    && state.matchStarted === true
+    && state.lobby !== true
+    && state.spectating !== true
+    && state.gameOver !== true;
+}
+
+/** 버튼은 내 턴이 아니어도 보기는 돌릴 수 있다. 조준·진행 중만 막는다. */
+export function canBoardSpinButton(state = {}) {
+  if (!boardSpinFabVisible(state)) return false;
+  if (state.paused === true || state.placementOnly === true) return false;
+  if (state.killCam === true || state.aiming === true) return false;
+  if (state.phase === PHASE.AIMING || state.phase === PHASE.RESOLVING) return false;
+  if (state.phase === PHASE.GAME_OVER || state.phase === PHASE.SPECTATING) return false;
+  return state.phase == null || state.phase === PHASE.IDLE;
+}
+
 export function isBoardSpinTarget(point, stones = [], board = BOARD) {
   if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
   const outer = board?.outer ?? BOARD.outer;

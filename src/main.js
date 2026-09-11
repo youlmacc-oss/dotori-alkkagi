@@ -13,7 +13,7 @@ import {
 import { TurnManager } from './ai/TurnManager.js';
 import { SettingsModal } from './ui/FormationModal.js';
 import { PowerRatioController } from './ui/SettingsPanel.js';
-import { canBoardSpin, isBoardSpinTap, isBoardSpinTarget } from './ui/BoardSpin.js';
+import { boardSpinFabVisible, canBoardSpin, canBoardSpinButton, isBoardSpinTap, isBoardSpinTarget } from './ui/BoardSpin.js';
 import { GUIDE_LINE_KEY, KILL_CAM, ResponsiveViewport, ThreeRenderer, shouldAttachKillCam } from './ui/ThreeRenderer.js';
 import { isActionCamEnabled, isRearrangeAskEnabled, shouldBlockSettingsToLobby } from './ui/PlayPrefs.js';
 import { aimChargeRatio, applyPowerFill, timerRingOffset } from './ui/HudPower.js';
@@ -333,6 +333,9 @@ function boardSpinState() {
   return {
     inMatch: inMatchRoom,
     matchStarted,
+    lobby: lobbyVisible,
+    spectating: engine.phase === PHASE.SPECTATING,
+    gameOver: engine.phase === PHASE.GAME_OVER,
     paused: Boolean(engine.isPaused?.()),
     placementOnly: Boolean(engine.placementOnly),
     killCam: Boolean(renderer.killCam),
@@ -340,6 +343,14 @@ function boardSpinState() {
     inputBlocked: engine.isHumanInputBlocked(),
     phase: engine.phase,
   };
+}
+
+function syncBoardSpinBtn() {
+  const btn = document.getElementById('board-spin-btn');
+  if (!btn) return;
+  const state = boardSpinState();
+  btn.hidden = !boardSpinFabVisible(state);
+  btn.disabled = !canBoardSpinButton(state);
 }
 
 function onBoardSpinDown(event) {
@@ -1547,6 +1558,7 @@ function syncSceneMode() {
     engine.setLocalTimer(false);
     engine.pauseMatch();
     syncStartGate();
+    syncBoardSpinBtn();
     return;
   }
   if (shouldHoldGuestUntilHostBoard({
@@ -1562,6 +1574,7 @@ function syncSceneMode() {
     engine.setInputLocked(true);
     if (!tutorial.active) setTicker('판을 맞추는 중');
     syncStartGate();
+    syncBoardSpinBtn();
     return;
   }
   engine.setLocalTimer(shouldTickLocalTurnTimer({
@@ -1579,6 +1592,7 @@ function syncSceneMode() {
     turnManager.sync();
   }
   syncStartGate();
+  syncBoardSpinBtn();
 }
 
 function syncLobbyWaitGuide(rooms = lobbyRooms()) {
@@ -3121,6 +3135,7 @@ function frame() {
     const snapshot = engine.getSnapshot();
     renderer.draw(snapshot);
     syncHud(snapshot);
+    syncBoardSpinBtn();
   } catch {
     /* 한 프레임 오류가 휴대폰 루프를 죽이지 않게 한다 */
   }
@@ -3207,6 +3222,13 @@ document.getElementById('surrender-btn')?.addEventListener('click', () => {
 
 document.getElementById('lobby-leave')?.addEventListener('click', () => {
   leaveToWaitingRoom();
+});
+
+document.getElementById('board-spin-btn')?.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!canBoardSpinButton(boardSpinState())) return;
+  renderer.nudgeViewYaw();
 });
 
 document.getElementById('result-exit')?.addEventListener('click', () => {
