@@ -296,6 +296,8 @@ try {
       const far = farEl?.getBoundingClientRect();
       const spinEl = document.getElementById('board-spin-btn');
       const spin = spinEl?.getBoundingClientRect();
+      const spinCcwEl = document.getElementById('board-spin-ccw');
+      const spinCcw = spinCcwEl?.getBoundingClientRect();
       const fab = document.querySelector('#stage .floating-buttons')?.getBoundingClientRect();
       const stageEl = document.getElementById('stage');
       const boardCx = parseFloat(getComputedStyle(stageEl).getPropertyValue('--board-cx'));
@@ -340,6 +342,16 @@ try {
         && Math.abs(spin.top - guide.top) <= 3
         && spin.left >= guide.right + 8,
       );
+      const spinCcwOk = Boolean(
+        spinCcwEl
+        && !spinCcwEl.hidden
+        && spinCcwEl.textContent.includes('턴')
+        && spinCcw
+        && Math.abs(spinCcw.width - 50) <= 2
+        && Math.abs(spinCcw.height - 50) <= 2
+        && Math.abs(spinCcw.top - guide.top) <= 3
+        && spinCcw.right <= surrender.left + 8,
+      );
       return {
         ok: rowY
           && sameSize
@@ -350,6 +362,7 @@ try {
           && nameUnderBoard
           && nameOnBoard
           && spinOk
+          && spinCcwOk
           && Math.abs(slotMid - mid) <= 10
           && track.width >= 80
           && Math.abs(timer.height - acorn.height) <= 2
@@ -370,6 +383,7 @@ try {
         nameUnderBoard,
         nameOnBoard,
         spinOk,
+        spinCcwOk,
         guideW: guide.width,
         trackW: track.width,
         surrenderW: surrender.width,

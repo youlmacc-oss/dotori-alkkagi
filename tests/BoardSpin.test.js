@@ -15,6 +15,7 @@ describe('바둑판 45도 보기 회전', () => {
   it('한 번마다 45도씩 더하고 여덟 번이면 한 바퀴다', () => {
     expect(BOARD_SPIN_STEP).toBeCloseTo(Math.PI / 4);
     expect(nextBoardSpin(0)).toBeCloseTo(Math.PI / 4);
+    expect(nextBoardSpin(0, -BOARD_SPIN_STEP)).toBeCloseTo(-Math.PI / 4);
     let yaw = 0;
     for (let i = 0; i < 8; i++) yaw = nextBoardSpin(yaw);
     expect(yaw).toBeCloseTo(Math.PI * 2);

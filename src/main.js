@@ -13,7 +13,7 @@ import {
 import { TurnManager } from './ai/TurnManager.js';
 import { SettingsModal } from './ui/FormationModal.js';
 import { PowerRatioController } from './ui/SettingsPanel.js';
-import { boardSpinFabVisible, canBoardSpin, canBoardSpinButton, isBoardSpinTap, isBoardSpinTarget } from './ui/BoardSpin.js';
+import { BOARD_SPIN_STEP, boardSpinFabVisible, canBoardSpin, canBoardSpinButton, isBoardSpinTap, isBoardSpinTarget } from './ui/BoardSpin.js';
 import { GUIDE_LINE_KEY, KILL_CAM, ResponsiveViewport, ThreeRenderer, shouldAttachKillCam } from './ui/ThreeRenderer.js';
 import { isActionCamEnabled, isRearrangeAskEnabled, shouldBlockSettingsToLobby } from './ui/PlayPrefs.js';
 import { aimChargeRatio, applyPowerFill, timerRingOffset } from './ui/HudPower.js';
@@ -346,11 +346,15 @@ function boardSpinState() {
 }
 
 function syncBoardSpinBtn() {
-  const btn = document.getElementById('board-spin-btn');
-  if (!btn) return;
   const state = boardSpinState();
-  btn.hidden = !boardSpinFabVisible(state);
-  btn.disabled = !canBoardSpinButton(state);
+  const hidden = !boardSpinFabVisible(state);
+  const disabled = !canBoardSpinButton(state);
+  for (const id of ['board-spin-btn', 'board-spin-ccw']) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    btn.hidden = hidden;
+    btn.disabled = disabled;
+  }
 }
 
 function onBoardSpinDown(event) {
@@ -3229,6 +3233,13 @@ document.getElementById('board-spin-btn')?.addEventListener('click', (event) => 
   event.stopPropagation();
   if (!canBoardSpinButton(boardSpinState())) return;
   renderer.nudgeViewYaw();
+});
+
+document.getElementById('board-spin-ccw')?.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!canBoardSpinButton(boardSpinState())) return;
+  renderer.nudgeViewYaw(-BOARD_SPIN_STEP);
 });
 
 document.getElementById('result-exit')?.addEventListener('click', () => {

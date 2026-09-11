@@ -12,7 +12,7 @@
     <meta property="og:description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
     <meta property="og:type" content="website" />
     <meta name="description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
-    <link rel="stylesheet" href="/src/style.css?v=20260911h" />
+    <link rel="stylesheet" href="/src/style.css?v=20260911i" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -631,6 +631,10 @@
         font-size: 16px; font-weight: 900; letter-spacing: 0.02em;
         cursor: pointer; z-index: 48; pointer-events: auto;
         padding: 0;
+      }
+      #stage .board-spin-fab.is-ccw {
+        right: auto;
+        left: max(10px, env(safe-area-inset-left, 0px));
       }
       #stage .board-spin-fab[hidden] { display: none !important; }
       #stage .board-spin-fab:disabled {
@@ -1281,7 +1285,8 @@
 
           <!-- 하단 영역 & 전광판 -->
           <div class="hud-bottom-zone">
-            <button type="button" class="board-spin-fab" id="board-spin-btn" hidden aria-label="바둑판 45도 회전">턴</button>
+            <button type="button" class="board-spin-fab is-ccw" id="board-spin-ccw" hidden aria-label="바둑판 시계 반대 방향 45도 회전">턴</button>
+            <button type="button" class="board-spin-fab" id="board-spin-btn" hidden aria-label="바둑판 시계 방향 45도 회전">턴</button>
             <div class="floating-buttons">
               <button type="button" class="surrender-fab" id="surrender-btn" aria-label="기권">기권</button>
               <button type="button" class="lobby-leave-fab" id="lobby-leave" aria-label="대기방">대기방</button>
@@ -1545,6 +1550,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260911h"></script>
+    <script type="module" src="/src/main.js?v=20260911i"></script>
   </body>
 </html>
