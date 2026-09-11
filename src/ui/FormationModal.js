@@ -502,15 +502,11 @@ export class SettingsModal {
     this.count = FORMATION_COUNTS.includes(count) ? count : 5;
     const shapes = SHAPES_BY_COUNT[this.count];
     if (!shapes.some((s) => s.id === this.shape)) this.shape = shapes[0].id;
-    if (this.mode === FORMATION_MODE.PRESET && !this.usingMine) {
-      this.draft = createRandomFormationLayout(this.count);
-    } else {
-      this.draft = clampLayoutToFormationZone(
-        createPresetLayout(this.count, this.shape),
-        undefined,
-        FORMATION_ZONE.CUSTOM,
-      );
-    }
+    this.draft = clampLayoutToFormationZone(
+      createPresetLayout(this.count, this.shape),
+      undefined,
+      FORMATION_ZONE.CUSTOM,
+    );
     this.testSim = null;
     this.aimPreview = null;
     this.syncChrome();

@@ -107,6 +107,35 @@ describe('시작 진영 분리', () => {
     engine.destroy();
   });
 
+  it('쐐기는 지그재그, 방어진은 앞뒤 두 줄이며 미리보기에서도 유지된다', () => {
+    for (const count of [5, 7, 9]) {
+      const lineAll = createPresetLayout(count, FORMATION_SHAPE.LINE);
+      const wedgeAll = createPresetLayout(count, FORMATION_SHAPE.WEDGE);
+      const defenseAll = createPresetLayout(count, FORMATION_SHAPE.DEFENSE);
+      const line = lineAll.filter((s) => s.color === STONE_COLOR.WHITE);
+      const wedge = wedgeAll.filter((s) => s.color === STONE_COLOR.WHITE);
+      const defense = defenseAll.filter((s) => s.color === STONE_COLOR.WHITE);
+      const lineYs = [...new Set(line.map((s) => Number(s.y.toFixed(2))))];
+      const wedgeYs = [...new Set(wedge.map((s) => Number(s.y.toFixed(2))))];
+      const defenseYs = [...new Set(defense.map((s) => Number(s.y.toFixed(2))))];
+      expect(lineYs).toHaveLength(1);
+      expect(wedgeYs.length).toBeGreaterThanOrEqual(2);
+      expect(defenseYs.length).toBeGreaterThanOrEqual(2);
+      const wedgeRear = wedge.filter((s) => s.y === Math.min(...wedge.map((w) => w.y)));
+      const wedgeFront = wedge.filter((s) => s.y === Math.max(...wedge.map((w) => w.y)));
+      const defRear = defense.filter((s) => s.y === Math.min(...defense.map((w) => w.y)));
+      const defFront = defense.filter((s) => s.y === Math.max(...defense.map((w) => w.y)));
+      const rearXs = wedgeRear.map((s) => s.x).sort((a, b) => a - b);
+      expect(wedgeFront.every((s) => rearXs.some((x, i) => i < rearXs.length - 1 && s.x > x && s.x < rearXs[i + 1]))).toBe(true);
+      expect(defFront.every((s) => defRear.some((r) => Math.abs(r.x - s.x) < 1e-6))).toBe(true);
+      const kept = commitPlayLayout(count, wedgeAll, BOARD, FORMATION_ZONE.CUSTOM)
+        .filter((s) => s.color === STONE_COLOR.WHITE);
+      expect([...new Set(kept.map((s) => Number(s.y.toFixed(2))))].length).toBeGreaterThanOrEqual(2);
+      expect(validateFormationLayout(wedgeAll, BOARD, FORMATION_ZONE.CUSTOM).ok).toBe(true);
+      expect(validateFormationLayout(defenseAll, BOARD, FORMATION_ZONE.CUSTOM).ok).toBe(true);
+    }
+  });
+
   it('종대 3알도 한쪽 진영 안에만 쌓인다', () => {
     const layout = createPresetLayout(3, FORMATION_SHAPE.COLUMN);
     expect(campsOf(layout)).toBe(true);

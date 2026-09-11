@@ -671,18 +671,19 @@ export function getFormationZones(board = BOARD, kind = FORMATION_ZONE.PRESET) {
     };
   }
   const zoneH = inner.size * FORMATION_ZONE_RATIO;
+  const edges = getRearrangeZones();
   return {
     inner,
     kind: FORMATION_ZONE.PRESET,
-    minX,
-    maxX,
+    minX: Math.min(minX, edges.minX),
+    maxX: Math.max(maxX, edges.maxX),
     white: {
-      minY: inner.y + r,
-      maxY: inner.y + zoneH,
+      minY: Math.min(inner.y + r, edges.white.minY),
+      maxY: Math.max(inner.y + zoneH, edges.white.maxY),
     },
     black: {
-      minY: inner.y + inner.size - zoneH,
-      maxY: inner.y + inner.size - r,
+      minY: Math.min(inner.y + inner.size - zoneH, edges.black.minY),
+      maxY: Math.max(inner.y + inner.size - r, edges.black.maxY),
     },
   };
 }
@@ -981,6 +982,32 @@ function rowXs(count, inner, padX) {
   return Array.from({ length: count }, (_, i) => inner.x + pad + gap * i);
 }
 
+function gapXs(rearXs) {
+  const gaps = [];
+  for (let i = 0; i < rearXs.length - 1; i += 1) {
+    gaps.push((rearXs[i] + rearXs[i + 1]) / 2);
+  }
+  return gaps;
+}
+
+function alignedXs(rearXs, n) {
+  if (n <= 0) return [];
+  if (n === 1) return [rearXs[Math.floor(rearXs.length / 2)]];
+  if (n >= rearXs.length) return rearXs.slice();
+  const picked = [];
+  let i = 0;
+  let j = rearXs.length - 1;
+  while (picked.length < n && i <= j) {
+    if (picked.length < n) picked.push(rearXs[i]);
+    i += 1;
+    if (picked.length < n && i <= j) {
+      picked.push(rearXs[j]);
+      j -= 1;
+    }
+  }
+  return picked.sort((a, b) => a - b);
+}
+
 function mirrorY(y, inner) {
   return inner.y + inner.size - (y - inner.y);
 }
@@ -997,23 +1024,23 @@ function pairByMirror(whiteSpots, board = BOARD) {
 }
 
 function homeY(color, board = BOARD) {
-  const zones = getFormationZones(board);
-  return color === STONE_COLOR.WHITE ? zones.white.minY : zones.black.maxY;
+  const { inner } = board;
+  return color === STONE_COLOR.WHITE
+    ? inner.y + STONE_RADIUS
+    : inner.y + inner.size - STONE_RADIUS;
 }
 
-function forwardY(color, board = BOARD) {
-  const zones = getFormationZones(board);
-  const sep = FORMATION_MIN_SEPARATION;
-  if (color === STONE_COLOR.WHITE) {
-    return Math.min(zones.white.maxY, zones.white.minY + sep * 1.35);
-  }
-  return Math.max(zones.black.minY, zones.black.maxY - sep * 1.35);
+function campRowYs(board = BOARD) {
+  const zones = getFormationZones(board, FORMATION_ZONE.CUSTOM);
+  const gap = FORMATION_MIN_SEPARATION;
+  const whiteFront = zones.white.maxY;
+  const whiteRear = Math.max(zones.white.minY, whiteFront - gap);
+  return { whiteRear, whiteFront };
 }
 
 export function createPresetLayout(stoneCount = STONES_PER_SIDE, shape = FORMATION_SHAPE.LINE, board = BOARD) {
   const count = resolveFormationCount(stoneCount);
   const { inner } = board;
-  const cx = inner.x + inner.size / 2;
   const resolvedShape = count === 1
     ? FORMATION_SHAPE.LINE
     : (count === 3 && shape === FORMATION_SHAPE.DEFENSE
@@ -1040,7 +1067,7 @@ export function createPresetLayout(stoneCount = STONES_PER_SIDE, shape = FORMATI
   }
 
   const whiteHome = homeY(STONE_COLOR.WHITE, board);
-  const whiteFwd = forwardY(STONE_COLOR.WHITE, board);
+  const { whiteRear, whiteFront } = campRowYs(board);
 
   if (resolvedShape === FORMATION_SHAPE.COLUMN) {
     const whites = packCampGrid(count, STONE_COLOR.WHITE, board, FORMATION_ZONE.PRESET, 'column');
@@ -1048,66 +1075,59 @@ export function createPresetLayout(stoneCount = STONES_PER_SIDE, shape = FORMATI
   }
 
   if (resolvedShape === FORMATION_SHAPE.WEDGE && count === 3) {
-    const xs = rowXs(3, inner);
+    const rear = rowXs(2, inner);
     return pairByMirror([
-      { x: xs[0], y: whiteHome },
-      { x: xs[2], y: whiteHome },
-      { x: xs[1], y: whiteFwd },
+      { x: rear[0], y: whiteRear },
+      { x: rear[1], y: whiteRear },
+      { x: gapXs(rear)[0], y: whiteFront },
     ], board);
   }
 
   if (resolvedShape === FORMATION_SHAPE.WEDGE && count === 5) {
     const rear = rowXs(3, inner);
-    const fwd = rowXs(2, inner, 140);
     return pairByMirror([
-      ...rear.map((x) => ({ x, y: whiteHome })),
-      ...fwd.map((x) => ({ x, y: whiteFwd })),
+      ...rear.map((x) => ({ x, y: whiteRear })),
+      ...gapXs(rear).map((x) => ({ x, y: whiteFront })),
     ], board);
   }
 
   if (resolvedShape === FORMATION_SHAPE.DEFENSE && count === 5) {
-    const rear = rowXs(4, inner, 72);
+    const rear = rowXs(3, inner);
     return pairByMirror([
-      ...rear.map((x) => ({ x, y: whiteHome })),
-      { x: cx, y: whiteFwd },
+      ...rear.map((x) => ({ x, y: whiteRear })),
+      ...alignedXs(rear, 2).map((x) => ({ x, y: whiteFront })),
     ], board);
   }
 
   if (resolvedShape === FORMATION_SHAPE.WEDGE && count === 7) {
     const rear = rowXs(4, inner, 56);
-    const fwd = rowXs(3, inner, 100);
     return pairByMirror([
-      ...rear.map((x) => ({ x, y: whiteHome })),
-      ...fwd.map((x) => ({ x, y: whiteFwd })),
+      ...rear.map((x) => ({ x, y: whiteRear })),
+      ...gapXs(rear).map((x) => ({ x, y: whiteFront })),
     ], board);
   }
 
   if (resolvedShape === FORMATION_SHAPE.WEDGE && count === 9) {
     const rear = rowXs(5, inner, 40);
-    const fwd = rowXs(4, inner, 72);
     return pairByMirror([
-      ...rear.map((x) => ({ x, y: whiteHome })),
-      ...fwd.map((x) => ({ x, y: whiteFwd })),
+      ...rear.map((x) => ({ x, y: whiteRear })),
+      ...gapXs(rear).map((x) => ({ x, y: whiteFront })),
     ], board);
   }
 
   if (resolvedShape === FORMATION_SHAPE.DEFENSE && count === 7) {
-    const rear = rowXs(5, inner, 48);
-    const sep = FORMATION_MIN_SEPARATION / 2;
+    const rear = rowXs(4, inner, 56);
     return pairByMirror([
-      ...rear.map((x) => ({ x, y: whiteHome })),
-      { x: cx - sep, y: whiteFwd },
-      { x: cx + sep, y: whiteFwd },
+      ...rear.map((x) => ({ x, y: whiteRear })),
+      ...alignedXs(rear, 3).map((x) => ({ x, y: whiteFront })),
     ], board);
   }
 
   if (resolvedShape === FORMATION_SHAPE.DEFENSE && count === 9) {
-    const rear = rowXs(6, inner, 36);
+    const rear = rowXs(5, inner, 40);
     return pairByMirror([
-      ...rear.map((x) => ({ x, y: whiteHome })),
-      { x: cx - FORMATION_MIN_SEPARATION, y: whiteFwd },
-      { x: cx, y: whiteFwd },
-      { x: cx + FORMATION_MIN_SEPARATION, y: whiteFwd },
+      ...rear.map((x) => ({ x, y: whiteRear })),
+      ...alignedXs(rear, 4).map((x) => ({ x, y: whiteFront })),
     ], board);
   }
 
