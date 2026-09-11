@@ -15,6 +15,7 @@ import {
   aimHitsStone,
   calculateShot,
   findDoubleShot,
+  firstHitStone,
   bestKnockoutPair,
   pointerFromAim,
 } from '../src/ai/AIBot.js';
@@ -140,7 +141,7 @@ describe('calculateShot 3/5/7/9알', () => {
     expect(beginner.targetId).toBe(2);
     expect(beginner.kind).toBe('knockout');
     expect(beginner.errorDeg).toBe(0);
-    expect(beginner.power).toBeGreaterThanOrEqual(0.8);
+    expect(beginner.power).toBeGreaterThanOrEqual(0.9);
   });
 
   it('난이도를 생략하면 고급으로 친다', () => {
@@ -149,7 +150,7 @@ describe('calculateShot 3/5/7/9알', () => {
     const shot = calculateShot(ai, player, undefined, { rng: () => 0.5, board: BOARD });
     expect(shot.ok).toBe(true);
     expect(shot.difficulty).toBe(AI_DIFFICULTY.EXPERT);
-    expect(shot.power).toBeGreaterThanOrEqual(0.9);
+    expect(shot.power).toBeGreaterThanOrEqual(0.97);
   });
 
   it('고급은 가장자리로 밀어내기 쉬운 수를 더 세게 친다', () => {
@@ -165,6 +166,48 @@ describe('calculateShot 3/5/7/9알', () => {
     expect(expert.kind).toBe('knockout');
     expect(expert.errorDeg).toBe(0);
     expect(expert.power).toBeGreaterThanOrEqual(mid.power);
+    expect(mid.power).toBeGreaterThanOrEqual(0.94);
+    expect(expert.power).toBeGreaterThanOrEqual(0.97);
+  });
+
+  it('초급·중급도 가장자리 녹아웃을 고르고 고급보다 아주 약하다', () => {
+    const ai = [{ id: 10, x: 360, y: 400 }];
+    const player = [
+      { id: 1, x: 360, y: 500 },
+      { id: 2, x: 108, y: 400 },
+    ];
+    const beginner = calculateShot(ai, player, AI_DIFFICULTY.BEGINNER, { rng: () => 0.5, board: BOARD });
+    const mid = calculateShot(ai, player, AI_DIFFICULTY.INTERMEDIATE, { rng: () => 0.5, board: BOARD });
+    const expert = calculateShot(ai, player, AI_DIFFICULTY.EXPERT, { rng: () => 0.5, board: BOARD });
+    expect(beginner.targetId).toBe(2);
+    expect(mid.targetId).toBe(2);
+    expect(expert.targetId).toBe(2);
+    expect(beginner.power).toBeGreaterThanOrEqual(0.9);
+    expect(mid.power).toBeGreaterThanOrEqual(beginner.power);
+    expect(expert.power).toBeGreaterThanOrEqual(mid.power);
+  });
+
+  it('고급은 타깃 중심 근처를 때리고 앞에 있는 돌을 통과하지 않는다', () => {
+    const ai = [{ id: 10, x: 200, y: 400 }];
+    const player = [
+      { id: 1, x: 320, y: 400 },
+      { id: 2, x: 520, y: 400 },
+      { id: 3, x: 200, y: 120 },
+    ];
+    const stones = [...ai, ...player];
+    for (const difficulty of Object.values(AI_DIFFICULTY)) {
+      const shot = calculateShot(ai, player, difficulty, { rng: () => 0.5, board: BOARD });
+      expect(shot.ok).toBe(true);
+      expect(shot.targetId).not.toBe(2);
+      const shooter = ai.find((s) => s.id === shot.shooterId);
+      const target = player.find((s) => s.id === shot.targetId);
+      const first = firstHitStone(shooter, shot.angle, stones);
+      expect(first?.id).toBe(shot.targetId);
+      const dx = target.x - shooter.x;
+      const dy = target.y - shooter.y;
+      const miss = Math.abs(dx * Math.sin(shot.angle) - dy * Math.cos(shot.angle));
+      expect(miss).toBeLessThan(28);
+    }
   });
 
   it('고급은 일직선 연쇄를 더블 샷으로 고르고 오차가 0이다', () => {

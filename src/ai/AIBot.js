@@ -27,9 +27,18 @@ export const AI_THINK = Object.freeze({
 });
 
 const DEG = Math.PI / 180;
-const DOUBLE_ALIGN_COS = Math.cos(32 * DEG);
+const DOUBLE_ALIGN_COS = Math.cos(14 * DEG);
 /** 반지름 합 + 여유. 이 안이면 붙어 있어 바로 충돌한다. */
 export const STONE_CONTACT_SLOP = 6;
+
+export const AI_HIT_EMBED = Object.freeze({
+  [AI_DIFFICULTY.BEGINNER]: 12,
+  [AI_DIFFICULTY.INTERMEDIATE]: 14,
+  [AI_DIFFICULTY.EXPERT]: 18,
+});
+
+const DEFAULT_HIT_EMBED = 16;
+const BLOCKER_EMBED = 12;
 
 export function stonesInContact(a, b, slop = STONE_CONTACT_SLOP) {
   if (!a || !b) return false;
@@ -76,21 +85,47 @@ function launchAngle(from, to) {
   return Math.atan2(to.y - from.y, to.x - from.x);
 }
 
-/** 발사선이 타깃 원에 깊게 들어가 물리 스텝에서도 맞는다. */
-export function aimHitsStone(shooter, angle, target, embed = 8) {
-  if (!shooter || !target || !Number.isFinite(angle)) return false;
+function rayApproach(shooter, angle, stone, embed = DEFAULT_HIT_EMBED) {
+  if (!shooter || !stone || !Number.isFinite(angle)) return null;
   const ra = shooter.radius ?? STONE_RADIUS;
-  const rb = target.radius ?? STONE_RADIUS;
-  const dx = target.x - shooter.x;
-  const dy = target.y - shooter.y;
+  const rb = stone.radius ?? STONE_RADIUS;
+  const dx = stone.x - shooter.x;
+  const dy = stone.y - shooter.y;
   const gap = Math.hypot(dx, dy);
-  if (gap < 1e-6) return true;
-  if (gap <= ra + rb + 2) return true;
+  if (gap < 1e-6) return { ahead: 0, miss: 0, allow: ra + rb };
   const dirx = Math.cos(angle);
   const diry = Math.sin(angle);
-  if (dx * dirx + dy * diry <= 0) return false;
+  const ahead = dx * dirx + dy * diry;
+  if (ahead <= 0) return null;
   const miss = Math.abs(dx * diry - dy * dirx);
-  return miss <= Math.max(4, ra + rb - embed);
+  const allow = gap <= ra + rb + 2 ? ra + rb : Math.max(4, ra + rb - embed);
+  if (miss > allow) return null;
+  return { ahead, miss, allow };
+}
+
+/** 발사선이 타깃 원에 깊게 들어가 물리 스텝에서도 맞는다. */
+export function aimHitsStone(shooter, angle, target, embed = DEFAULT_HIT_EMBED) {
+  return Boolean(rayApproach(shooter, angle, target, embed));
+}
+
+/** 발사선에서 가장 먼저 맞는 돌. 아군/다른 적을 통과하는 수를 거른다. */
+export function firstHitStone(shooter, angle, stones, embed = BLOCKER_EMBED) {
+  let best = null;
+  let bestAhead = Infinity;
+  for (const stone of stones || []) {
+    if (!stone || stone.id === shooter?.id || stone.fallen) continue;
+    const hit = rayApproach(shooter, angle, stone, embed);
+    if (!hit || hit.ahead >= bestAhead) continue;
+    bestAhead = hit.ahead;
+    best = stone;
+  }
+  return best;
+}
+
+function shotHitsTargetFirst(shooter, target, angle, stones, embed = DEFAULT_HIT_EMBED) {
+  if (!aimHitsStone(shooter, angle, target, embed)) return false;
+  const first = firstHitStone(shooter, angle, stones, Math.min(embed, BLOCKER_EMBED));
+  return Boolean(first && first.id === target.id);
 }
 
 function vec(from, to) {
@@ -116,7 +151,7 @@ export function aimErrorDeg(difficulty, rng = Math.random) {
   return (rng01(rng) * 2 - 1) * cap;
 }
 
-export function legalizeShotPointer(shooter, angle, power, others, target) {
+export function legalizeShotPointer(shooter, angle, power, others, target, embed = DEFAULT_HIT_EMBED) {
   const origin = { x: shooter.x, y: shooter.y, id: shooter.id, radius: shooter.radius };
   const ra = shooter.radius ?? STONE_RADIUS;
   const rb = target?.radius ?? STONE_RADIUS;
@@ -124,9 +159,10 @@ export function legalizeShotPointer(shooter, angle, power, others, target) {
   const deltas = close
     ? [0, 22, -22, 44, -44, 66, -66, 88, -88]
     : [0, 6, -6, 10, -10, 14, -14, 18, -18, 22, -22];
+  const field = Array.isArray(others) ? others : [];
   for (const d of deltas) {
     const nextAngle = angle + d * DEG;
-    if (target && !aimHitsStone(shooter, nextAngle, target)) continue;
+    if (target && !shotHitsTargetFirst(shooter, target, nextAngle, field, embed)) continue;
     const pointer = pointerFromAim(origin, nextAngle, power);
     if (!resolvePullBlock(origin, pointer, others)) {
       return { angle: nextAngle, pointer };
@@ -249,25 +285,19 @@ function finishPower(shooter, target, inner, angle, level) {
   const dir = { x: Math.cos(angle), y: Math.sin(angle) };
   const d = dist(shooter, target);
   const targetExit = rayRoom(target, dir, inner);
-  const shooterExit = rayRoom(shooter, dir, inner);
-  const diesBeforeHit = shooterExit < d - 8;
-  let power;
   if (level === AI_DIFFICULTY.BEGINNER) {
-    power = 0.86 + Math.min(0.12, d / 640);
-    if (targetExit < 220) power = Math.max(power, 0.93);
-    if (diesBeforeHit) power = Math.min(power, 0.84);
-    return clamp(power, 0.82, 0.98);
+    let power = 0.92 + Math.min(0.06, d / 720);
+    if (targetExit < 240) power = Math.max(power, 0.96);
+    return clamp(power, 0.90, 0.985);
   }
   if (level === AI_DIFFICULTY.INTERMEDIATE) {
-    power = 0.91 + Math.min(0.08, d / 560);
-    if (targetExit < 240) power = Math.max(power, 0.96);
-    if (diesBeforeHit) power = Math.min(power, 0.88);
-    return clamp(power, 0.88, 0.99);
+    let power = 0.95 + Math.min(0.04, d / 640);
+    if (targetExit < 260) power = Math.max(power, 0.98);
+    return clamp(power, 0.94, 0.995);
   }
-  power = 0.95 + Math.min(0.05, d / 480);
-  if (targetExit < 260) power = Math.max(power, 0.98);
-  if (diesBeforeHit) power = Math.min(power, 0.9);
-  return clamp(power, 0.92, 1);
+  let power = 0.985 + Math.min(0.015, d / 480);
+  if (targetExit < 280) power = 1;
+  return clamp(power, 0.98, 1);
 }
 
 export function scoreKnockoutShot(shooter, target, inner) {
@@ -336,40 +366,67 @@ function escapeCandidates(pos, inner) {
 
 function cutLaunchAngle(shooter, target, escapeDir) {
   const gap = (shooter.radius ?? STONE_RADIUS) + (target.radius ?? STONE_RADIUS);
+  const offset = gap * 0.42;
   return launchAngle(shooter, {
-    x: target.x - escapeDir.x * gap,
-    y: target.y - escapeDir.y * gap,
+    x: target.x - escapeDir.x * offset,
+    y: target.y - escapeDir.y * offset,
   });
 }
 
-function scoreMasterShot(shooter, target, inner, angle) {
+function scoreMasterShot(shooter, target, inner, angle, stones, embed = DEFAULT_HIT_EMBED) {
+  const hit = rayApproach(shooter, angle, target, embed);
+  if (!hit) return -1e9;
+  if (!shotHitsTargetFirst(shooter, target, angle, stones, embed)) return -1e9;
   const dir = { x: Math.cos(angle), y: Math.sin(angle) };
   const d = dist(shooter, target);
   const targetExit = rayRoom(target, dir, inner);
   const shooterExit = rayRoom(shooter, dir, inner);
-  let score = Math.max(0, 360 - targetExit) * 5.2 + Math.max(0, 380 - d) * 0.45;
-  if (targetExit < 140) score += 260;
-  if (targetExit < 80) score += 180;
-  if (shooterExit < d - 8) score -= 720;
-  else if (shooterExit < d + 12) score -= 80;
+  const escape = escapeCandidates(target, inner)[0];
+  const edgeDot = escape ? dir.x * escape.d.x + dir.y * escape.d.y : 0;
+  const rim = Math.min(
+    target.x - inner.x,
+    inner.x + inner.size - target.x,
+    target.y - inner.y,
+    inner.y + inner.size - target.y,
+  );
+  let score = (420 - targetExit) * 7.2;
+  score += (1 - hit.miss / Math.max(8, hit.allow)) * 280;
+  score += Math.max(0, edgeDot) * 420;
+  score += Math.max(0, 160 - rim) * 3.2;
+  score += Math.max(0, 380 - d) * 0.2;
+  if (targetExit < 90) score += 360;
+  if (targetExit < 50) score += 280;
+  if (shooterExit < d - 8) score -= 4000;
+  else if (shooterExit < d + 20) score -= 80;
   return score;
+}
+
+function extraAngles(options) {
+  if (Array.isArray(options.extras)) return options.extras;
+  if (options.extras === true) return [2, -2, 4, -4, 6, -6, 8, -8];
+  return [];
 }
 
 function collectHitShots(aiStones, playerStones, inner, options = {}) {
   const cutCount = Math.max(1, Number(options.cuts) || 8);
-  const extras = options.extras === true;
+  const extras = extraAngles(options);
+  const embed = Number.isFinite(options.embed) ? options.embed : DEFAULT_HIT_EMBED;
+  const doubleBonus = Number.isFinite(options.doubleBonus) ? options.doubleBonus : 760;
+  const stones = [...aiStones, ...playerStones];
   const pool = eligibleShotPairs(aiStones, playerStones);
   const shots = [];
   const dbl = findDoubleShot(aiStones, playerStones);
-  if (dbl && aimHitsStone(dbl.shooter, launchAngle(dbl.shooter, dbl.target), dbl.target)) {
+  if (dbl) {
     const angle = launchAngle(dbl.shooter, dbl.target);
-    shots.push({
-      shooter: dbl.shooter,
-      target: dbl.target,
-      angle,
-      kind: 'double',
-      score: scoreMasterShot(dbl.shooter, dbl.target, inner, angle) + 800,
-    });
+    if (shotHitsTargetFirst(dbl.shooter, dbl.target, angle, stones, embed)) {
+      shots.push({
+        shooter: dbl.shooter,
+        target: dbl.target,
+        angle,
+        kind: 'double',
+        score: scoreMasterShot(dbl.shooter, dbl.target, inner, angle, stones, embed) + doubleBonus,
+      });
+    }
   }
   for (const pair of pool) {
     const direct = launchAngle(pair.shooter, pair.target);
@@ -378,17 +435,15 @@ function collectHitShots(aiStones, playerStones, inner, options = {}) {
       ...escapeCandidates(pair.target, inner).slice(0, cutCount)
         .map((e) => cutLaunchAngle(pair.shooter, pair.target, e.d)),
     ];
-    if (extras) {
-      for (const d of [4, -4, 8, -8, 12, -12]) angles.push(direct + d * DEG);
-    }
+    for (const d of extras) angles.push(direct + d * DEG);
     for (const angle of angles) {
-      if (!aimHitsStone(pair.shooter, angle, pair.target)) continue;
+      if (!shotHitsTargetFirst(pair.shooter, pair.target, angle, stones, embed)) continue;
       shots.push({
         shooter: pair.shooter,
         target: pair.target,
         angle,
         kind: 'knockout',
-        score: scoreMasterShot(pair.shooter, pair.target, inner, angle),
+        score: scoreMasterShot(pair.shooter, pair.target, inner, angle, stones, embed),
       });
     }
   }
@@ -442,11 +497,12 @@ export function calculateShot(aiStones, playerStones, difficulty = AI_DIFFICULTY
     return { ok: false, reason: 'no-stones' };
   }
 
+  const embed = AI_HIT_EMBED[level] ?? AI_HIT_EMBED[AI_DIFFICULTY.EXPERT];
   const search = level === AI_DIFFICULTY.BEGINNER
-    ? { cuts: 6, extras: true }
+    ? { cuts: 8, extras: [2, -2, 4, -4, 6, -6], embed, doubleBonus: 560 }
     : level === AI_DIFFICULTY.INTERMEDIATE
-      ? { cuts: 8, extras: true }
-      : { cuts: 10, extras: true };
+      ? { cuts: 10, extras: [1, -1, 3, -3, 5, -5, 7, -7], embed, doubleBonus: 640 }
+      : { cuts: 12, extras: [1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 8, -8], embed, doubleBonus: 760 };
   const candidates = collectHitShots(ai, player, inner, search);
   if (!candidates.length) {
     const fallback = pickMasterShot(ai, player, inner, search);
@@ -466,7 +522,9 @@ export function calculateShot(aiStones, playerStones, difficulty = AI_DIFFICULTY
   for (const candidate of candidates) {
     const nextPower = finishPower(candidate.shooter, candidate.target, inner, candidate.angle, level);
     let nextAngle = candidate.angle + errorDeg * DEG;
-    if (!aimHitsStone(candidate.shooter, nextAngle, candidate.target)) nextAngle = candidate.angle;
+    if (!shotHitsTargetFirst(candidate.shooter, candidate.target, nextAngle, all, embed)) {
+      nextAngle = candidate.angle;
+    }
     const origin = {
       x: candidate.shooter.x,
       y: candidate.shooter.y,
@@ -475,12 +533,19 @@ export function calculateShot(aiStones, playerStones, difficulty = AI_DIFFICULTY
     };
     let nextPointer = pointerFromAim(origin, nextAngle, nextPower);
     if (resolvePullBlock(origin, nextPointer, all)) {
-      const legal = legalizeShotPointer(candidate.shooter, nextAngle, nextPower, all, candidate.target);
+      const legal = legalizeShotPointer(
+        candidate.shooter,
+        nextAngle,
+        nextPower,
+        all,
+        candidate.target,
+        embed,
+      );
       if (!legal) continue;
       nextAngle = legal.angle;
       nextPointer = legal.pointer;
     }
-    if (!aimHitsStone(candidate.shooter, nextAngle, candidate.target)) continue;
+    if (!shotHitsTargetFirst(candidate.shooter, candidate.target, nextAngle, all, embed)) continue;
     shooter = candidate.shooter;
     target = candidate.target;
     kind = candidate.kind;
@@ -503,8 +568,11 @@ export function calculateShot(aiStones, playerStones, difficulty = AI_DIFFICULTY
   const origin = { x: shooter.x, y: shooter.y, id: shooter.id, radius: shooter.radius };
   let physics = computeSlingshotLaunch(origin, pointer);
   const launchDir = Math.atan2(physics.velocity.y, physics.velocity.x);
-  if (!aimHitsStone(shooter, launchDir, target)) {
-    angle = launchAngle(shooter, target);
+  if (!shotHitsTargetFirst(shooter, target, launchDir, all, embed)) {
+    const restore = shotHitsTargetFirst(shooter, target, angle, all, embed)
+      ? angle
+      : launchAngle(shooter, target);
+    angle = restore;
     pointer = pointerFromAim(origin, angle, power);
     physics = computeSlingshotLaunch(origin, pointer);
   }
@@ -529,6 +597,7 @@ export default {
   calculateShot,
   aimErrorDeg,
   aimHitsStone,
+  firstHitStone,
   findDoubleShot,
   pickMasterShot,
   bestKnockoutPair,
@@ -538,4 +607,5 @@ export default {
   pointerFromAim,
   AI_THINK,
   AI_ERROR_DEG,
+  AI_HIT_EMBED,
 };

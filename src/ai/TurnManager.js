@@ -118,7 +118,7 @@ export class TurnManager {
       { rng: this.rng, board: engine.board },
     );
     if (!shot.ok) return;
-    engine.beginAiAim(shot);
+    if (!engine.beginAiAim(shot)) return;
     this._timers.push(setTimeout(() => this._fire(token), this.aimMs));
   }
 
