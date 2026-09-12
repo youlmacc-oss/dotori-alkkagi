@@ -19,11 +19,13 @@
 5. 제품 흐름은 `PRD.md`: 대기실 → 1인/AI → 재배치 → 시작 → 슬링샷 → 결과. 1:1 버튼은 hidden, 핸들러 no-op.
 6. `setMatchConfig`는 LINE을 깔고, 적용·입장·한 판 더(솔로/AI)는 `play-formation`을 복구.
 7. `VisitLog`에 delete/clear/`removeItem(visit-log)`를 넣지 않는다. 부팅이 지우는 키는 `ARCHITECTURE` §12만.
-8. leftover 모듈(`RoomState`, `PvpInvite`, `LobbyAi` 등)은 테스트 297을 맞추기 위해 스텁으로 둘 수 있으나 제품 UI를 열지 않는다.
-9. `npm test` 100% (40파일 / 297). `npm run test:loop` exit 0.
-10. Git은 사용자 승인 전 금지. 배포는 사용자가 **백업 및 배포**를 말한 뒤에만 `main` 푸시.
+8. leftover 모듈(`RoomState`, `PvpInvite`, `LobbyAi` 등)은 테스트 305를 맞추기 위해 스텁으로 둘 수 있으나 제품 UI를 열지 않는다.
+9. 같은 색 붙임은 `SameColorBond.js`만. GameEngine은 RESOLVING `afterUpdate`에서 `planSameColorBondHold`만 호출. 슬링샷·다른 색 바디 숫자는 바꾸지 않는다.
+10. AI 도주(`kind: flee`)는 `AIBot.js`만. 흑 클러스터(표면≤11)면 판 안 짧은 샷. 장외·상대 선충돌 금지.
+11. `npm test` 100% (41파일 / 305). `npm run test:loop` exit 0. `index.html` `?v=20260912e`.
+12. Git은 사용자 승인 전 금지. 배포는 사용자가 **백업 및 배포**를 말한 뒤에만 `main` 푸시.
 
-완료 판정: 테스트·캡처 통과, 라이브가 1인·AI·설정 이력·진형 저장·카메라 턴을 `PRD`와 같게 동작, Pages `base /dotori-alkkagi/`.
+완료 판정: 테스트·캡처 통과. 라이브가 1인·AI·설정 이력·진형 저장·카메라 턴·같은 색 붙임·AI 클러스터 도주를 `PRD`와 같게 동작. Pages `base /dotori-alkkagi/`.
 
 ---
 

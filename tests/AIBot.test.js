@@ -11,13 +11,16 @@ import {
 import {
   AI_ERROR_DEG,
   AI_THINK,
+  PLAYER_CLUSTER_GAP,
   aimErrorDeg,
   aimHitsStone,
   calculateShot,
   findDoubleShot,
   firstHitStone,
   bestKnockoutPair,
+  playerHasCluster,
   pointerFromAim,
+  stoneSurfaceGap,
 } from '../src/ai/AIBot.js';
 import { TurnManager } from '../src/ai/TurnManager.js';
 
@@ -267,6 +270,70 @@ describe('calculateShot 3/5/7/9알', () => {
     const pointer = pointerFromAim(origin, 0, 1);
     expect(pointer.x).toBeLessThan(origin.x);
     expect(pointer.y).toBeCloseTo(origin.y);
+  });
+});
+
+describe('AI 클러스터 회피', () => {
+  const inner = BOARD.inner;
+  const woodPad = 20;
+
+  it('상대 알이 붙거나 5mm 안이면 클러스터다', () => {
+    const touching = [{ id: 1, x: 360, y: 600 }, { id: 2, x: 408, y: 600 }];
+    const near = [{ id: 1, x: 360, y: 600 }, { id: 2, x: 360 + 48 + 8, y: 600 }];
+    const far = [{ id: 1, x: 360, y: 600 }, { id: 2, x: 200, y: 600 }];
+    expect(stoneSurfaceGap(touching[0], touching[1])).toBeLessThanOrEqual(0);
+    expect(stoneSurfaceGap(near[0], near[1])).toBeLessThanOrEqual(PLAYER_CLUSTER_GAP);
+    expect(stoneSurfaceGap(far[0], far[1])).toBeGreaterThan(PLAYER_CLUSTER_GAP);
+    expect(playerHasCluster(touching)).toBe(true);
+    expect(playerHasCluster(near)).toBe(true);
+    expect(playerHasCluster(far)).toBe(false);
+  });
+
+  it('클러스터면 공격하지 않고 판 안으로 달아난다', () => {
+    const ai = [{ id: 10, x: 360, y: 200 }];
+    const player = [
+      { id: 1, x: 360, y: 600 },
+      { id: 2, x: 360 + 48 + 6, y: 600 },
+    ];
+    expect(playerHasCluster(player)).toBe(true);
+    for (const difficulty of Object.values(AI_DIFFICULTY)) {
+      const shot = calculateShot(ai, player, difficulty, { rng: () => 0.5, board: BOARD });
+      expect(shot.ok).toBe(true);
+      expect(shot.kind).toBe('flee');
+      expect(player.some((s) => s.id === shot.targetId)).toBe(false);
+      expect(ai.some((s) => s.id === shot.shooterId)).toBe(true);
+      const shooter = ai.find((s) => s.id === shot.shooterId);
+      const travel = shot.travel;
+      expect(travel).toBeGreaterThan(40);
+      const destX = shooter.x + Math.cos(shot.angle) * travel;
+      const destY = shooter.y + Math.sin(shot.angle) * travel;
+      expect(destX).toBeGreaterThan(inner.x + woodPad);
+      expect(destX).toBeLessThan(inner.x + inner.size - woodPad);
+      expect(destY).toBeGreaterThan(inner.y + woodPad);
+      expect(destY).toBeLessThan(inner.y + inner.size - woodPad);
+      const first = firstHitStone(shooter, shot.angle, [...ai, ...player]);
+      if (first && player.some((p) => p.id === first.id)) {
+        const ahead = (first.x - shooter.x) * Math.cos(shot.angle)
+          + (first.y - shooter.y) * Math.sin(shot.angle);
+        expect(ahead).toBeGreaterThan(travel + 20);
+      }
+    }
+  });
+
+  it('상대 알이 떨어져 있으면 기존처럼 녹아웃한다', () => {
+    const ai = [{ id: 10, x: 360, y: 200 }];
+    const player = [
+      { id: 1, x: 360, y: 600 },
+      { id: 2, x: 200, y: 600 },
+    ];
+    expect(playerHasCluster(player)).toBe(false);
+    const shot = calculateShot(ai, player, AI_DIFFICULTY.EXPERT, { rng: () => 0.5, board: BOARD });
+    expect(shot.ok).toBe(true);
+    expect(shot.kind).not.toBe('flee');
+    expect(player.some((s) => s.id === shot.targetId)).toBe(true);
+    const shooter = ai.find((s) => s.id === shot.shooterId);
+    const target = player.find((s) => s.id === shot.targetId);
+    expect(aimHitsStone(shooter, shot.angle, target)).toBe(true);
   });
 });
 

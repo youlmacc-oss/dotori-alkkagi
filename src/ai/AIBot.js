@@ -6,9 +6,11 @@
 import {
   AI_DIFFICULTY,
   BOARD,
+  POWER_RATIO,
   SLINGSHOT,
   STONE_RADIUS,
   computeSlingshotLaunch,
+  estimateLaunchTravel,
   resolvePullBlock,
 } from '../physics/GameEngine.js';
 
@@ -30,6 +32,8 @@ const DEG = Math.PI / 180;
 const DOUBLE_ALIGN_COS = Math.cos(14 * DEG);
 /** 반지름 합 + 여유. 이 안이면 붙어 있어 바로 충돌한다. */
 export const STONE_CONTACT_SLOP = 6;
+/** 실물 알 지름 ≈22mm, 월드 지름 48. 표면 간격 5mm ≈ 11. */
+export const PLAYER_CLUSTER_GAP = 11;
 
 export const AI_HIT_EMBED = Object.freeze({
   [AI_DIFFICULTY.BEGINNER]: 12,
@@ -39,12 +43,40 @@ export const AI_HIT_EMBED = Object.freeze({
 
 const DEFAULT_HIT_EMBED = 16;
 const BLOCKER_EMBED = 12;
+const FLEE_INNER_PAD = STONE_RADIUS + 36;
+const FLEE_KEEP = STONE_RADIUS + 28;
+const FLEE_MIN_PULL = SLINGSHOT.PULL_DEADZONE + 2;
+const FLEE_MAX_PULL = 42;
 
 export function stonesInContact(a, b, slop = STONE_CONTACT_SLOP) {
   if (!a || !b) return false;
   const ra = a.radius ?? STONE_RADIUS;
   const rb = b.radius ?? STONE_RADIUS;
   return dist(a, b) <= ra + rb + slop;
+}
+
+export function stoneSurfaceGap(a, b) {
+  const pa = asPoint(a);
+  const pb = asPoint(b);
+  if (!pa || !pb) return Infinity;
+  return dist(pa, pb) - pa.radius - pb.radius;
+}
+
+export function playerClusterIds(playerStones, gap = PLAYER_CLUSTER_GAP) {
+  const live = livePoints(playerStones);
+  const ids = new Set();
+  for (let i = 0; i < live.length; i++) {
+    for (let j = i + 1; j < live.length; j++) {
+      if (stoneSurfaceGap(live[i], live[j]) > gap) continue;
+      ids.add(live[i].id);
+      ids.add(live[j].id);
+    }
+  }
+  return ids;
+}
+
+export function playerHasCluster(playerStones, gap = PLAYER_CLUSTER_GAP) {
+  return playerClusterIds(playerStones, gap).size > 0;
 }
 
 function rng01(rng) {
@@ -212,8 +244,10 @@ function allPairs(aiStones, playerStones) {
 }
 
 /** 붙어 있는 흑·백은 건너뛰고, 간격 있는 수를 고른다. 대안이 없을 때만 접촉 수를 허용. */
-export function eligibleShotPairs(aiStones, playerStones) {
-  const pairs = allPairs(aiStones, playerStones);
+export function eligibleShotPairs(aiStones, playerStones, options = {}) {
+  let pairs = allPairs(aiStones, playerStones);
+  const skip = options.excludeTargetIds;
+  if (skip && skip.size) pairs = pairs.filter((p) => !skip.has(p.target.id));
   if (pairs.length === 0) return [];
   const free = pairs.filter((p) => !p.stuckPair && !p.stuckShooter);
   if (free.length) return free;
@@ -221,8 +255,8 @@ export function eligibleShotPairs(aiStones, playerStones) {
   return gapped.length ? gapped : pairs;
 }
 
-function nearestPair(aiStones, playerStones) {
-  const pool = eligibleShotPairs(aiStones, playerStones);
+function nearestPair(aiStones, playerStones, options = {}) {
+  const pool = eligibleShotPairs(aiStones, playerStones, options);
   let best = null;
   let bestD = Infinity;
   for (const pair of pool) {
@@ -237,13 +271,15 @@ function nearestPair(aiStones, playerStones) {
 /**
  * 슈터 → 타깃1 → 타깃2 가 거의 일직선이면 연쇄(더블) 샷.
  */
-export function findDoubleShot(aiStones, playerStones) {
+export function findDoubleShot(aiStones, playerStones, options = {}) {
+  const skip = options.excludeTargetIds;
   let best = null;
   let bestAlign = DOUBLE_ALIGN_COS;
   for (const shooter of aiStones) {
     if (shooterTouchesOpponent(shooter, playerStones)) continue;
     for (let i = 0; i < playerStones.length; i++) {
       const t1 = playerStones[i];
+      if (skip?.has(t1.id)) continue;
       if (stonesInContact(shooter, t1)) continue;
       const a = vec(shooter, t1);
       const na = normalize(a);
@@ -311,8 +347,8 @@ export function scoreKnockoutShot(shooter, target, inner) {
   return score;
 }
 
-export function bestKnockoutPair(aiStones, playerStones, inner) {
-  const pool = eligibleShotPairs(aiStones, playerStones);
+export function bestKnockoutPair(aiStones, playerStones, inner, options = {}) {
+  const pool = eligibleShotPairs(aiStones, playerStones, options);
   let best = null;
   let bestScore = -Infinity;
   for (const pair of pool) {
@@ -336,8 +372,8 @@ function scoreStrongKnockout(shooter, target, inner) {
   return score;
 }
 
-function bestStrongKnockoutPair(aiStones, playerStones, inner) {
-  const pool = eligibleShotPairs(aiStones, playerStones);
+function bestStrongKnockoutPair(aiStones, playerStones, inner, options = {}) {
+  const pool = eligibleShotPairs(aiStones, playerStones, options);
   let best = null;
   let bestScore = -Infinity;
   for (const pair of pool) {
@@ -413,9 +449,10 @@ function collectHitShots(aiStones, playerStones, inner, options = {}) {
   const embed = Number.isFinite(options.embed) ? options.embed : DEFAULT_HIT_EMBED;
   const doubleBonus = Number.isFinite(options.doubleBonus) ? options.doubleBonus : 760;
   const stones = [...aiStones, ...playerStones];
-  const pool = eligibleShotPairs(aiStones, playerStones);
+  const exclude = { excludeTargetIds: options.excludeTargetIds };
+  const pool = eligibleShotPairs(aiStones, playerStones, exclude);
   const shots = [];
-  const dbl = findDoubleShot(aiStones, playerStones);
+  const dbl = findDoubleShot(aiStones, playerStones, exclude);
   if (dbl) {
     const angle = launchAngle(dbl.shooter, dbl.target);
     if (shotHitsTargetFirst(dbl.shooter, dbl.target, angle, stones, embed)) {
@@ -454,7 +491,7 @@ function collectHitShots(aiStones, playerStones, inner, options = {}) {
 export function pickMasterShot(aiStones, playerStones, inner, options = {}) {
   const hits = collectHitShots(aiStones, playerStones, inner, options);
   if (hits[0]) return hits[0];
-  const fallback = nearestPair(aiStones, playerStones);
+  const fallback = nearestPair(aiStones, playerStones, { excludeTargetIds: options.excludeTargetIds });
   if (!fallback) return null;
   return {
     shooter: fallback.shooter,
@@ -478,6 +515,214 @@ function pickClassicExpert(ai, player, inner) {
   };
 }
 
+function shrinkInner(inner, pad) {
+  const p = Math.max(0, pad);
+  return { x: inner.x + p, y: inner.y + p, size: inner.size - p * 2 };
+}
+
+function nearestOf(origin, stones) {
+  let best = null;
+  let bestD = Infinity;
+  for (const stone of stones) {
+    const d = dist(origin, stone);
+    if (d < bestD) {
+      bestD = d;
+      best = stone;
+    }
+  }
+  return best;
+}
+
+function uniqueDirs(dirs) {
+  const out = [];
+  for (const raw of dirs) {
+    const n = normalize(raw);
+    if (n.x === 0 && n.y === 0) continue;
+    if (out.some((d) => d.x * n.x + d.y * n.y > 0.995)) continue;
+    out.push(n);
+  }
+  return out;
+}
+
+function clusterCentroid(playerStones, ids) {
+  const pts = livePoints(playerStones).filter((p) => ids.has(p.id));
+  if (!pts.length) return null;
+  let x = 0;
+  let y = 0;
+  for (const p of pts) {
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / pts.length, y: y / pts.length };
+}
+
+function fleePullForRoom(room) {
+  if (!(room > FLEE_KEEP + 8)) return null;
+  const maxTravel = room - FLEE_KEEP;
+  const want = clamp(maxTravel * 0.4, 56, 150);
+  const pull = clamp(want / POWER_RATIO.DEFAULT, FLEE_MIN_PULL, FLEE_MAX_PULL);
+  const travel = pull * POWER_RATIO.DEFAULT;
+  if (travel + FLEE_KEEP > room + 1e-6) return null;
+  return { pull, travel, power: pull / SLINGSHOT.MAX_PULL_DISTANCE };
+}
+
+function pointerFromPull(origin, angle, pull) {
+  const mag = Math.max(FLEE_MIN_PULL, pull);
+  return {
+    x: origin.x - Math.cos(angle) * mag,
+    y: origin.y - Math.sin(angle) * mag,
+  };
+}
+
+function playerOnRay(shooter, dir, playerStones) {
+  let best = Infinity;
+  for (const p of playerStones) {
+    const dx = p.x - shooter.x;
+    const dy = p.y - shooter.y;
+    const ahead = dx * dir.x + dy * dir.y;
+    if (ahead <= 8) continue;
+    const miss = Math.abs(dx * dir.y - dy * dir.x);
+    if (miss <= shooter.radius + p.radius + 22) best = Math.min(best, ahead);
+  }
+  return best;
+}
+
+function rayBlockedSoon(shooter, angle, stones, travel) {
+  const first = firstHitStone(shooter, angle, stones, BLOCKER_EMBED);
+  if (!first) return false;
+  const hit = rayApproach(shooter, angle, first, BLOCKER_EMBED);
+  return Boolean(hit && hit.ahead <= travel + shooter.radius + 8);
+}
+
+function fleeDirs(shooter, player, inward) {
+  const near = nearestOf(shooter, player);
+  const away = near
+    ? normalize({ x: shooter.x - near.x, y: shooter.y - near.y })
+    : inward;
+  const perp = { x: -away.y, y: away.x };
+  return uniqueDirs([
+    inward,
+    away,
+    { x: inward.x + away.x, y: inward.y + away.y },
+    { x: inward.x * 2 + away.x, y: inward.y * 2 + away.y },
+    { x: inward.x + perp.x, y: inward.y + perp.y },
+    { x: inward.x - perp.x, y: inward.y - perp.y },
+    perp,
+    { x: -perp.x, y: -perp.y },
+    { x: away.x + perp.x, y: away.y + perp.y },
+    { x: away.x - perp.x, y: away.y - perp.y },
+    { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
+    { x: 0.7071, y: 0.7071 }, { x: -0.7071, y: 0.7071 },
+    { x: 0.7071, y: -0.7071 }, { x: -0.7071, y: -0.7071 },
+  ]);
+}
+
+/**
+ * 상대 클러스터를 때리지 않고 판 안쪽으로 짧은 도주 샷을 고른다.
+ * 장외(inner 축소 영역 밖)로 나가는 방향은 버린다.
+ */
+export function pickFleeShot(aiStones, playerStones, inner, options = {}) {
+  const ai = livePoints(aiStones);
+  const player = livePoints(playerStones);
+  if (!ai.length) return null;
+  const pad = Number.isFinite(options.pad) ? options.pad : FLEE_INNER_PAD;
+  const safe = shrinkInner(inner, pad);
+  if (safe.size < 96) return null;
+  const all = [...ai, ...player];
+  const playerIds = new Set(player.map((p) => p.id));
+  const clusterIds = playerClusterIds(player);
+  const cluster = clusterCentroid(player, clusterIds.size ? clusterIds : playerIds);
+  const cx = inner.x + inner.size / 2;
+  const cy = inner.y + inner.size / 2;
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const shooter of ai) {
+    const origin = { x: shooter.x, y: shooter.y, id: shooter.id, radius: shooter.radius };
+    const inward = normalize({ x: cx - shooter.x, y: cy - shooter.y });
+    const near = nearestOf(shooter, player);
+    const away = near
+      ? normalize({ x: shooter.x - near.x, y: shooter.y - near.y })
+      : inward;
+    for (const dir of fleeDirs(shooter, player, inward)) {
+      const room = rayRoom(shooter, dir, safe);
+      const sized = fleePullForRoom(room);
+      if (!sized) continue;
+      let angle = Math.atan2(dir.y, dir.x);
+      let pointer = pointerFromPull(origin, angle, sized.pull);
+      let useDir = dir;
+      let useRoom = room;
+      if (rayBlockedSoon(shooter, angle, all, sized.travel)
+        || resolvePullBlock(origin, pointer, all)) {
+        let unlocked = null;
+        for (const d of [8, -8, 14, -14, 22, -22]) {
+          const next = angle + d * DEG;
+          const nd = { x: Math.cos(next), y: Math.sin(next) };
+          const room2 = rayRoom(shooter, nd, safe);
+          if (room2 < sized.travel + FLEE_KEEP) continue;
+          if (rayBlockedSoon(shooter, next, all, sized.travel)) continue;
+          const p2 = pointerFromPull(origin, next, sized.pull);
+          if (resolvePullBlock(origin, p2, all)) continue;
+          unlocked = { angle: next, pointer: p2, dir: nd, room: room2 };
+          break;
+        }
+        if (!unlocked) continue;
+        angle = unlocked.angle;
+        pointer = unlocked.pointer;
+        useDir = unlocked.dir;
+        useRoom = unlocked.room;
+      }
+      const playerAhead = playerOnRay(shooter, useDir, player);
+      const inwardDot = useDir.x * inward.x + useDir.y * inward.y;
+      const awayDot = useDir.x * away.x + useDir.y * away.y;
+      let score = useRoom * 1.15 + inwardDot * 240 + awayDot * 140 + sized.travel * 0.25;
+      if (Number.isFinite(playerAhead)) score -= 520 + Math.max(0, 500 - playerAhead);
+      if (cluster) {
+        const toC = normalize({ x: cluster.x - shooter.x, y: cluster.y - shooter.y });
+        score -= Math.max(0, useDir.x * toC.x + useDir.y * toC.y) * 180;
+      }
+      if (inwardDot < -0.15) score -= 160;
+      const rim = Math.min(
+        shooter.x - safe.x,
+        safe.x + safe.size - shooter.x,
+        shooter.y - safe.y,
+        safe.y + safe.size - shooter.y,
+      );
+      if (rim < 40 && inwardDot < 0.2) score -= 200;
+      if (score > bestScore) {
+        bestScore = score;
+        best = { shooter, angle, pointer, power: sized.power, travel: sized.travel, room: useRoom };
+      }
+    }
+  }
+  return best;
+}
+
+function packFleeShot(flee, level, rng) {
+  const origin = {
+    x: flee.shooter.x,
+    y: flee.shooter.y,
+    id: flee.shooter.id,
+    radius: flee.shooter.radius,
+  };
+  const physics = computeSlingshotLaunch(origin, flee.pointer);
+  return {
+    ok: true,
+    difficulty: level,
+    kind: 'flee',
+    shooterId: flee.shooter.id,
+    targetId: flee.shooter.id,
+    origin,
+    pointer: flee.pointer,
+    angle: flee.angle,
+    errorDeg: aimErrorDeg(level, rng),
+    errorCapDeg: AI_ERROR_DEG[level],
+    power: physics.power,
+    velocity: physics.velocity,
+    travel: estimateLaunchTravel(physics.velocity),
+  };
+}
+
 /**
  * @param {Array} aiStones 백(AI) 생존 돌
  * @param {Array} playerStones 흑(유저) 생존 돌
@@ -498,11 +743,19 @@ export function calculateShot(aiStones, playerStones, difficulty = AI_DIFFICULTY
   }
 
   const embed = AI_HIT_EMBED[level] ?? AI_HIT_EMBED[AI_DIFFICULTY.EXPERT];
+  const clusterIds = playerHasCluster(player) ? playerClusterIds(player) : new Set();
+  if (clusterIds.size) {
+    const flee = pickFleeShot(ai, player, inner)
+      || pickFleeShot(ai, player, inner, { pad: STONE_RADIUS + 12 });
+    if (flee) return packFleeShot(flee, level, rng);
+  }
+  const isolatedExist = player.some((p) => !clusterIds.has(p.id));
+  const excludeTargetIds = clusterIds.size && isolatedExist ? clusterIds : undefined;
   const search = level === AI_DIFFICULTY.BEGINNER
-    ? { cuts: 8, extras: [2, -2, 4, -4, 6, -6], embed, doubleBonus: 560 }
+    ? { cuts: 8, extras: [2, -2, 4, -4, 6, -6], embed, doubleBonus: 560, excludeTargetIds }
     : level === AI_DIFFICULTY.INTERMEDIATE
-      ? { cuts: 10, extras: [1, -1, 3, -3, 5, -5, 7, -7], embed, doubleBonus: 640 }
-      : { cuts: 12, extras: [1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 8, -8], embed, doubleBonus: 760 };
+      ? { cuts: 10, extras: [1, -1, 3, -3, 5, -5, 7, -7], embed, doubleBonus: 640, excludeTargetIds }
+      : { cuts: 12, extras: [1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 8, -8], embed, doubleBonus: 760, excludeTargetIds };
   const candidates = collectHitShots(ai, player, inner, search);
   if (!candidates.length) {
     const fallback = pickMasterShot(ai, player, inner, search);
@@ -604,7 +857,12 @@ export default {
   scoreKnockoutShot,
   eligibleShotPairs,
   stonesInContact,
+  stoneSurfaceGap,
+  playerHasCluster,
+  playerClusterIds,
+  pickFleeShot,
   pointerFromAim,
+  PLAYER_CLUSTER_GAP,
   AI_THINK,
   AI_ERROR_DEG,
   AI_HIT_EMBED,

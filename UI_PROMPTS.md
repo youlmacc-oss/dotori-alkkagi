@@ -2,7 +2,7 @@
 
 이 문서만으로 HUD·대기실·설정을 다시 짤 수 있어야 한다. 규칙은 `PRD.md`, 모듈은 `ARCHITECTURE.md`. **Zero-Layout-Shift**: 기존 컨테이너·버튼은 1px도 바꾸지 않는다.
 
-`index.html`은 인라인 HUD CSS + `/src/style.css?v=` + `/src/main.js?v=`. 본판 버전 문자열 예: `20260912d`. 배포 후 캐시를 깨려면 `?v=`만 올린다.
+`index.html`은 인라인 HUD CSS + `/src/style.css?v=` + `/src/main.js?v=`. 본판 버전 문자열: **`20260912e`**. 배포 후 캐시를 깨려면 `?v=`만 올린다.
 
 ## 1. 셸
 
@@ -95,15 +95,26 @@ box-shadow inset 0 2px 0 #fff, 0 3px 0 #c48a32, 0 6px 10px rgba(140,70,16,.22)
 
 탭 안내/점검. `#lobby-book-body`. 이전/점/다음. 도크: 스킵 체크 `다음 접속시에는 이 창을 띄우지 않음`, `바로시작`, `튜토리얼 시작`.
 
-7장 카피(`GUIDE_PAGES`)는 `PRD` + `GuideBook.js`와 동일해야 한다.
+7장 카피(`GUIDE_PAGES`)는 아래와 **글자 단위로 동일**해야 한다. 키: `dotori-alkkagi-book-seen`(session), `dotori-alkkagi-book-skip`(local). `BOOK_SKIP_LABEL` / `BOOK_PLAY_LABEL` 위와 같음. `shouldOfferInviteOnlyNotice`는 항상 false.
 
-- cover: 원목 판 위에서 알을 당기고 튕깁니다. / 1인 연습 · AI 대국 · 바로시작은 시작 화면 · 다음 접속 숨김 가능
-- pull: 내 알을 잡아 반대 방향으로 당긴 뒤 손을 뗍니다.
-- modes: 대기실에서 고른 모드가 곧 방입니다. / 1인 · AI · 다시하기는 같은 모드
-- ready: 대전방에 들어오면 5초 동안 재배치를 묻습니다.
-- acorn: 선공은 호스트(흑). 도토리는 접속마다 10개, AI만 ±1.
-- fall: 한 쪽 돌이 모두 판 밖으로 나가면 끝입니다.
-- sound: ⚙️에서 음량·판 색·감도·액션캠·재배치.
+| id | kicker | title | visual | lead |
+| --- | --- | --- | --- | --- |
+| cover | 대기실 | 도토리 알까기 | cover | 원목 판 위에서 알을 당기고 튕깁니다. |
+| pull | 손맛 | 뒤로 당기고 놓기 | sling | 내 알을 잡아 반대 방향으로 당긴 뒤 손을 뗍니다. |
+| modes | 방 만들기 | 두 가지 대전 | modes | 대기실에서 고른 모드가 곧 방입니다. |
+| ready | 시작 전 | 바둑돌을 다시 놓기 | ready | 대전방에 들어오면 5초 동안 재배치를 묻습니다. |
+| acorn | 선공 · 도토리 | 호스트가 먼저 | acorn | 선공은 호스트(흑). 도토리는 접속마다 10개, AI 대전만 승 +1 / 패 −1. |
+| fall | 승패 | 장외가 곧 승부 | fall | 한 쪽 돌이 모두 판 밖으로 나가면 끝입니다. |
+| sound | 설정 | 소리·액션캠·재배치 | sound | ⚙️에서 음량·판 색·감도·액션캠·시작 전 재배치를 맞춥니다. |
+
+points:
+- cover: 1인 연습 / AI 대국 / 바로시작은 시작 화면 · 다음 접속 숨김 가능
+- pull: 바둑돌 위로는 당길 수 없습니다 / 가까이 붙은 돌 축은 당길 수 없습니다 / POWER가 찰수록 더 멀리 날아갑니다 / 15초 안에 쏘지 않으면 턴이 넘어갑니다
+- modes: 1인: 흑·백 모두 나 · 호스트(흑)가 먼저 / AI: 위는 봇, 아래는 나 / 다시하기는 같은 모드로 한 판 더
+- ready: 예를 누르면 10초 동안 첫째 선 안에서 자기 진영 돌을 옮깁니다 / 10부터 1까지 내려가며 셉니다 / 아니오·무응답이면 시작 버튼을 기다립니다 / ⚙️에서 재배치를 끄면 시작 버튼이 바로 나옵니다
+- acorn: 1인은 호스트(흑)가 먼저입니다 / AI는 내가 흑·선공입니다 / 1인 연습은 도토리를 건드리지 않습니다 / AI 대전만 ±1 정산합니다 / 창을 닫으면 도토리는 다시 10개입니다
+- fall: 장외 알은 판 밖 액션캠으로 따라갑니다 / ⚙️에서 액션캠을 끄면 클로즈업이 없습니다 / 마지막 알은 액션캠 뒤 한 박자 쉬고 결과 / 기권은 바로 승부가 갈립니다
+- sound: 액션캠을 끄면 장외 클로즈업이 없습니다 / 재배치를 끄면 시작 버튼이 바로 나옵니다 / 조준선 켜기·끄기와 색은 ⚙️에서 맞춥니다 / 대국 중에는 설정을 적용할 수 없습니다 / 첫 터치로 소리가 열립니다 / 모바일은 세로로 잡는 것이 기준입니다 / 다음 접속시 이 창을 숨길 수 있습니다
 
 커버·당김 본문에 `[data-tutorial-start] 튜토리얼 시작`.
 
@@ -146,7 +157,15 @@ box-shadow inset 0 2px 0 #fff, 0 3px 0 #c48a32, 0 6px 10px rgba(140,70,16,.22)
 | `#play-formation-wedge` | `wedge` | 쐐기형 |
 | `#play-formation-defense` | `defense` | 방어형 |
 
-기권·대기방·조준선 **50×50 불변**. 알 수 4개와 진형 3개는 awaitingStart+solo/ai에서만 보이고 시작 후 hidden. 조준선 오른쪽, **같은 줄** 순서: 3알→5알→7알→9알→일자형→쐐기형→방어형. 좁은 화면에서는 선택 칩만 줄인다 (`flex 0 1`). `?v=` 예: `20260912d`.
+기권·대기방·조준선 **50×50 불변**. 알 수 4개와 진형 3개는 awaitingStart+solo/ai에서만 보이고 시작 후 hidden. 조준선 오른쪽, **같은 줄** 순서: 3알→5알→7알→9알→일자형→쐐기형→방어형.
+
+칩 CSS(인라인 HUD):
+- `.play-formation-btn` 기본 50×50, radius 7, font 11/900.
+- `.play-count-btn` `flex 0 1 28px; width 28; min 24; max 32; font 10`.
+- 칩이 보일 때 `.floating-buttons` gap 4, max-width `calc(100% - 8px)`.
+- 그때 진형 칩은 `flex 0 1 40px; min 28; max 50; font 10`.
+- `.is-on` 배경 `#f4c06e`. `[hidden]` `display:none !important`. 로비/설정은 visibility hidden.
+- `?v=20260912e`.
 
 ### 4-2. 턴 FAB (flex 밖 absolute)
 

@@ -8,6 +8,7 @@
 import Matter from 'matter-js';
 import { soundEngine as defaultSoundEngine } from '../audio/SoundEngine.js';
 import { resultRevealDelayMs } from './ResultBeat.js';
+import { planSameColorBondHold } from './SameColorBond.js';
 
 const { Engine, World, Bodies, Body, Composite, Events, Runner, Query, Sleeping } = Matter;
 
@@ -1268,6 +1269,7 @@ export class GameEngine {
     this._boundPointerCancel = this._onPointerCancel.bind(this);
     this._boundTouchGuard = this._onTouchGuard.bind(this);
 
+    this._bondHits = [];
     this._onAfterUpdate = this._handleAfterUpdate.bind(this);
     this._onCollisionStart = this._handleCollisionStart.bind(this);
 
@@ -2337,6 +2339,21 @@ export class GameEngine {
 
       if (isStoneBody(bodyA) && isStoneBody(bodyB)) {
         this._playClash(bodyA, bodyB, pair);
+        const sa = this._findStoneByBody(bodyA);
+        const sb = this._findStoneByBody(bodyB);
+        if (sa && sb && !sa.fallen && !sb.fallen) {
+          this._bondHits.push({
+            a: sa,
+            b: sb,
+            relSpeed: computeRelativeVelocity(
+              bodyA.velocity,
+              bodyB.velocity,
+              pair.collision?.normal ?? null,
+            ),
+            velA: { x: bodyA.velocity.x, y: bodyA.velocity.y },
+            velB: { x: bodyB.velocity.x, y: bodyB.velocity.y },
+          });
+        }
         continue;
       }
 
@@ -2368,7 +2385,23 @@ export class GameEngine {
     });
   }
 
+  _applySameColorBonds() {
+    if (this.phase !== PHASE.RESOLVING || this.placementOnly) {
+      this._bondHits = [];
+      return;
+    }
+    const plans = planSameColorBondHold(this.getAliveStones(), this._bondHits);
+    this._bondHits = [];
+    for (const plan of plans) {
+      Body.setVelocity(plan.a.body, plan.va);
+      Body.setVelocity(plan.b.body, plan.vb);
+      if (plan.pos?.pa) Body.setPosition(plan.a.body, plan.pos.pa);
+      if (plan.pos?.pb) Body.setPosition(plan.b.body, plan.pos.pb);
+    }
+  }
+
   _handleAfterUpdate() {
+    this._applySameColorBonds();
     this._tickTurnTimer(capTurnDeltaMs(this.engine.timing?.lastDelta ?? SLINGSHOT.ENGINE_DELTA_MS));
     this._checkFallenStones();
 

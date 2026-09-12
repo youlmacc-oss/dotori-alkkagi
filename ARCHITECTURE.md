@@ -48,7 +48,7 @@ Pages 워크플로 `.github/workflows/pages.yml`: `main` 푸시 또는 workflow_
 2. §3 파일 트리대로 모듈을 나눈다. 상수는 이 문서 숫자를 그대로 쓴다.
 3. `index.html`은 `UI_PROMPTS.md` DOM·id·`?v=`·Cache-Control.
 4. 실시간: `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`가 있으면 실채널, 없으면 Mock. `?loop=1` Mock(캡처). `?dual=1` DualMock(제품 아님).
-5. `npm test` 전원 Pass(본판 40파일 / 297). `npm run test:loop` exit 0, `public/test-result.png`.
+5. `npm test` 전원 Pass(본판 41파일 / 305). `npm run test:loop` exit 0, `public/test-result.png`.
 6. Pages는 §1 워크플로. Git은 사용자 승인 후.
 
 ## 3. 파일 트리
@@ -66,6 +66,7 @@ src/main.js
 src/style.css
 src/physics/GameEngine.js
 src/physics/ResultBeat.js          # RESULT_BEAT_MS=420, RESULT_FALL_HOLD_MS=1920
+src/physics/SameColorBond.js       # 같은 색 붙임. 다른 모듈 상수 불변
 src/ai/AIBot.js
 src/ai/TurnManager.js
 src/ui/ThreeRenderer.js            # 본판 렌더. main이 이것만 new
@@ -101,8 +102,9 @@ src/network/LobbyAi.js             # leftover 대기실 봇 좌석 없음
 src/network/LobbyClinic.js
 src/network/LobbySeed.js
 src/network/DualMock.js
-tests/*.test.js
+tests/*.test.js                    # 41파일. SameColorBond·AIBot 포함
 public/                            # test-result.png. 본판에 public/assets 디렉터리 없음
+index.html                         # ?v=20260912e + Cache-Control
 ```
 
 ## 4. 부팅 (`main.js`)
@@ -119,6 +121,8 @@ public/                            # test-result.png. 본판에 public/assets �
 
 `pointerToMatter`: NDC 레이캐스트 → 평면 Y=`STONE_Y` → Matter `x = hit.x * (720/(480-68)) + 360`, `y = hit.z * scale + 360`.
 
+`__dotori` 캡처 API: renderer, viewport, settingsModal. `?loop=1`은 로비·설정 시나리오. `?dual=1`은 DualMock(제품 아님).
+
 ## 5. 물리
 
 가상 720×1280. `Engine.create({ gravity: { x:0, y:0, scale:0 } })`. world gravity 0.
@@ -134,10 +138,21 @@ restitution 0.85, friction 0.02, frictionAir 0.025, frictionStatic 0.05, density
 - `BOARD_VISUAL` MESH 480, INSET 68. `boardFallBounds(world)`: usable=MESH-INSET, half=MESH/2, span=half*(world/usable), mid=world/2, {min: mid-span, max: mid+span}.
 - `WORLD_CATCH_PAD` 280.
 - `SLINGSHOT`: MAX_PULL 360, MAX_LAUNCH_SPEED 54, PULL_GAIN 1, AIM_LINE_SCALE 1.15, PULL_DEADZONE 14, ENGINE_DELTA_MS 1000/60, FRICTION_AIR 0.025.
+- `estimateLaunchTravel(v)` = |v| / 0.025. `PREVIEW_LAUNCH` FRICTION_AIR 0.025, REST_SPEED 0.12, RESTITUTION 0.85.
+- `CLASH_SOUND_MIN_SPEED` 0.4.
 - `POWER_RATIO` 1–6 step 0.1 default 3.8, key `dotori_power_ratio`.
 - `REST` speed 0.05, angular 0.04, frames 18.
 - `TURN` 15000 / urgent 5000 / delta cap 100.
 - `STONE_NEAR_SLOP` 14, `PULL_BLOCK_COS` = cos(40°).
+- 같은 색 붙임 — 모듈 `src/physics/SameColorBond.js`. 상수만 이 파일. GameEngine은 `planSameColorBondHold`만 호출.
+  - `SAME_COLOR_BOND`: SCALE 1.5, CONTACT_SLOP 6, BASELINE_SPEED `360*3.8*0.025*0.3`.
+  - 문턱 `sameColorBondThreshold()` = BASELINE × SCALE ≈ 15.39.
+  - `collisionStart`에서 살아 있는 돌-돌만 `_bondHits[{a,b,relSpeed,velA,velB}]`.
+  - `_handleAfterUpdate` 첫 줄 `_applySameColorBonds`. `phase!==RESOLVING` 또는 `placementOnly`면 히트만 비움.
+  - `incomingForBond`: 다른 색 스트라이커 속도 vs **−bondOut**(짝→맞은 알). 쌍 내부 충돌은 cos=1. 외부 없으면 분리 속 |sep|.
+  - `effectiveBondSpeed` = speed × max(0, cos). `shouldHold` = effective < 문턱.
+  - hold: 분리 sep>0이면 각 0.5씩 상쇄 → 속도 평균. `holdPositions`: `0.4 < gap ≤ slop+2`일 때만 반씩 닫음.
+  - 적용: `Body.setVelocity` / 있으면 `setPosition`. restitution·슬링샷·다른 색 바디 옵션 불변.
 - `PHASE` idle/aiming/resolving/gameOver/spectating.
 - `GAME_MODE` ai/pvp/solo/spectate. 제품 시작 solo·ai.
 - `AI_DIFFICULTY` beginner/intermediate/expert.
@@ -193,7 +208,11 @@ count 1 → 항상 line(대치). count 3+defense → wedge. count 5+column → l
 
 ### 승패
 
-생존 0 → 상대 승. 동시 0 → draw. surrender → 상대 승. 결과 지연 `resultRevealDelayMs` = 낙사 있으면 1920 else 박자 420.
+생존 0 → 상대 승. 동시 0 → draw. surrender → 상대 승.
+
+결과 제목(`main.js`): draw→`무승부`, AI 흑승→`승리!`, AI 백승→`패배 (AI 승리)`, 그 외 `흑 승`/`백 승`. 부제 `resultSubLine`: 기권 / 동시 장외 / AI 전멸 / 내 돌 전멸 / 기본 장외.
+
+결과 지연: `resultRevealDelayMs(lastFallAt)` = lastFallAt 없으면 0, 있으면 max(0, 1920 − (now−at)). 폴링은 낙사 있으면 홀드 후 420ms 박자.
 
 ## 6. 보기 회전
 
@@ -223,9 +242,22 @@ count 1 → 항상 line(대치). count 3+defense → wedge. count 5+column → l
 
 ## 8. AI
 
-`AI_ERROR_DEG` 전부 0. `AI_HIT_EMBED` 12/14/18. `AI_THINK` MIN 1000 MAX 1500 AIM 500. `STONE_CONTACT_SLOP` 6. `DOUBLE_ALIGN_COS` = cos(14°).
+`AI_ERROR_DEG` 전부 0. `AI_HIT_EMBED` beginner 12 / intermediate 14 / expert 18. `AI_THINK` MIN 1000 MAX 1500 AIM 500. `STONE_CONTACT_SLOP` 6. `PLAYER_CLUSTER_GAP` 11. `DOUBLE_ALIGN_COS` = cos(14°).
 
-`TurnManager.schedule`: 생각/조준 타이머가 이미 있으면 no-op.
+도주 상수: `FLEE_INNER_PAD` = r+36, `FLEE_KEEP` = r+28, `FLEE_MIN_PULL` = 16, `FLEE_MAX_PULL` = 42. 이동거리 ≈ pull × 3.8 (`estimateLaunchTravel` = |v| / 0.025).
+
+`playerHasCluster(player)`: 살아 있는 흑 한 쌍이라도 `dist − r − r ≤ 11`.
+
+`calculateShot` 순서:
+1. 클러스터면 `pickFleeShot(inner)` → 실패 시 pad r+12 재시도. 성공이면 `{ kind:'flee', shooterId, targetId:shooter.id, pointer, angle, velocity, travel }`.
+2. `pickFleeShot`: 각 백 알에 대해 중앙·상대 반대·수직·8방. `rayRoom`은 inner를 pad만큼 축소한 사각형. `fleePullForRoom`이 장외 여유(`room ≥ travel+KEEP`) 없으면 버림. 이동거리 안에 `firstHitStone`이 있으면 버림(아군 포함). `resolvePullBlock`이면 ±8/14/22°만 재시도.
+3. 점수: room×1.15 + inwardDot×240 + awayDot×140 + travel×0.25 − (상대 레이 위) − (클러스터 방향) − (바깥쪽).
+4. 도주 실패 + 묶이지 않은 흑이 있으면 `excludeTargetIds`로 그 묶음만 빼고 기존 녹아웃/더블.
+5. 전부 묶였고 도주도 실패면 기존 녹아웃.
+
+`eligibleShotPairs`: 흑·백 접촉 슈터/쌍은 건너뛰고, 대안 없을 때만 허용.
+
+`TurnManager.schedule`: 생각/조준 타이머가 이미 있으면 no-op. `beginAiAim`은 shooterId+pointer만 필요(flee의 targetId가 백이어도 됨).
 
 ## 9. 렌더 (`ThreeRenderer`)
 
@@ -275,7 +307,7 @@ count 1 → 항상 line(대치). count 3+defense → wedge. count 5+column → l
 
 재배치: READY_ASK_MS 5000, REARRANGE_MS 10000, FIRST_HINT_AFTER_MS 3000.
 
-도토리: `shouldSettleAcorns`는 mode==='ai' && started && !spectating && winner not null/draw. settleKey `roomId:matchGen:winner`.
+도토리: `SESSION_ACORNS` 10, `ACORN_WIN` +1, `ACORN_LOSS` −1. `shouldSettleAcorns`는 mode==='ai' && started && !spectating && winner not null/draw. settleKey `roomId:matchGen:winner`. 1인·무승부 0.
 
 ## 12. 저장소
 
@@ -309,15 +341,15 @@ count 1 → 항상 line(대치). count 3+defense → wedge. count 5+column → l
 
 ## 13. 제품 시작 vs leftover
 
-구현해도 제품이 호출하지 않음: `startOwnPvpRoom`, 공개 방 참가, 대기실 `ai_dotori` 좌석, `openPvpGuidePick`(false), `shouldOfferInviteOnlyNotice`(false). 테스트(`RoomState`, `PvpInvite`, `LobbyAi` 등)와 스텁은 남겨 297을 맞출 수 있다. UI는 hidden.
+구현해도 제품이 호출하지 않음: `startOwnPvpRoom`, 공개 방 참가, 대기실 `ai_dotori` 좌석, `openPvpGuidePick`(false), `shouldOfferInviteOnlyNotice`(false). 테스트(`RoomState`, `PvpInvite`, `LobbyAi` 등)와 스텁은 남겨 305를 맞출 수 있다. UI는 hidden.
 
 1인: `myColor = currentTurn`. AI: 사람 black, 봇 white, 백 턴 입력 잠금. 혼자 로비 기본 제안은 AI이나 강제 전환하지 않음(`defaultGameModeForLobbyCount`).
 
 ## 14. 테스트 (재현 완료 조건)
 
-`vitest run` 40파일 / 297 Pass.
+`vitest run` 41파일 / 305 Pass.
 
-파일: VisitLog, PlayFormation, BoardSpin, StonePick, AIBot, FormationCamp, GameEngine, MatchReady, MatchStart, MatchSync, AcornPolicy, NightSession, Nickname, GuideColor, PlayPrefs, HudPower, MatchFab, ViewportShell, Tutorial, ResultBeat, BoardTone, FormationSlot, SoundEngine, KillCam, LobbyRooms, LobbyClinic, LobbyAi, LobbySeed, PresencePolicy, RoomState, PvpInvite, PvpCycle, PvpRematchLoop, PvpLiveSync, ChatSpectator, RealtimeClient, DualMock, GameExit, SeatYaw, MatchPlacement.
+파일: SameColorBond, VisitLog, PlayFormation, BoardSpin, StonePick, AIBot, FormationCamp, GameEngine, MatchReady, MatchStart, MatchSync, AcornPolicy, NightSession, Nickname, GuideColor, PlayPrefs, HudPower, MatchFab, ViewportShell, Tutorial, ResultBeat, BoardTone, FormationSlot, SoundEngine, KillCam, LobbyRooms, LobbyClinic, LobbyAi, LobbySeed, PresencePolicy, RoomState, PvpInvite, PvpCycle, PvpRematchLoop, PvpLiveSync, ChatSpectator, RealtimeClient, DualMock, GameExit, SeatYaw, MatchPlacement.
 
 `test:loop` (`?loop=1`, 포트 4179, env supabase 빈 문자열). 기기 393×852, 360×780, 412×1014, 1280×720, dpr 2.
 
