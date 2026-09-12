@@ -605,6 +605,12 @@ try {
         .filter((b) => b.offsetParent && !b.closest('[hidden]'))
         .map((b) => ({ t: b.textContent.trim(), box: b.getBoundingClientRect() }));
       const allDockIn = dockBtns.every((b) => inStage(b.box) && b.box.height >= 20);
+      const visitOpen = document.getElementById('visit-log-open');
+      const visitOk = Boolean(
+        visitOpen
+        && visitOpen.textContent.includes('이력')
+        && inStage(visitOpen.getBoundingClientRect())
+      );
       const bgGone = !document.getElementById('bg-match-file')
         && !document.getElementById('bg-lobby-file')
         && !localStorage.getItem('dotori-alkkagi-scene-bg');
@@ -625,6 +631,7 @@ try {
           && volume && volume.width > 24 && inStage(volume)
           && mute && (mute.textContent.includes('소리') || mute.textContent.includes('음소거'))
           && allDockIn
+          && visitOk
           && bgGone
           && noGhost
         ),
@@ -638,6 +645,7 @@ try {
         tone: toneBox,
         dock,
         boardGap,
+        visitOk,
         dockCount: dockBtns.length,
         clipped: dockBtns.filter((b) => !inStage(b.box)).map((b) => b.t),
         stage,

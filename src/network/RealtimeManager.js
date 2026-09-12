@@ -18,6 +18,7 @@ import {
   writeStoredNickname,
 } from './Nickname.js';
 import { parseAcorn } from './AcornPolicy.js';
+import { VISIT_LOG_EVENT } from './VisitLog.js';
 import {
   PRESENCE_HEARTBEAT_MS,
   PRESENCE_RETRACK_GRACE_MS,
@@ -94,6 +95,7 @@ export class RealtimeManager {
     this.onPvpInvite = options.onPvpInvite || (() => {});
     this.onRoomState = options.onRoomState || (() => {});
     this.onAiWallet = options.onAiWallet || (() => {});
+    this.onVisitLog = options.onVisitLog || (() => {});
     this.keepNickname = options.keepNickname || null;
     this._disconnectedAt = null;
     this._staleTimer = 0;
@@ -303,6 +305,9 @@ export class RealtimeManager {
         })
         .on('broadcast', { event: AI_ACORN_EVENT }, ({ payload }) => {
           this.onAiWallet?.(payload);
+        })
+        .on('broadcast', { event: VISIT_LOG_EVENT }, ({ payload }) => {
+          this.onVisitLog?.(payload);
         });
 
       await new Promise((resolve, reject) => {
@@ -523,6 +528,11 @@ export class RealtimeManager {
     let ok = await this._sendBroadcast(AI_ACORN_EVENT, payload, 2);
     if (!ok) ok = await this._sendBroadcast(AI_ACORN_EVENT, payload, 0);
     return ok;
+  }
+
+  async broadcastVisitLog(rows) {
+    if (!this.channel || !Array.isArray(rows) || !rows.length) return false;
+    return this._sendBroadcast(VISIT_LOG_EVENT, { rows }, 0);
   }
 
   async broadcastSpectatorData(gameState) {

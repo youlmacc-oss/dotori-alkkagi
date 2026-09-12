@@ -31,6 +31,7 @@ import {
   validateFormationLayout,
 } from '../physics/GameEngine.js';
 import { SETTINGS_APPLY_BLOCK } from './PlayPrefs.js';
+import { formatVisitStamp, loadVisitLog, queryVisitLog } from '../network/VisitLog.js';
 import {
   BOARD_COLOR_DEFAULT,
   BOARD_COLOR_KEY,
@@ -394,6 +395,7 @@ export class SettingsModal {
     this.bindVolumeControls();
     this.bindPlayToggles();
     this.bindGuideColor();
+    this.bindVisitLog();
 
     for (const btn of root.querySelectorAll('[data-mode]')) {
       btn.addEventListener('click', () => {
@@ -498,6 +500,47 @@ export class SettingsModal {
     this.syncGuideColorChrome();
   }
 
+  bindVisitLog() {
+    this.visitQuery = this.root.querySelector('#visit-log-query');
+    this.visitOpen = this.root.querySelector('#visit-log-open');
+    this.visitClose = this.root.querySelector('#visit-log-close');
+    this.visitPanel = this.root.querySelector('#visit-log-panel');
+    this.visitList = this.root.querySelector('#visit-log-list');
+    this.visitCount = this.root.querySelector('#visit-log-count');
+    this.visitOpen?.addEventListener('click', () => {
+      this.setVisitLogOpen(this.visitPanel?.hidden !== false);
+    });
+    this.visitClose?.addEventListener('click', () => this.setVisitLogOpen(false));
+    this.visitQuery?.addEventListener('input', () => this.refreshVisitLog());
+    this.refreshVisitLog();
+  }
+
+  setVisitLogOpen(open) {
+    if (this.visitPanel) this.visitPanel.hidden = !open;
+    this.visitOpen?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) this.refreshVisitLog();
+  }
+
+  refreshVisitLog() {
+    const rows = queryVisitLog(loadVisitLog(), this.visitQuery?.value);
+    if (this.visitCount) this.visitCount.textContent = `${rows.length}명`;
+    if (!this.visitList) return;
+    this.visitList.replaceChildren();
+    for (const row of rows) {
+      const item = document.createElement('li');
+      item.className = 'visit-log-item';
+      item.textContent = `${row.nickname || '손님'} · ${row.visits}회 · ${formatVisitStamp(row.firstSeen)} ~ ${formatVisitStamp(row.lastSeen)}`;
+      item.title = row.userId;
+      this.visitList.appendChild(item);
+    }
+    if (!rows.length) {
+      const empty = document.createElement('li');
+      empty.className = 'visit-log-item is-empty';
+      empty.textContent = '아직 접속 기록이 없습니다';
+      this.visitList.appendChild(empty);
+    }
+  }
+
   previewGuideColor(hex) {
     this.guideColor = parseGuideColor(hex);
     this.renderer.setGuideColor(this.guideColor);
@@ -549,6 +592,7 @@ export class SettingsModal {
     this.syncChrome();
     this.previewSync();
     this.previewBoardColor();
+    this.refreshVisitLog();
     this.setStatus('설정 판에서 진형을 보고, 돌을 당겨 발사 감을 시험하세요');
   }
 
@@ -580,6 +624,7 @@ export class SettingsModal {
   close(revertColor = false) {
     this.drag = null;
     this.modal.hidden = true;
+    this.setVisitLogOpen(false);
     this.root.classList.remove('is-settings');
     this.modal.style.position = '';
     this.modal.style.top = '';

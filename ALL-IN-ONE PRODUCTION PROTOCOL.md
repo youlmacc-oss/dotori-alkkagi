@@ -1,54 +1,90 @@
-# 🔄 ALL-IN-ONE PRODUCTION PROTOCOL (Universal Dual-Mode System v2.4.0)
+# ALL-IN-ONE PRODUCTION PROTOCOL (dotori-alkkagi)
 
-당신은 최고 수석 엔지니어링 에이전트(Lead Systems Architect & Core Engineer)입니다.
-검증된 고품질 엔진/툴을 최우선 채택하고, 수정 모듈과 인접 모듈의 인터페이스를 유기적으로 동기화하여 전체 시스템의 정합성을 완벽히 일치시키세요.
+이 문서와 `UNIVERSAL PRODUCTION PROTOCOL.md`는 **동일 계열**이다. 한쪽만 고치지 않는다. 제품 근거는 `PRD.md`, `ARCHITECTURE.md`, `UI_PROMPTS.md` 뿐이다.
 
----
+타 프로젝트 지침은 전부 Purge. **금지**: 이미지 스튜디오, 썸네일 잘림, 대기열 카드, 3단 멀티레이어 합성기, `checkerboard-bg` 강제, `showSaveFilePicker`, 소스 3종 탭(본체/이모티콘/내PC).
 
-## 🎯 Target Configuration
-- **[Mode]**: `VISUAL` (UI/화면/렌더링 작업 ➔ 1회 캡처 후 승인 대기) | `LOGIC` (알고리즘/계산/인코더 ➔ 테스트 100% 자율 루프)
-- **[Objective]**: [여기에 구체적인 작업 내용을 1~3줄로 기재]
+당신은 이 저장소의 리드 개발자다. Vite · Matter · Three · Howler · Vitest · Playwright를 쓰고 ROI 밖 오염 0.00%를 지킨다.
 
 ---
 
-## 🛠️ 0. Pre-Flight Bootstrap (환경 점검 & 캐시 관리)
-1. **VISUAL 모드 환경**: Playwright 의존성 및 `scripts/loop-test.js` (`public/test-result.png` 생성) 자동 확인/구축.
-2. **LOGIC 모드 환경**: `vitest` / `jest` 단위 테스트 러너 및 테스트 파일(`*.test.js`) 자동 확인/구축.
-3. **캐시 자동 소거 (Step 0, 불변)**: VISUAL/LOGIC 모든 보완의 첫 선행. `node_modules/.vite` 강제 삭제, `package.json` `"dev": "vite --force"`, `index.html` Cache-Control(`no-cache, no-store, must-revalidate`) 및 CSS/JS `?v=` 쿼리. `.next/cache`, `node_modules/.cache`도 있으면 초기화.
-4. **NPM 스크립트 등록**: `package.json`의 `"test:loop"` 또는 `"test"` 등록 확인.
+## 0. 네 MD만으로 다른 PC에서 재구축
+
+빈 폴더에서 이 순서만 따른다. 네 문서에 없는 기능은 만들지 않는다.
+
+1. Node 20. `ARCHITECTURE.md` §1 `package.json` · Vite 설정 · Pages 워크플로 · purge 스크립트.
+2. `UI_PROMPTS.md`대로 `index.html` DOM·id·hidden·인라인 HUD CSS·`?v=`·Cache-Control. `src/style.css` 토큰.
+3. `ARCHITECTURE.md` §3 파일 트리. `main.js`는 ThreeRenderer만 new. CanvasRenderer는 import하지 않음.
+4. 상수·식·키·이벤트는 `ARCHITECTURE` 숫자를 그대로. 추측으로 바꾸지 않는다.
+5. 제품 흐름은 `PRD.md`: 대기실 → 1인/AI → 재배치 → 시작 → 슬링샷 → 결과. 1:1 버튼은 hidden, 핸들러 no-op.
+6. `setMatchConfig`는 LINE을 깔고, 적용·입장·한 판 더(솔로/AI)는 `play-formation`을 복구.
+7. `VisitLog`에 delete/clear/`removeItem(visit-log)`를 넣지 않는다. 부팅이 지우는 키는 `ARCHITECTURE` §12만.
+8. leftover 모듈(`RoomState`, `PvpInvite`, `LobbyAi` 등)은 테스트 296을 맞추기 위해 스텁으로 둘 수 있으나 제품 UI를 열지 않는다.
+9. `npm test` 100% (40파일 / 296). `npm run test:loop` exit 0.
+10. Git은 사용자 승인 전 금지. 배포는 사용자가 **백업 및 배포**를 말한 뒤에만 `main` 푸시.
+
+완료 판정: 테스트·캡처 통과, 라이브가 1인·AI·설정 이력·진형 저장·카메라 턴을 `PRD`와 같게 동작, Pages `base /dotori-alkkagi/`.
 
 ---
 
-## 🔍 1. Pre-Flight Architecture Audit (핵심 엔지니어링 표준)
-1. **검증된 고품질 도구/엔진 우선 채택 (Production-Grade Tooling First)**.
-2. **3단 멀티레이어 합성 엔진**:
-   - `Layer 0 (Background)`: 투명 / 화이트·다크 스튜디오 / 그라데이션 / 사전 다운스케일링 이미지.
-   - `Layer 1 (Dynamic Motion)`: 투명 마스크가 적용된 `cleanMaskedFrames` 동기화 (가짜 체커보드 사각 박멸).
-   - `Layer 2 (Foreground)`: 자막 및 3포인트 벡터 꼬리 말풍선.
-3. **인코딩 스레드 락 방지**: 루프 내 비동기 틱 분할(`await new Promise(r => setTimeout(r, 0))`) 필수.
-4. **파일 시스템 및 세션 라이프사이클**:
-   - `showSaveFilePicker` 기반 폴더 선택 저장.
-   - 소스 3종 탭(본체/이모티콘/내PC) 컨텍스트 분리 (임시저장 복원 및 완료 리셋).
+## 1. Step 0 — 캐시 자동 소거 (모든 보완 선행, 불변)
+
+코드 수정·빌드·캡처·테스트 전에:
+
+1. `node_modules/.vite` 강제 삭제 (`npm run cache:purge`).
+2. `"dev": "vite --force"`. predev/prebuild/pretest/pretest:loop도 purge.
+3. `index.html` Cache-Control(`no-cache, no-store, must-revalidate`) + CSS/JS `?v=`.
+4. Vite `force: true` / 개발 서버 no-cache.
+
+캐시 소거 없이 화면 검증이나 `npm test`를 시작하지 않는다.
 
 ---
 
-## 🛡️ 2. Immutable Global Rules (불변 규약)
-1. **Zero-Layout-Shift 철통 준수**: 기존 UI 컨테이너 크기 및 버튼 배치는 단 1px도 변경 금지.
-2. **전체 시스템 연계 정합성 & 상태 바인딩 보장 (State-Binding Guarantee)**.
-3. **투명 체커보드 기본값 강제 (`checkerboard-bg`)**.
-4. **ROI Bounding Box 물리 격리 (영역 오염 0.00%)**.
-5. **UI 라벨-설명문 물리 격리 (`UI_LABEL_INTEGRITY`)**.
-6. **Git 안전성 준수**: 사용자 명시적 승인 전까지 Git 조작 일체 금지.
+## 2. 모드 분기
+
+보완 지시에 `[MODE]`가 없어도 유형을 감지한다. 작업 전 이 프로토콜과 세 기획 MD를 읽는다.
+
+**VISUAL** — UI, 레이아웃, 스타일, 렌더:
+
+- Zero-Layout-Shift (1px 금지).
+- 수정 → `npm run test:loop` 1회 → 헤드셋 2단 알림 → **승인 대기**.
+
+**LOGIC** — 물리, 사운드 타이밍, 네트워크 동기, FSM, 이력/진형/AI:
+
+- 테스트 작성/수정 → `npm test` → 100% Pass까지 최대 5회 → 요약·알림 → **승인 대기**.
+
+혼합이면 LOGIC을 먼저 닫고, 레이아웃이 바뀌면 VISUAL을 이어 한다.
+
+Git 커밋·푸시·리베이스는 사용자가 명시하기 전까지 금지.
 
 ---
 
-## ⚡ 3. Mode-Specific Execution (모드별 실행 규약)
+## 3. 불변
 
-### 🅰️ VISUAL 모드 (UI/화면 렌더링)
-- 코드 수정 ➔ `npm run test:loop` ➔ 요약 보고 ➔ 헤드셋 2단 알림음 재생 후 **사용자 승인 대기**:
+1. 제품 모드 1인 + AI. 1:1 버튼을 다시 켜지 않는다.
+2. `dotori-alkkagi:visit-log`를 지우지 않는다. 부팅이 도토리 이력·영구 닉·scene-bg를 지워도 접속이력은 남긴다.
+3. 저장 진형을 일자로 덮지 않는다 (설정 적용·대전 입장·솔로/AI 한 판 더).
+4. 보기 회전은 카메라만. 빈 판 탭은 시계 +45°만. 왼쪽 턴만 반시계.
+5. ROI 밖 기존 코드 오염 0.00%.
+6. 라벨과 설명문을 한 박스에 섞어 레이아웃을 밀지 않는다.
+7. 설정 이력 패널은 `.settings-lab` 오버레이. 도크 높이를 키우지 않는다.
 
-> **"🎧 [BEEP!] 1회 수정 및 화면 캡처(`public/test-result.png`)가 완료되었습니다. 브라우저 화면(또는 캡처 이미지)을 확인해 주세요.**  
-> **[1: 승인 및 종료] / [2: 추가 수정 필요 (피드백 입력)] 중 선택해 주세요."**
+---
 
-### 🅱️ LOGIC 모드 (알고리즘/인코더/비동기 파이프라인)
-- 테스트 케이스 작성/수정 ➔ `npm test` 실행 ➔ **100% Pass(0 Failures) 달성 시까지 최대 5회 자율 루프** ➔ 결과 요약 보고 및 알림음 재생 후 최종 승인 대기.
+## 4. VISUAL 종료 문구 (고정)
+
+> 🎧 [BEEP!] 1회 수정 및 화면 캡처(`public/test-result.png`)가 완료되었습니다. 브라우저 화면(또는 캡처 이미지)을 확인해 주세요.
+>
+> **[1: 승인 및 종료] / [2: 추가 수정 필요]** 중 선택해 주세요.
+
+---
+
+## 5. LOGIC 종료
+
+`npm test` 100% 후 파일·통과 수를 요약하고 같은 `[1]/[2]`로 승인 대기한다. 5회 안에 못 닫으면 원인을 보고하고 대기한다.
+
+---
+
+## 6. 배포 (사용자 문장: 백업 및 배포)
+
+승인(`[1]`) 뒤에 사용자가 배포를 요청하면: 관련 파일을 커밋하고 `git push origin HEAD`(보통 `main`). Pages가 `GITHUB_PAGES=1` 빌드 후 `404.html`을 복사해 올린다. force-push·amend·훅 생략은 하지 않는다.

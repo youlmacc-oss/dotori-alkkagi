@@ -28,6 +28,7 @@ import { exitGame, shouldQuitFromLobbyClose } from './ui/GameExit.js';
 import { resultSubLine } from './physics/ResultBeat.js';
 import { soundEngine } from './audio/SoundEngine.js';
 import { RealtimeManager, bindPresenceUnload } from './network/RealtimeManager.js';
+import { absorbVisitLog, loadVisitLog, noteVisit } from './network/VisitLog.js';
 import {
   DUAL_HINT,
   dualGuestHref,
@@ -460,7 +461,15 @@ const realtimeManager = new RealtimeManager({
       }),
       selfPresence(),
     ));
+    rememberVisits(mapped);
     syncNickField();
+  },
+  onUserJoin: (user) => {
+    rememberVisits([user]);
+  },
+  onVisitLog: (payload) => {
+    absorbVisitLog(payload?.rows);
+    settingsModal?.refreshVisitLog?.();
   },
   onLobbyFull: () => {
     setTicker(`대기실이 가득 찼습니다 (${LOBBY_CAP}명)`);
@@ -511,6 +520,17 @@ const realtimeManager = new RealtimeManager({
     applyIncomingMatchSync(gameState);
   },
 });
+
+function rememberVisits(users) {
+  const list = Array.isArray(users) ? users : [users];
+  for (const user of list) {
+    if (!user?.userId && !user?.id) continue;
+    noteVisit({
+      userId: user.userId ?? user.id,
+      nickname: user.nickname,
+    });
+  }
+}
 
 let matchStarted = false;
 let suppressResult = false;
@@ -2120,6 +2140,11 @@ function handleStaleLeave() {
   showLobby();
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   realtimeManager.connect().then(() => {
+    rememberVisits([{
+      userId: realtimeManager.userId,
+      nickname: realtimeManager.userNickname,
+    }]);
+    void realtimeManager.broadcastVisitLog(loadVisitLog());
     realtimeManager.startHeartbeat();
     publishPresence();
     syncNickField();
@@ -3441,6 +3466,11 @@ function bootRealtime(attempt = 0) {
     sessionAcorns = writeNightAcorns(readNightAcorns());
     syncAcornHud();
     writeNightClaim(realtimeManager.userId, nightClaim.tabToken);
+    rememberVisits([{
+      userId: realtimeManager.userId,
+      nickname: realtimeManager.userNickname,
+    }]);
+    void realtimeManager.broadcastVisitLog(loadVisitLog());
     realtimeManager.startHeartbeat();
     publishPresence();
     void publishAiWallet();

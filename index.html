@@ -12,7 +12,7 @@
     <meta property="og:description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
     <meta property="og:type" content="website" />
     <meta name="description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
-    <link rel="stylesheet" href="/src/style.css?v=20260912b" />
+    <link rel="stylesheet" href="/src/style.css?v=20260912c" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -1072,6 +1072,7 @@
         font-weight: 800;
       }
       #stage .settings-lab {
+        position: relative;
         flex: 1 1 0;
         min-height: 0;
         margin: 4px 10px;
@@ -1079,6 +1080,66 @@
         flex-direction: column;
         align-items: stretch;
         pointer-events: auto;
+      }
+      #stage .visit-log-panel {
+        position: absolute;
+        inset: 4px;
+        z-index: 8;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px;
+        border-radius: 12px;
+        background: rgba(16, 10, 7, 0.96);
+        border: 1.5px solid rgba(244, 192, 110, 0.45);
+        pointer-events: auto;
+      }
+      #stage .visit-log-panel[hidden] { display: none !important; }
+      #stage .visit-log-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #stage .visit-log-query {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 8px;
+        border: 1px solid rgba(244, 192, 110, 0.4);
+        background: #1a100c;
+        color: #fff3c8;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      #stage .visit-log-count {
+        flex: 0 0 auto;
+        font-size: 11px;
+        font-weight: 800;
+        color: #f4c06e;
+      }
+      #stage .visit-log-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        margin: 0;
+        padding: 0 2px 0 0;
+        overflow: auto;
+        list-style: none;
+      }
+      #stage .visit-log-item {
+        padding: 5px 2px;
+        font-size: 11px;
+        font-weight: 700;
+        color: #fff3c8;
+        border-bottom: 1px solid rgba(244, 192, 110, 0.16);
+      }
+      #stage .visit-log-item.is-empty { color: #9a8a78; border: none; }
+      #stage .visit-log-keep {
+        flex: 0 0 auto;
+        margin: 0;
+        font-size: 10px;
+        font-weight: 700;
+        color: #c9a36a;
       }
       #stage .settings-lab-stage {
         flex: 1 1 0;
@@ -1388,6 +1449,15 @@
                 </div>
               </div>
               <p class="formation-status" id="formation-status">진형을 고르면 이 판에 바로 보입니다</p>
+              <aside id="visit-log-panel" class="visit-log-panel" hidden aria-label="접속 이력">
+                <header class="visit-log-bar">
+                  <input id="visit-log-query" class="visit-log-query" type="search" maxlength="12" placeholder="닉·아이디 검색" aria-label="접속 이력 검색" />
+                  <span id="visit-log-count" class="visit-log-count">0명</span>
+                  <button type="button" class="color-reset" id="visit-log-close">닫기</button>
+                </header>
+                <ol id="visit-log-list" class="visit-log-list"></ol>
+                <p class="visit-log-keep">이 기록은 재배포 뒤에도 지우지 않습니다</p>
+              </aside>
             </div>
 
             <div class="settings-dock">
@@ -1435,6 +1505,7 @@
                     <button type="button" class="settings-guide is-on" id="settings-guide" aria-pressed="true" title="조준선 사용중">조준선 사용중</button>
                     <button type="button" class="formation-load" id="formation-save" title="선택한 배치 유형에 저장">진형 저장</button>
                     <button type="button" class="formation-load" id="formation-load" title="선택한 배치 유형의 마지막 진형">진형 열기</button>
+                    <button type="button" class="formation-load" id="visit-log-open" aria-expanded="false" title="접속 이력 조회">이력</button>
                   </div>
                 </div>
                 <div class="settings-row" id="guide-color-row">
@@ -1572,6 +1643,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260912b"></script>
+    <script type="module" src="/src/main.js?v=20260912c"></script>
   </body>
 </html>

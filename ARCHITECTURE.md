@@ -1,32 +1,326 @@
-﻿# [ARCHITECTURE] 무비용 고안정성 웹 1:1 알까기 아키텍처 (dotori-alkkagi)
+﻿# [ARCHITECTURE] 도토리 알까기
 
-## 1. 인프라 및 엔진
-- **배포 & 호스팅**: GitHub Pages. `main` 푸시가 `dist` 를 `https://youlmacc-oss.github.io/dotori-alkkagi/` 에 올린다.
-- **네트워크**: Supabase Realtime. 채널 `dotori-lobby`.
-- **동시접속**: `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` 가 있으면 실 클라이언트, 없으면 로컬 Mock.
-- **클라이언트**: Vanilla JS + Matter.js (물리) + Howler.js (사운드) + Three.js (판)
-- **배포는 화면만**: GitHub Pages는 `dist` 정적 호스트. 방 권위와 무관하다.
+이 문서만으로 모듈·상수·식·저장소·배포를 다시 짤 수 있어야 한다. 제품 규칙은 `PRD.md`, 화면은 `UI_PROMPTS.md`, 절차는 `ALL-IN-ONE PRODUCTION PROTOCOL.md`.
 
-## 1-1. 방 하나 = 상태 하나
-- **고정방**: 1:1 `roomId`는 상수 `dotori-pvp` 하나. 호스트는 1:1을 연 사람(초대한 사람). 대국 좌석 2. 사이트 접속 상한은 2가 아니다.
-- **권위는 둘뿐**: `room_state`(방 생명주기)와 `spectator_update`의 `seq`+`matchGen`(판). Presence는 대기실 좌석·닉만 알린다. `started` / `guestId` / 상대 유무 / 시작 버튼에 쓰지 않는다.
-- **방 상태 Broadcast** (`room_state`): 호스트가 `{ roomId, hostId, guestId, inviteTargetId, started, phase, matchGen, seq, hostAcorns, guestAcorns }` 전체를 보낸다. 수락은 `guestId`를 박으면 확정이다. hello/ack/동전 없음. 시작·퇴장·다시하기는 이 객체를 바꾼 뒤 다시 보낸다. 대기 중 퇴장은 `guestId`를 비운다. 호스트는 빈 방에 남고 게스트는 대기실로 간다. 시작된 판에서 상대가 사라지면 남은 화면은 기권승을 정산한 뒤 메인으로 간다. 다시하기는 같은 방의 `started`만 끄고 `matchGen++`하며 선공은 다시 호스트다.
-- **수락** (`pvp_invite`): 팝업은 `pvp_invite`만(수락/거절). 게스트가 수락하면 호스트 `applyRoomGuest` + `room_state` 재방송. Presence로 수락을 추론하지 않는다.
-- **판 Broadcast** (`spectator_update`): 채널 이름은 유지. 페이로드는 `seq` + `matchGen` + `event`. 같은 방·남이 보낸 패킷만, `matchGen`이 같고 `seq`가 lastSeq보다 클 때만 적용한다. timestamp는 구패킷 tie-break만. 양쪽 브라우저가 각자 Matter를 돌린다.
-  - `camp`: 시작 직전 자기 색 돌만. 재배치 중에는 방송하지 않는다.
-  - `start`: 호스트가 흑+백 진형을 합친 뒤 한 번. 양쪽 `applyRemoteMatchState` 후 `resumeMatch`. 후공은 `room_state.started`를 받으면 시작 대기를 닫고, 이 판 패킷으로 돌을 맞춘다.
-  - `launch`: 쏜 사람. 돌 좌표 없음. 피어는 `applyRemoteLaunch`만. `awaitingStart`/`paused`면 무시.
-  - `turnEnd`: 쏜 사람이 로컬 정지가 끝나면 전체 돌 스냅샷. 피어는 `RESOLVING`이어도 덮어쓴다. 슈터 `turnEnd`가 900ms 안 오면 호스트가 자기 정지 스냅샷으로 한 번만 보정.
-  - `gameOver`: 먼저 확정한 쪽. 같은 `matchGen`+정산 키면 한 번만 정산.
-- **선공**: 항상 호스트(흑). 게스트는 백. 1인·설정 AI도 호스트(흑)가 먼저. 도토리는 사람 1:1 정산만.
-- **1인 시작**: `applyRoomStart`는 `guestId`가 있을 때만 `started`를 켠다. 1인·설정 AI는 피어 camp를 기다리지 않고 시작 버튼이 `applyMatchStarted`로 판을 연다.
-- **수락 후 늦은 초대 room_state**: `incomingClearsOpponent`는 `leaverId`가 있고 `inviteTargetId`가 없을 때만 게스트를 지운다. 초대 대기 방송은 수락 좌석을 비우지 않는다.
-- **접속 안내**: 가이드북을 닫거나 튜토리얼을 끝내거나 건너뛰면 초대만 가능하다는 안내를 한 번 띄운다. 초대 링크로 들어온 손님에게는 띄우지 않는다.
-- **대기실 봇 없음**: `ai_dotori` 좌석·초대·지갑은 쓰지 않는다. 설정 AI 연습전은 로컬만.
+## 1. 스택과 스크립트
 
-## 2. 동적 사운드 연동
-- 바둑알 충돌 이벤트(collisionStart) 발생 시 상대 속도 계산
-- SoundEngine.js에서 속도 기반으로 피치/볼륨 변조 및 모바일 진동 트리거
+프레임워크 없음. `"type": "module"`, 버전 `0.1.0`. 엔트리 `src/main.js`.
 
-## 3. 뷰포트 대응
-- 720x1280 (9:16) 가상 해상도 반응형 스케일러 + Safe Area Inset 적용
+| 역할 | 패키지 | 버전 |
+| --- | --- | --- |
+| 번들 | vite | ^7.1.3 |
+| 물리 | matter-js | ^0.20.0 |
+| 3D | three | ^0.185.1 |
+| 사운드 | howler | ^2.2.4 |
+| 모션 | gsap | ^3.13.0 |
+| 폭죽 | canvas-confetti | ^1.9.3 |
+| 실시간 | @supabase/supabase-js | ^2.57.4 |
+| 단위테스트 | vitest | ^3.2.4 |
+| 캡처 | playwright | ^1.55.0 |
+
+```
+cache:purge / predev / prebuild / pretest / pretest:loop / pretest:lobby
+  → node scripts/purge-cache.js
+dev          → vite --force
+dev:dual     → vite --force --open /?dual=1
+build        → vite build
+test         → vitest run
+test:loop    → node scripts/loop-test.js
+test:lobby   → node scripts/lobby-scenario.js
+beep / beep:remind / posttest → node scripts/headset-beep.js
+```
+
+`purge-cache.js`는 `node_modules/.vite`, `node_modules/.cache`, `.next/cache`를 `rmSync(..., { recursive, force })`.
+
+`vite.config.js`:
+- `base`: `process.env.GITHUB_PAGES === '1' ? '/dotori-alkkagi/' : '/'`
+- `publicDir: 'public'`
+- server host true, port 5173, Cache-Control no-cache
+- test: `environment: 'node'`, `include: ['tests/**/*.test.js']`, `restoreMocks: true`
+
+Pages 워크플로 `.github/workflows/pages.yml`: `main` 푸시 또는 workflow_dispatch. Node 20. `npm ci --ignore-scripts` (실패 시 `npm install --ignore-scripts`). `GITHUB_PAGES=1 npm run build`. `cp dist/index.html dist/404.html`. `actions/upload-pages-artifact` path `./dist`. `actions/deploy-pages`. concurrency group `pages`, cancel-in-progress.
+
+라이브 `https://youlmacc-oss.github.io/dotori-alkkagi/`.
+
+## 2. 다른 PC 재현 순서
+
+1. Node 20. 위 `package.json`을 만들고 `npm ci`.
+2. §3 파일 트리대로 모듈을 나눈다. 상수는 이 문서 숫자를 그대로 쓴다.
+3. `index.html`은 `UI_PROMPTS.md` DOM·id·`?v=`·Cache-Control.
+4. 실시간: `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`가 있으면 실채널, 없으면 Mock. `?loop=1` Mock(캡처). `?dual=1` DualMock(제품 아님).
+5. `npm test` 전원 Pass(본판 40파일 / 296). `npm run test:loop` exit 0, `public/test-result.png`.
+6. Pages는 §1 워크플로. Git은 사용자 승인 후.
+
+## 3. 파일 트리
+
+```
+index.html
+vite.config.js
+package.json
+.github/workflows/pages.yml
+scripts/purge-cache.js
+scripts/loop-test.js
+scripts/lobby-scenario.js
+scripts/headset-beep.js
+src/main.js
+src/style.css
+src/physics/GameEngine.js
+src/physics/ResultBeat.js          # RESULT_BEAT_MS=420, RESULT_FALL_HOLD_MS=1920
+src/ai/AIBot.js
+src/ai/TurnManager.js
+src/ui/ThreeRenderer.js            # 본판 렌더. main이 이것만 new
+src/ui/CanvasRenderer.js           # 존재만. main이 import하지 않음
+src/ui/FormationModal.js           # SettingsModal
+src/ui/SettingsPanel.js
+src/ui/BoardSpin.js
+src/ui/GuideBook.js
+src/ui/Tutorial.js
+src/ui/PlayPrefs.js
+src/ui/HudPower.js
+src/ui/MatchFab.js
+src/ui/ViewportShell.js
+src/ui/GameExit.js
+src/audio/SoundEngine.js
+src/render/SceneManager.js
+src/render/BoardRenderer.js
+src/network/RealtimeClient.js      # SUPABASE_URL_ENV, SUPABASE_ANON_ENV
+src/network/RealtimeManager.js
+src/network/VisitLog.js            # 삭제 API 없음
+src/network/NightSession.js
+src/network/AcornPolicy.js
+src/network/Nickname.js
+src/network/LobbyRooms.js          # LOBBY_CAP=10
+src/network/PresencePolicy.js
+src/network/MatchReady.js
+src/network/MatchStart.js
+src/network/MatchSync.js           # event spectator_update
+src/network/RoomState.js           # leftover
+src/network/PvpInvite.js           # leftover, 제품 버튼 hidden
+src/network/PvpMatchLoop.js
+src/network/LobbyAi.js             # leftover 대기실 봇 좌석 없음
+src/network/LobbyClinic.js
+src/network/LobbySeed.js
+src/network/DualMock.js
+tests/*.test.js
+public/                            # test-result.png. 본판에 public/assets 디렉터리 없음
+```
+
+## 4. 부팅 (`main.js`)
+
+1. `clearAcornHistory()` — local `dotori-alkkagi-acorns` 삭제, 세션 도토리 10.
+2. `clearPermanentNickname()` — local `dotori-alkkagi-nickname` 삭제. 닉은 session만.
+3. `localStorage.removeItem('dotori-alkkagi-scene-bg')`.
+4. `takeNightUserId({ makeId: newNightUserId })` → RealtimeManager `userId`. claim live 8000ms.
+5. `new ThreeRenderer(canvas)`. `GameEngine({ mapPointer: (e) => renderer.pointerToMatter(e) })`.
+6. `renderer.setGuideEnabled(readGuideEnabled())` — 키 없으면 true.
+7. 로비 표시. `shouldAutoOpenGuideBook`이면 가이드.
+8. Presence/join/connect → `noteVisit`. 수신 `absorbVisitLog`. 연결 후 `broadcastVisitLog` 전체.
+9. **visit-log 키는 removeItem 하지 않는다.**
+
+`pointerToMatter`: NDC 레이캐스트 → 평면 Y=`STONE_Y` → Matter `x = hit.x * (720/(480-68)) + 360`, `y = hit.z * scale + 360`.
+
+## 5. 물리
+
+가상 720×1280. `Engine.create({ gravity: { x:0, y:0, scale:0 } })`. world gravity 0.
+
+### 알 바디 `STONE_BODY_OPTIONS`
+
+restitution 0.85, friction 0.02, frictionAir 0.025, frictionStatic 0.05, density 0.005, slop 0, sleepThreshold 28.
+
+### 상수
+
+- `STONE_RADIUS` 24, `STONE_VISUAL_SCALE` 1.14, `STONE_PICK_SLOP` 1.52, `STONES_PER_SIDE` 5.
+- `BOARD.outer` {x:40,y:40,size:640}, rim 28, inner {x:68,y:68,size:584}.
+- `BOARD_VISUAL` MESH 480, INSET 68. `boardFallBounds(world)`: usable=MESH-INSET, half=MESH/2, span=half*(world/usable), mid=world/2, {min: mid-span, max: mid+span}.
+- `WORLD_CATCH_PAD` 280.
+- `SLINGSHOT`: MAX_PULL 360, MAX_LAUNCH_SPEED 54, PULL_GAIN 1, AIM_LINE_SCALE 1.15, PULL_DEADZONE 14, ENGINE_DELTA_MS 1000/60, FRICTION_AIR 0.025.
+- `POWER_RATIO` 1–6 step 0.1 default 3.8, key `dotori_power_ratio`.
+- `REST` speed 0.05, angular 0.04, frames 18.
+- `TURN` 15000 / urgent 5000 / delta cap 100.
+- `STONE_NEAR_SLOP` 14, `PULL_BLOCK_COS` = cos(40°).
+- `PHASE` idle/aiming/resolving/gameOver/spectating.
+- `GAME_MODE` ai/pvp/solo/spectate. 제품 시작 solo·ai.
+- `AI_DIFFICULTY` beginner/intermediate/expert.
+- `TOUCH_FEEL` EMA 0.38, TENSION_EXPONENT 1.15, stages 0.3/0.7/1, haptic 8/15.
+- `AIM_GUIDE_VISUAL` DESKTOP 0.52, PHONE_MIN 0.34, PHONE_MAX 0.46, REF_WIDTH 720, PHONE_MAX_WIDTH 480, PHONE_TALL_MAX_WIDTH 600, PHONE_MIN_ASPECT 1.35.
+- `FORMATION_COUNTS` [3,5,7,9]. `FORMATION_ZONE_RATIO` 0.3. `FORMATION_MIN_SEPARATION` = 24*2*1.2.
+- `FORMATION_SHAPE` line/wedge/column/defense.
+- `FORMATION_FIRST_LINE` WHITE 1, BLACK 7. `SECOND` WHITE 2, BLACK 6. `EDGE` 0–8.
+- `FORMATION_FACEOFF_REQUEST` black {360,640}, white {360,100}.
+- `FORMATION_SLOT` mine/custom/preset. `FORMATION_MODE` preset/custom.
+- `FORMATION_STORAGE_KEY` `dotori-alkkagi:my-formation`. `formationStorageKey(slot)` = `${KEY}:${slot}`.
+
+### 슬링샷 `computeSlingshotLaunch(origin, pointer, options)`
+
+```
+raw = pointer - origin
+gained = origin + raw * gain(1)
+pull = clamp to maxPull 360
+mag = |pull|
+power = mag / maxPull
+powerScale = clampPowerScale(options.powerScale ?? 3.8)
+travel = mag * powerScale
+speed = min(travel * 0.025, maxSpeed 54)
+velocity = normalize(-pull) * speed
+inDeadzone = |raw| < 14
+```
+
+발사 방향은 당김의 **반대**.
+
+### `setMatchConfig({ mode, difficulty })`
+
+허용 모드 pvp|ai|solo|spectate, 난이도 beginner|intermediate|expert. spectator/aiOpponent 정리. `inputLocked=false`. 마지막에 **`applyDefaultMatchFormation(count)` → `setupFormation(count, PRESET, LINE)`**. 호출 측이 `applySavedPlayFormation`으로 덮는다.
+
+### 프리셋 배치 `createPresetLayout(count, shape)`
+
+격자 Y: 텍스처 1024, pad 68, mesh 480, inset 68. `t = (pad + index * ((1024-pad*2)/8)) / 1024` → Matter Y.
+
+`rowXs(count, inner, padX)`: count≥7이면 pad 40 아니면 88. 1알은 중앙.
+
+count 1 → 항상 line(대치). count 3+defense → wedge. count 5+column → line.
+
+| count | shape | 백 진영 (흑은 Y 미러) |
+| --- | --- | --- |
+| * | line | `rowXs(count)` at homeY(WHITE) |
+| 3 | wedge | 뒤 2 + 앞 1(간격 중앙) |
+| 5 | wedge | 뒤 3 + 앞 2(gapXs) |
+| 5 | defense | 뒤 3 + 앞 2 alignedXs |
+| 7 | wedge | 뒤 4 pad 56 + 앞 gaps |
+| 7 | defense | 뒤 4 + 앞 3 aligned |
+| 9 | wedge | 뒤 5 pad 40 + 앞 gaps |
+| 9 | defense | 뒤 5 + 앞 4 aligned |
+| * | column | packCampGrid(..., 'column') |
+
+### 승패
+
+생존 0 → 상대 승. 동시 0 → draw. surrender → 상대 승. 결과 지연 `resultRevealDelayMs` = 낙사 있으면 1920 else 박자 420.
+
+## 6. 보기 회전
+
+`BOARD_SPIN_STEP` π/4, `BOARD_SPIN_MS` 260, `BOARD_SPIN_TAP_PX` 14, `BOARD_SPIN_CLEAR_SLOP` 1.85.
+
+`canBoardSpin`: inMatch+matchStarted, not paused/placementOnly/killCam/aiming/inputBlocked, phase IDLE.
+
+빈 판 탭: `isBoardSpinTarget`(outer 안 + 살아 있는 돌에서 radius*1.85 밖) + `isBoardSpinTap` ≤14px → **+45°만**.
+
+`#board-spin-btn` +45°, `#board-spin-ccw` −45°. `canBoardSpinButton`은 내 턴이 아니어도 보기 회전 가능, AIMING/RESOLVING만 막음.
+
+`boardSpinFabVisible`: inMatch+started, not lobby/spectating/gameOver.
+
+## 7. 진형 저장 (`FormationModal` / SettingsModal)
+
+키: `dotori-alkkagi:play-formation`, `dotori-alkkagi:play-formation-slot`, 슬롯 `dotori-alkkagi:my-formation:{mine|custom|preset}`. 레거시 mine은 `dotori-alkkagi:my-formation`.
+
+`GAME_MODE_KEY` `dotori_game_mode` (solo|ai만 저장). `AI_DIFFICULTY_KEY` `dotori_ai_difficulty_v2` (없으면 expert).
+
+`apply()`: 대국 중이면 차단. `commitPlayLayout` 검증 → `saveFormationSlot` + `savePlayFormation` → `setMatchConfig` + `applySavedPlayFormation` → 톤·조준선·prefs → `onApply({ toLobby:true })`.
+
+로비 1인/AI: `setGameMode(mode, { startMatch:true })` → 위와 같으나 `onApply({ toLobby:false })` → `enterMatchRoom()` → 솔로/AI면 다시 `applyCurrentPlayFormation` → `beginMatchReady`. `shouldStartWithoutPeer(solo|ai)` true.
+
+`playFormationPickVisible`: inMatch && awaitingStart && (solo|ai). HUD 칩은 slot preset.
+
+한 판 더 솔로/AI: `enterMatchRoom` + `setMatchConfig` + `applyCurrentPlayFormation`.
+
+## 8. AI
+
+`AI_ERROR_DEG` 전부 0. `AI_HIT_EMBED` 12/14/18. `AI_THINK` MIN 1000 MAX 1500 AIM 500. `STONE_CONTACT_SLOP` 6. `DOUBLE_ALIGN_COS` = cos(14°).
+
+`TurnManager.schedule`: 생각/조준 타이머가 이미 있으면 no-op.
+
+## 9. 렌더 (`ThreeRenderer`)
+
+- Camera: Perspective FOV 38, near 4, far 4000. camBase (0, 780, 640), lookBase (0, 15, 10). 쿼터뷰 pitch 52°, 거리 이진 탐색 280–2800.
+- 판: `BOARD_MESH_SIZE` 480, `BOARD_WORLD_INSET` 68, `BOARD_THICKNESS` 70, `SIDE_WOOD` 0x241208, `STONE_Y` = 70+8.
+- `worldScale` = (480-68)/720. 알 Sphere(r * worldScale * 1.14, 32, 18).scale(1, 0.46, 1).
+- 흑 재질 0x111111 roughness 0.15 metalness 0.28. 백 0xfcf9f2 r 0.18 m 0.1.
+- `viewYaw`만 회전. `spinView(step)` 260ms 이징.
+- 킬캠: SLOW_MO_S 1.5, CLOSE_BACK 132, CLOSE_UP 44, CLOSE_SIDE 28, DROP_DEPTH 155, CLOSE_FOV 34, MIN_CAM_Y 92, BOARD_HALF 240.
+- 조준선 색 `dotori_guide_color` 기본 `#ffcc00`. 사용 `dotori_guide_enabled` '1'/'0'.
+- 톤 `dotori_board_color` JSON `{ preset, base, hue, bright }`. 기본 base `#f1bf70`. 레거시 `#e9c587` → `#f1bf70`. hue −40..40, bright 슬라이더 65..135를 /100.
+- `ViewportShell.PLAYFIELD_HUD` topPx 76, bottomPx 178, nameBottomPx 248, edgePad 0.03.
+
+## 10. 사운드
+
+키 `dotori-alkkagi-volume`(기본 0.8), `dotori-alkkagi-mute`.
+
+| 메서드 | 시점 |
+| --- | --- |
+| unlock | 첫 pointer/touch/click, engine pointerdown |
+| setVolume / setMuted | 설정 |
+| playClashByVelocity | 충돌, min 0.35, ref 25 |
+| playFlick(power) | launch |
+| playFall | stoneFallen 장외 |
+| playDoor enter/leave | 대전방 출입 |
+| playStart | applyMatchStarted |
+| playTurn | turnEnd |
+| playTimerTick | 긴급 ≤5s |
+| playResult win/lose/draw/end | gameOver |
+| playSurrender | reason surrender |
+| setPull / stopPull | aiming |
+| setAmbience lobby/wait/match/off | syncSceneMode |
+
+## 11. 네트워크
+
+채널 `dotori-lobby`. `BROADCAST_WAIT_MS` 400. Presence heartbeat 30s, stale 5분, retrack grace 2s. `KEEP_CONNECTED_NICKNAME` `도토리1`. `VIRTUAL_USER_PREFIX` `virt_`.
+
+이벤트: `spectator_update`, `room_state`, `pvp_invite`, `lobby_state`, `lobby_sweep`, `ai_wallet`, **`visit_log`**.
+
+`room_state` 필드: roomId, hostId, hostName, guestId, guestName, inviteTargetId, started, phase, matchGen, seq, acked, hostAcorns, guestAcorns, firstId. `PVP_ROOM_ID` `dotori-pvp` (제품 오프).
+
+`spectator_update` (`packMatchSync`): kind board|launch|camp; event ''|launch|camp|start|turnEnd|timer|gameOver; matchId, roomId, senderId, timestamp, started, phase, currentTurn, turnRemainingMs, winner, scores; stones[{id,color,fallen,position,x,y,velocity}]; launch {stoneId,x,y,velocity,force,power,color}; seq, matchGen.
+
+동기 타이밍: TURN_END_WATCHDOG 900, CAMP_WAIT 800, HOST_CLOCK 250.
+
+`visit_log` 행 `{ userId, nickname≤5, firstSeen, lastSeen, visits }`. merge: firstSeen min, lastSeen max, visits max. `noteVisit`는 기존 lastSeen부터 30분(`VISIT_SESSION_GAP_MS`) 지나야 visits+1. `queryVisitLog`는 nick/userId 부분문자열. `formatVisitStamp` `YYYY-MM-DD HH:mm`. **clear/delete 함수 금지.**
+
+재배치: READY_ASK_MS 5000, REARRANGE_MS 10000, FIRST_HINT_AFTER_MS 3000.
+
+도토리: `shouldSettleAcorns`는 mode==='ai' && started && !spectating && winner not null/draw. settleKey `roomId:matchGen:winner`.
+
+## 12. 저장소
+
+부팅이 **지움**: `dotori-alkkagi-acorns`(local), `dotori-alkkagi-nickname`(local만), `dotori-alkkagi-scene-bg`.
+
+| 키 | 저장소 | 비고 |
+| --- | --- | --- |
+| `dotori-alkkagi:visit-log` | local | **앱이 지우지 않음** |
+| `dotori-alkkagi:play-formation` | local | 본판 좌표 |
+| `dotori-alkkagi:play-formation-slot` | local | mine/custom/preset |
+| `dotori-alkkagi:my-formation` + `:mine|:custom|:preset` | local | |
+| `dotori_power_ratio` | local | |
+| `dotori_game_mode` | local | solo\|ai |
+| `dotori_ai_difficulty_v2` | local | 없으면 expert |
+| `dotori_guide_enabled` | local | '1'/'0', 없으면 on |
+| `dotori_guide_color` | local | #rrggbb |
+| `dotori_board_color` | local | JSON |
+| `dotori-alkkagi-action-cam` | local | 없으면 on |
+| `dotori-alkkagi-rearrange-ask` | local | 없으면 on |
+| `dotori-alkkagi-volume` | local | 기본 0.8 |
+| `dotori-alkkagi-mute` | local | |
+| `dotori-alkkagi-book-skip` | local | |
+| `dotori-alkkagi-night-claim` | local | {userId,tab,at} |
+| `dotori-alkkagi-night-user` | session | |
+| `dotori-alkkagi-night-acorns` | session | |
+| `dotori-alkkagi-nickname` | session | |
+| `dotori-alkkagi-book-seen` | session | |
+| `dotori-alkkagi-invite-only-seen` | session | 안내 자체는 안 띄움 |
+
+닉: `NICKNAME_MAX` 5 (코드포인트 `Array.from`). prefix `도토리`. 중복 시 접미 2–99 또는 다음 빈 `도토리N`.
+
+## 13. 제품 시작 vs leftover
+
+구현해도 제품이 호출하지 않음: `startOwnPvpRoom`, 공개 방 참가, 대기실 `ai_dotori` 좌석, `openPvpGuidePick`(false), `shouldOfferInviteOnlyNotice`(false). 테스트(`RoomState`, `PvpInvite`, `LobbyAi` 등)와 스텁은 남겨 296을 맞출 수 있다. UI는 hidden.
+
+1인: `myColor = currentTurn`. AI: 사람 black, 봇 white, 백 턴 입력 잠금. 혼자 로비 기본 제안은 AI이나 강제 전환하지 않음(`defaultGameModeForLobbyCount`).
+
+## 14. 테스트 (재현 완료 조건)
+
+`vitest run` 40파일 / 296 Pass.
+
+파일: VisitLog, PlayFormation, BoardSpin, StonePick, AIBot, FormationCamp, GameEngine, MatchReady, MatchStart, MatchSync, AcornPolicy, NightSession, Nickname, GuideColor, PlayPrefs, HudPower, MatchFab, ViewportShell, Tutorial, ResultBeat, BoardTone, FormationSlot, SoundEngine, KillCam, LobbyRooms, LobbyClinic, LobbyAi, LobbySeed, PresencePolicy, RoomState, PvpInvite, PvpCycle, PvpRematchLoop, PvpLiveSync, ChatSpectator, RealtimeClient, DualMock, GameExit, SeatYaw, MatchPlacement.
+
+`test:loop` (`?loop=1`, 포트 4179, env supabase 빈 문자열). 기기 393×852, 360×780, 412×1014, 1280×720, dpr 2.
+
+단언 요약: 판 NDC contained + `#table` 안 + spanX≥1.55 spanY≥0.40. 로비 가이드에 1인+AI, `1:1` 없음. `#lobby-mode-pvp` hidden. 초대만 안내 hidden. 가이드 표제에 도토리, 튜토리얼/바로시작. 점검 ≥18행, 액션캠·재배치·당김·바로시작·대기방·내닉네임·조준선. AI 입장 후 재배치 박스. 시작 버튼 `--board-cx` 중앙. 진형 3버튼이 `#guide-btn`과 같은 줄. 시작 후 진형 hidden, 턴 FAB 보임. 설정 미리보기 ≥220, **이력** 버튼, 액션캠/재배치 체크, scene-bg 키 없음. iPhone에서 결과 `대기실` 버튼.
+
+출력 `public/test-result.png` (iPhone 캡처).
