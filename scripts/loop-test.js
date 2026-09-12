@@ -274,6 +274,34 @@ try {
     if (!startGate.ok) {
       throw new Error(`${device.name} start gate missing: ${JSON.stringify(startGate)}`);
     }
+    const formationPick = await page.evaluate(() => {
+      const guide = document.getElementById('guide-btn')?.getBoundingClientRect();
+      const ids = ['play-formation-line', 'play-formation-wedge', 'play-formation-defense'];
+      const labels = ['일자형', '쐐기형', '방어형'];
+      const buttons = ids.map((id) => document.getElementById(id));
+      const boxes = buttons.map((el) => el?.getBoundingClientRect());
+      const sameRow = boxes.every((box) => box && guide && Math.abs(box.top - guide.top) <= 3);
+      const sameH = boxes.every((box) => box && Math.abs(box.height - 50) <= 2);
+      const afterGuide = boxes[0] && guide && boxes[0].left >= guide.right - 2;
+      const chained = boxes.every((box, i) => i === 0 || (boxes[i - 1] && box.left >= boxes[i - 1].right - 2));
+      const named = buttons.every((el, i) => el?.textContent.includes(labels[i]));
+      return {
+        ok: Boolean(
+          buttons.every((el) => el && !el.hidden)
+          && named
+          && sameRow
+          && sameH
+          && afterGuide
+          && chained
+        ),
+        hidden: buttons.map((el) => el?.hidden),
+        tops: boxes.map((box) => box?.top),
+        guideTop: guide?.top,
+      };
+    });
+    if (!formationPick.ok) {
+      throw new Error(`${device.name} formation pick missing: ${JSON.stringify(formationPick)}`);
+    }
     await page.evaluate(() => document.getElementById('match-start')?.click());
     await page.waitForTimeout(350);
     const hud = await page.evaluate(() => {
@@ -298,6 +326,11 @@ try {
       const spin = spinEl?.getBoundingClientRect();
       const spinCcwEl = document.getElementById('board-spin-ccw');
       const spinCcw = spinCcwEl?.getBoundingClientRect();
+      const pickHidden = ['play-formation-line', 'play-formation-wedge', 'play-formation-defense']
+        .every((id) => {
+          const el = document.getElementById(id);
+          return !el || el.hidden || getComputedStyle(el).display === 'none';
+        });
       const fab = document.querySelector('#stage .floating-buttons')?.getBoundingClientRect();
       const stageEl = document.getElementById('stage');
       const boardCx = parseFloat(getComputedStyle(stageEl).getPropertyValue('--board-cx'));
@@ -363,6 +396,7 @@ try {
           && nameOnBoard
           && spinOk
           && spinCcwOk
+          && pickHidden
           && Math.abs(slotMid - mid) <= 10
           && track.width >= 80
           && Math.abs(timer.height - acorn.height) <= 2
@@ -384,6 +418,7 @@ try {
         nameOnBoard,
         spinOk,
         spinCcwOk,
+        pickHidden,
         guideW: guide.width,
         trackW: track.width,
         surrenderW: surrender.width,

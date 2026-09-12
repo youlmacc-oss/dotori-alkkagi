@@ -12,7 +12,7 @@
     <meta property="og:description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
     <meta property="og:type" content="website" />
     <meta name="description" content="도토리 알까기 한판 승부! 링크를 눌러 입장하세요." />
-    <link rel="stylesheet" href="/src/style.css?v=20260911i" />
+    <link rel="stylesheet" href="/src/style.css?v=20260912b" />
     <style>
       :root {
         --hud-gold: #f4c06e;
@@ -515,6 +515,25 @@
       }
       #stage .guide-btn:not(.is-on) {
         background: #2a1810; border-color: rgba(255,255,255,0.22); color: #8a7a68;
+      }
+      #stage .play-formation-btn {
+        flex: 0 0 50px; width: 50px; min-width: 50px; max-width: 50px;
+        height: 50px; padding: 0; box-sizing: border-box;
+        border-radius: 7px; border: 1.5px solid var(--hud-border);
+        background: var(--hud-dark); color: var(--hud-gold);
+        font-size: 11px; font-weight: 900; letter-spacing: -0.02em;
+        cursor: pointer;
+      }
+      #stage .play-formation-btn.is-on {
+        background: #f4c06e; border-color: #f4c06e; color: #1a0c0a;
+      }
+      #stage .play-formation-btn[hidden] { display: none !important; }
+      #stage.is-lobby .play-formation-btn,
+      #stage.is-settings .play-formation-btn {
+        visibility: hidden; pointer-events: none;
+      }
+      #stage .floating-buttons:has(.play-formation-btn:not([hidden])) {
+        gap: 6px;
       }
       #stage .power-fill {
         display: block; width: 100%; height: 100%; max-width: 100%;
@@ -1291,6 +1310,9 @@
               <button type="button" class="surrender-fab" id="surrender-btn" aria-label="기권">기권</button>
               <button type="button" class="lobby-leave-fab" id="lobby-leave" aria-label="대기방">대기방</button>
               <button type="button" class="guide-btn is-on" id="guide-btn" aria-label="조준선 사용중" title="조준선 사용중" aria-pressed="true"><span class="guide-btn-ico" aria-hidden="true">🎯</span><span class="guide-btn-state">ON</span></button>
+              <button type="button" class="play-formation-btn" id="play-formation-line" data-play-shape="line" hidden aria-label="일자형">일자형</button>
+              <button type="button" class="play-formation-btn" id="play-formation-wedge" data-play-shape="wedge" hidden aria-label="쐐기형">쐐기형</button>
+              <button type="button" class="play-formation-btn" id="play-formation-defense" data-play-shape="defense" hidden aria-label="방어형">방어형</button>
             </div>
             <div class="control-panel">
               <div class="power-slot">
@@ -1550,6 +1572,6 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.js?v=20260911i"></script>
+    <script type="module" src="/src/main.js?v=20260912b"></script>
   </body>
 </html>

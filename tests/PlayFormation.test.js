@@ -2,14 +2,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   FORMATION_MODE,
   FORMATION_SHAPE,
+  FORMATION_SLOT,
   FORMATION_ZONE,
+  GAME_MODE,
   GameEngine,
   STONE_COLOR,
   campsAreSegregated,
+  clampLayoutToFormationZone,
   commitPlayLayout,
   createPresetLayout,
 } from '../src/physics/GameEngine.js';
-import { loadPlayFormation, savePlayFormation } from '../src/ui/FormationModal.js';
+import {
+  applySavedPlayFormation,
+  loadPlayFormation,
+  playFormationPickVisible,
+  savePlayFormation,
+  selectPlayFormationShape,
+} from '../src/ui/FormationModal.js';
 
 const memory = new Map();
 
@@ -48,19 +57,107 @@ describe('설정 저장 → 본판 진형', () => {
     expect(again.ok).toBe(true);
     expect(engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)).toHaveLength(7);
     expect(engine.stones.filter((s) => s.color === STONE_COLOR.WHITE)).toHaveLength(7);
-    const started = engine.applyDefaultMatchFormation(loaded.count);
+    const started = applySavedPlayFormation(engine, loaded);
     expect(started.ok).toBe(true);
-    expect(engine.formation.shape).toBe(FORMATION_SHAPE.LINE);
+    expect(engine.formation.count).toBe(7);
     expect(engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)).toHaveLength(7);
-    const lineXs = createPresetLayout(7, FORMATION_SHAPE.LINE)
-      .filter((s) => s.color === STONE_COLOR.BLACK)
+    const savedXs = layout.filter((s) => s.color === STONE_COLOR.BLACK)
       .map((s) => s.x)
       .sort((a, b) => a - b);
     const liveXs = engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)
       .map((s) => s.body.position.x)
       .sort((a, b) => a - b);
-    liveXs.forEach((x, i) => expect(x).toBeCloseTo(lineXs[i], 5));
+    liveXs.forEach((x, i) => expect(x).toBeCloseTo(savedXs[i], 5));
     engine.destroy();
+  });
+
+  it('설정에서 저장한 쐐기를 본판에 그대로 올린다', () => {
+    installMemoryStorage();
+    const engine = new GameEngine({
+      autoStart: false,
+      soundEngine: { playClashByVelocity: vi.fn(), unlock: vi.fn() },
+    });
+    const wedge = clampLayoutToFormationZone(
+      createPresetLayout(5, FORMATION_SHAPE.WEDGE),
+      undefined,
+      FORMATION_ZONE.CUSTOM,
+    );
+    savePlayFormation({
+      count: 5,
+      mode: FORMATION_MODE.PRESET,
+      shape: FORMATION_SHAPE.WEDGE,
+      slot: FORMATION_SLOT.PRESET,
+      positions: wedge,
+    });
+    engine.setMatchConfig({ mode: GAME_MODE.AI });
+    const applied = applySavedPlayFormation(engine, loadPlayFormation());
+    expect(applied.ok).toBe(true);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.WEDGE);
+    const savedYs = wedge.filter((s) => s.color === STONE_COLOR.BLACK)
+      .map((s) => s.y)
+      .sort((a, b) => a - b);
+    const liveYs = engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)
+      .map((s) => s.body.position.y)
+      .sort((a, b) => a - b);
+    liveYs.forEach((y, i) => expect(y).toBeCloseTo(savedYs[i], 5));
+    engine.destroy();
+  });
+
+  it('시작 전 일자형·쐐기형·방어형을 고르면 본판 진형이 바뀐다', () => {
+    installMemoryStorage();
+    const engine = new GameEngine({
+      autoStart: false,
+      soundEngine: { playClashByVelocity: vi.fn(), unlock: vi.fn() },
+    });
+    savePlayFormation({
+      count: 5,
+      mode: FORMATION_MODE.PRESET,
+      shape: FORMATION_SHAPE.LINE,
+      positions: createPresetLayout(5, FORMATION_SHAPE.LINE),
+    });
+    expect(selectPlayFormationShape(engine, FORMATION_SHAPE.WEDGE).ok).toBe(true);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.WEDGE);
+    expect(selectPlayFormationShape(engine, FORMATION_SHAPE.DEFENSE).ok).toBe(true);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.DEFENSE);
+    expect(selectPlayFormationShape(engine, FORMATION_SHAPE.LINE).ok).toBe(true);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.LINE);
+    expect(loadPlayFormation().shape).toBe(FORMATION_SHAPE.LINE);
+    engine.destroy();
+  });
+
+  it('모드를 바꿔 다시 깔아도 설정해 둔 진형을 다시 올린다', () => {
+    installMemoryStorage();
+    const engine = new GameEngine({
+      autoStart: false,
+      soundEngine: { playClashByVelocity: vi.fn(), unlock: vi.fn() },
+    });
+    const wedge = clampLayoutToFormationZone(
+      createPresetLayout(5, FORMATION_SHAPE.WEDGE),
+      undefined,
+      FORMATION_ZONE.CUSTOM,
+    );
+    savePlayFormation({
+      count: 5,
+      mode: FORMATION_MODE.PRESET,
+      shape: FORMATION_SHAPE.WEDGE,
+      slot: FORMATION_SLOT.PRESET,
+      positions: wedge,
+    });
+    engine.setMatchConfig({ mode: GAME_MODE.AI });
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.LINE);
+    const again = applySavedPlayFormation(engine, loadPlayFormation());
+    expect(again.ok).toBe(true);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.WEDGE);
+    engine.destroy();
+  });
+
+  it('1인·AI만 시작 전에 진형 고르기를 보여 준다', () => {
+    const wait = { inMatch: true, awaitingStart: true };
+    expect(playFormationPickVisible({ ...wait, mode: GAME_MODE.SOLO })).toBe(true);
+    expect(playFormationPickVisible({ ...wait, mode: GAME_MODE.AI })).toBe(true);
+    expect(playFormationPickVisible({ ...wait, mode: GAME_MODE.PVP })).toBe(false);
+    expect(playFormationPickVisible({ ...wait, mode: GAME_MODE.AI, awaitingStart: false })).toBe(false);
+    expect(playFormationPickVisible({ ...wait, mode: GAME_MODE.AI, lobby: true })).toBe(false);
   });
 
   it('미리보기만 바꿔도 본판 돌 수는 그대로다', () => {

@@ -11,7 +11,14 @@ import {
   shouldApplyLobbyDefaultMode,
 } from './physics/GameEngine.js';
 import { TurnManager } from './ai/TurnManager.js';
-import { SettingsModal } from './ui/FormationModal.js';
+import {
+  SettingsModal,
+  applySavedPlayFormation,
+  loadPlayFormation,
+  loadPlayFormationShape,
+  playFormationPickVisible,
+  selectPlayFormationShape,
+} from './ui/FormationModal.js';
 import { PowerRatioController } from './ui/SettingsPanel.js';
 import { BOARD_SPIN_STEP, boardSpinFabVisible, canBoardSpin, canBoardSpinButton, isBoardSpinTap, isBoardSpinTarget } from './ui/BoardSpin.js';
 import { GUIDE_LINE_KEY, KILL_CAM, ResponsiveViewport, ThreeRenderer, shouldAttachKillCam } from './ui/ThreeRenderer.js';
@@ -354,6 +361,28 @@ function syncBoardSpinBtn() {
     if (!btn) continue;
     btn.hidden = hidden;
     btn.disabled = disabled;
+  }
+}
+
+function applyCurrentPlayFormation() {
+  const play = loadPlayFormation();
+  if (play?.positions?.length) applySavedPlayFormation(engine, play);
+  syncPlayFormationPick();
+}
+
+function syncPlayFormationPick() {
+  const visible = playFormationPickVisible({
+    inMatch: inMatchRoom,
+    awaitingStart,
+    lobby: lobbyVisible,
+    spectating: engine.phase === PHASE.SPECTATING,
+    mode: engine.gameMode,
+  });
+  const play = loadPlayFormation();
+  const selected = play?.mode === 'preset' ? loadPlayFormationShape() : '';
+  for (const btn of document.querySelectorAll('[data-play-shape]')) {
+    btn.hidden = !visible;
+    btn.classList.toggle('is-on', visible && btn.dataset.playShape === selected);
   }
 }
 
@@ -927,6 +956,7 @@ function syncStartGate() {
     hint?.classList.remove('is-rearrange-count');
     if (askBox) askBox.hidden = true;
     if (inviteCopyBtn) inviteCopyBtn.hidden = true;
+    syncPlayFormationPick();
     return;
   }
   const view = currentReadyView();
@@ -970,6 +1000,7 @@ function syncStartGate() {
     if (hintShow) hint.textContent = hintView.text;
   }
   syncInviteShare();
+  syncPlayFormationPick();
 }
 
 function peerHasStartedMatch() {
@@ -1216,6 +1247,7 @@ function applyMatchStarted({ publishStart = false } = {}) {
       mode: startResetMode(engine.gameMode),
       difficulty: engine.aiDifficulty,
     });
+    if (localStart) applyCurrentPlayFormation();
   }
   awaitingStart = false;
   matchStarted = true;
@@ -2011,6 +2043,9 @@ function enterMatchRoom() {
     publishRoomState();
   }
   beginMatchReady();
+  if (engine.gameMode === GAME_MODE.SOLO || engine.gameMode === GAME_MODE.AI) {
+    applyCurrentPlayFormation();
+  }
   renderer.snapSeat(engine.getSnapshot());
   hideLobby({ force: true });
   void holdMatchWakeLock();
@@ -2169,6 +2204,9 @@ function restartPvpRematch() {
   })) {
     enterMatchRoom();
     engine.setMatchConfig({ mode: engine.gameMode, difficulty: engine.aiDifficulty });
+    if (engine.gameMode === GAME_MODE.SOLO || engine.gameMode === GAME_MODE.AI) {
+      applyCurrentPlayFormation();
+    }
     renderer.resetFx();
     matchBadge.textContent = '흑 턴 15';
     return false;
@@ -3213,6 +3251,25 @@ document.getElementById('ready-ask-no')?.addEventListener('click', () => {
 guideBtn.addEventListener('click', () => {
   settingsModal.toggleGuide();
 });
+
+for (const btn of document.querySelectorAll('[data-play-shape]')) {
+  btn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!playFormationPickVisible({
+      inMatch: inMatchRoom,
+      awaitingStart,
+      lobby: lobbyVisible,
+      spectating: engine.phase === PHASE.SPECTATING,
+      mode: engine.gameMode,
+    })) return;
+    const picked = selectPlayFormationShape(engine, btn.dataset.playShape, engine.formation?.count ?? 5);
+    if (!picked.ok) return;
+    renderer.snapSeat(engine.getSnapshot());
+    flushMatchView();
+    syncPlayFormationPick();
+  });
+}
 
 document.getElementById('result-again').addEventListener('click', () => {
   hideResult();

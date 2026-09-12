@@ -82,6 +82,7 @@ const SHAPES_BY_COUNT = {
 export const GAME_MODE_KEY = 'dotori_game_mode';
 export const AI_DIFFICULTY_KEY = 'dotori_ai_difficulty_v2';
 export const PLAY_FORMATION_KEY = 'dotori-alkkagi:play-formation';
+export const PLAY_FORMATION_SLOT_KEY = 'dotori-alkkagi:play-formation-slot';
 
 function parseFormationPayload(raw, slot = FORMATION_SLOT.MINE) {
   if (!raw) return null;
@@ -148,6 +149,37 @@ function saveMatchConfig(mode, difficulty) {
   } catch { /* ignore */ }
 }
 
+export function resolvePlayFormationSlot(slot) {
+  if (slot === FORMATION_SLOT.CUSTOM || slot === FORMATION_SLOT.PRESET || slot === FORMATION_SLOT.MINE) {
+    return slot;
+  }
+  return FORMATION_SLOT.PRESET;
+}
+
+export function loadPlayFormationSlot() {
+  try {
+    return resolvePlayFormationSlot(localStorage.getItem(PLAY_FORMATION_SLOT_KEY));
+  } catch {
+    return FORMATION_SLOT.PRESET;
+  }
+}
+
+export function savePlayFormationSlot(slot) {
+  const id = resolvePlayFormationSlot(slot);
+  try {
+    localStorage.setItem(PLAY_FORMATION_SLOT_KEY, id);
+  } catch { /* ignore */ }
+  return id;
+}
+
+export function playFormationPickVisible(state = {}) {
+  return state.inMatch === true
+    && state.awaitingStart === true
+    && state.lobby !== true
+    && state.spectating !== true
+    && (state.mode === GAME_MODE.SOLO || state.mode === GAME_MODE.AI);
+}
+
 export function loadPlayFormation() {
   try {
     const raw = localStorage.getItem(PLAY_FORMATION_KEY);
@@ -160,6 +192,7 @@ export function loadPlayFormation() {
       count,
       mode: data.mode === FORMATION_MODE.PRESET ? FORMATION_MODE.PRESET : FORMATION_MODE.CUSTOM,
       shape: data.shape,
+      slot: resolvePlayFormationSlot(data.slot),
       positions,
     };
   } catch {
@@ -172,10 +205,98 @@ export function savePlayFormation(payload) {
     count: payload.count,
     mode: payload.mode,
     shape: payload.shape,
+    slot: resolvePlayFormationSlot(payload.slot),
     positions: (payload.positions ?? []).map((s) => ({ ...s })),
   };
   localStorage.setItem(PLAY_FORMATION_KEY, JSON.stringify(body));
+  savePlayFormationSlot(body.slot);
   return body;
+}
+
+export function layoutForPlaySlot(slot, fallbackCount = 5) {
+  const id = resolvePlayFormationSlot(slot);
+  const saved = loadFormationSlot(id);
+  if (saved) {
+    return {
+      count: saved.count,
+      mode: id === FORMATION_SLOT.PRESET ? FORMATION_MODE.PRESET : FORMATION_MODE.CUSTOM,
+      shape: saved.shape ?? FORMATION_SHAPE.LINE,
+      slot: id,
+      positions: saved.positions,
+      empty: false,
+    };
+  }
+  const play = loadPlayFormation();
+  const count = FORMATION_COUNTS.includes(play?.count) ? play.count : fallbackCount;
+  return {
+    count,
+    mode: id === FORMATION_SLOT.PRESET ? FORMATION_MODE.PRESET : FORMATION_MODE.CUSTOM,
+    shape: FORMATION_SHAPE.LINE,
+    slot: id,
+    positions: createPresetLayout(count, FORMATION_SHAPE.LINE),
+    empty: true,
+  };
+}
+
+export function applySavedPlayFormation(engine, payload) {
+  if (!engine) return { ok: false, reason: 'missing', layout: null };
+  if (!payload?.positions?.length) {
+    return engine.applyDefaultMatchFormation(payload?.count);
+  }
+  const result = engine.setupFormation(payload.count, FORMATION_MODE.CUSTOM, payload.positions);
+  if (result.ok && engine.formation) {
+    engine.formation.mode = payload.mode === FORMATION_MODE.PRESET
+      ? FORMATION_MODE.PRESET
+      : FORMATION_MODE.CUSTOM;
+    engine.formation.shape = payload.shape ?? FORMATION_SHAPE.LINE;
+  }
+  return result;
+}
+
+export function selectPlayFormationSlot(engine, slot, fallbackCount = 5) {
+  const payload = layoutForPlaySlot(slot, fallbackCount);
+  const result = applySavedPlayFormation(engine, payload);
+  if (result.ok) savePlayFormation(payload);
+  return {
+    ok: Boolean(result.ok),
+    slot: payload.slot,
+    empty: Boolean(payload.empty),
+    payload,
+    result,
+  };
+}
+
+export const PLAY_FORMATION_PICK_SHAPES = Object.freeze([
+  { id: FORMATION_SHAPE.LINE, label: '일자형' },
+  { id: FORMATION_SHAPE.WEDGE, label: '쐐기형' },
+  { id: FORMATION_SHAPE.DEFENSE, label: '방어형' },
+]);
+
+export function resolvePlayFormationShape(shape) {
+  if (shape === FORMATION_SHAPE.WEDGE || shape === FORMATION_SHAPE.DEFENSE) return shape;
+  return FORMATION_SHAPE.LINE;
+}
+
+export function loadPlayFormationShape() {
+  return resolvePlayFormationShape(loadPlayFormation()?.shape);
+}
+
+export function selectPlayFormationShape(engine, shape, fallbackCount = 5) {
+  const play = loadPlayFormation();
+  const count = FORMATION_COUNTS.includes(play?.count)
+    ? play.count
+    : (FORMATION_COUNTS.includes(fallbackCount) ? fallbackCount : 5);
+  const id = resolvePlayFormationShape(shape);
+  const result = engine.setupFormation(count, FORMATION_MODE.PRESET, id);
+  if (!result.ok) return { ok: false, shape: id, payload: null, result };
+  const payload = savePlayFormation({
+    count,
+    mode: FORMATION_MODE.PRESET,
+    shape: result.formation?.shape ?? id,
+    slot: FORMATION_SLOT.PRESET,
+    positions: result.layout,
+  });
+  return { ok: true, shape: payload.shape, payload, result };
 }
 
 function loadBoardColorState() {
@@ -306,11 +427,19 @@ export class SettingsModal {
     engine.setMatchConfig({ mode: this.gameMode, difficulty: this.aiDifficulty });
     const play = loadPlayFormation();
     if (play?.count) this.count = play.count;
-    this.shape = FORMATION_SHAPE.LINE;
-    this.mode = FORMATION_MODE.PRESET;
-    this.usingMine = false;
-    const started = this.engine.applyDefaultMatchFormation(this.count);
-    this.draft = started.layout ?? createPresetLayout(this.count, FORMATION_SHAPE.LINE);
+    if (play?.positions?.length) {
+      this.shape = play.shape ?? FORMATION_SHAPE.LINE;
+      this.mode = play.mode === FORMATION_MODE.CUSTOM ? FORMATION_MODE.CUSTOM : FORMATION_MODE.PRESET;
+      this.usingMine = play.slot === FORMATION_SLOT.MINE;
+      const started = applySavedPlayFormation(this.engine, play);
+      this.draft = started.layout ?? play.positions.map((s) => ({ ...s }));
+    } else {
+      this.shape = FORMATION_SHAPE.LINE;
+      this.mode = FORMATION_MODE.PRESET;
+      this.usingMine = false;
+      const started = this.engine.applyDefaultMatchFormation(this.count);
+      this.draft = started.layout ?? createPresetLayout(this.count, FORMATION_SHAPE.LINE);
+    }
     this.syncChrome();
     this.drawPreview();
   }
@@ -562,16 +691,18 @@ export class SettingsModal {
     this.syncChrome();
     this.drawPreview();
     if (options.startMatch) {
-      this.shape = FORMATION_SHAPE.LINE;
-      this.mode = FORMATION_MODE.PRESET;
-      const started = this.engine.applyDefaultMatchFormation(this.count);
-      this.draft = started.layout ?? createPresetLayout(this.count, FORMATION_SHAPE.LINE);
-      savePlayFormation({
-        count: this.count,
-        mode: FORMATION_MODE.PRESET,
-        shape: FORMATION_SHAPE.LINE,
-        positions: this.draft,
-      });
+      const play = loadPlayFormation();
+      if (play?.positions?.length) {
+        this.count = play.count;
+        this.shape = play.shape ?? FORMATION_SHAPE.LINE;
+        this.mode = play.mode === FORMATION_MODE.CUSTOM ? FORMATION_MODE.CUSTOM : FORMATION_MODE.PRESET;
+        this.usingMine = play.slot === FORMATION_SLOT.MINE;
+        const started = applySavedPlayFormation(this.engine, play);
+        this.draft = started.layout ?? play.positions.map((s) => ({ ...s }));
+      } else {
+        const started = this.engine.applyDefaultMatchFormation(this.count);
+        this.draft = started.layout ?? createPresetLayout(this.count, FORMATION_SHAPE.LINE);
+      }
       this.onApply?.({ mode: kept, difficulty: this.aiDifficulty, reset: true, toLobby: false });
     }
   }
@@ -673,23 +804,35 @@ export class SettingsModal {
       this.setStatus(SETTINGS_APPLY_BLOCK);
       return;
     }
-    this.shape = FORMATION_SHAPE.LINE;
-    this.mode = FORMATION_MODE.PRESET;
-    this.usingMine = false;
-    const result = this.engine.applyDefaultMatchFormation(this.count);
+    this.draft = commitPlayLayout(this.count, this.draft, undefined, FORMATION_ZONE.CUSTOM);
+    const check = validateFormationLayout(this.draft, undefined, FORMATION_ZONE.CUSTOM);
+    if (!check.ok) {
+      this.setStatus('배치가 유효하지 않아 적용할 수 없습니다');
+      return;
+    }
+    const slot = this.placementSlot();
+    const mode = slot === FORMATION_SLOT.PRESET ? FORMATION_MODE.PRESET : FORMATION_MODE.CUSTOM;
+    const payload = {
+      count: this.count,
+      mode,
+      shape: this.shape,
+      slot,
+      positions: this.draft.map((s) => ({ ...s })),
+    };
+    saveFormationSlot(slot, {
+      count: payload.count,
+      shape: payload.shape,
+      positions: payload.positions,
+    });
+    savePlayFormation(payload);
+    saveMatchConfig(this.gameMode, this.aiDifficulty);
+    this.engine.setMatchConfig({ mode: this.gameMode, difficulty: this.aiDifficulty });
+    const result = applySavedPlayFormation(this.engine, payload);
     if (!result.ok) {
       this.setStatus('적용에 실패했습니다');
       return;
     }
-    this.draft = result.layout ?? createPresetLayout(this.count, FORMATION_SHAPE.LINE);
-    savePlayFormation({
-      count: this.count,
-      mode: FORMATION_MODE.PRESET,
-      shape: FORMATION_SHAPE.LINE,
-      positions: this.draft,
-    });
-    saveMatchConfig(this.gameMode, this.aiDifficulty);
-    this.engine.setMatchConfig({ mode: this.gameMode, difficulty: this.aiDifficulty });
+    this.draft = result.layout ?? payload.positions;
     this.renderer.resetFx();
     this.renderer.setBoardColor(this.resolvedColor());
     this.committedColor = { ...this.color };
