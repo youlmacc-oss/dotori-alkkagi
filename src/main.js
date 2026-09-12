@@ -1779,6 +1779,16 @@ function clinicSnapshot() {
     hasInviteOnlyNotice: Boolean(document.getElementById('invite-only-notice') && document.getElementById('invite-only-ok')),
     hasBookSkip: Boolean(document.getElementById('lobby-book-skip')),
     hasBookPlay: Boolean(document.getElementById('lobby-book-play')),
+    hasPlayCount3: Boolean(document.getElementById('play-count-3')),
+    hasPlayCount5: Boolean(document.getElementById('play-count-5')),
+    hasPlayCount7: Boolean(document.getElementById('play-count-7')),
+    hasPlayCount9: Boolean(document.getElementById('play-count-9')),
+    hasPlayLine: Boolean(document.getElementById('play-formation-line')),
+    hasPlayWedge: Boolean(document.getElementById('play-formation-wedge')),
+    hasPlayDefense: Boolean(document.getElementById('play-formation-defense')),
+    hasVisitLogOpen: Boolean(document.getElementById('visit-log-open')),
+    hasSpinCw: Boolean(document.getElementById('board-spin-btn')),
+    hasSpinCcw: Boolean(document.getElementById('board-spin-ccw')),
   };
 }
 

@@ -73,8 +73,8 @@
 - 사이트 접속 표시 상한 10명. `canAdmitUser`: 이미 목록에 있거나 length < 10.
 - 같은 탭(F5)만 닉·도토리·유저 id 유지. 영구 전적 없음.
 - 부팅 시 **지운다**: localStorage `dotori-alkkagi-acorns`, `dotori-alkkagi-nickname`(영구), `dotori-alkkagi-scene-bg`. **지우지 않는다**: `dotori-alkkagi:visit-log`.
-- 가이드북 7장(cover/pull/modes/ready/acorn/fall/sound). 체크 `다음 접속시에는 이 창을 띄우지 않음`. `바로시작`(현재 모드로 대전 입장).
-- 점검 탭: 물리·1인·AI·조준선·설정 항목. `1:1 참가 배제` 문구는 쓰지 않는다.
+- 가이드북 7장(cover/pull/modes/ready/acorn/fall/sound). 글자는 `UI_PROMPTS`와 동일. 붙임·AI 5mm 도주·알 수/진형·나무판 장외·이력·턴을 설명한다. 체크 `다음 접속시에는 이 창을 띄우지 않음`. `바로시작`(현재 모드로 대전 입장).
+- 점검 탭 26행: 엔진·3D·사운드·세션·F5·1인/AI·제품·닉·바로시작·선공·도토리·기권·결과·액션캠·재배치·당김·정원·게이트·FAB·환경설정·혼자 두기·같은 색 붙임·AI 도주·알 수·진형·이력·턴. 리드 `물리 · 붙임 · AI 도주 · 알 수·진형 · 이력 · 턴 · 조준선 · 설정`. `1:1 참가 배제` 문구는 쓰지 않는다.
 
 ## 5. 진형
 
@@ -118,3 +118,7 @@
 ## 10. 제외
 
 텍스트 채팅, 이모지, 토너먼트, 계정·랭킹·매칭 서버, 1:1 공개 매치, 관전 제품화, 대기실 봇 좌석, Vercel, 배경 이미지 업로드(`dotori-alkkagi-scene-bg` 레거시는 부팅 시 삭제).
+
+## 11. 본판 동결
+
+이 네 MD + `npm test` 305 + `test:loop` 0이면 **지금 라이브와 같은 제품**이다. 새 기능을 넣지 않는다. 라이브 `https://youlmacc-oss.github.io/dotori-alkkagi/`, `?v=20260912f`.

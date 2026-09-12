@@ -104,7 +104,7 @@ src/network/LobbySeed.js
 src/network/DualMock.js
 tests/*.test.js                    # 41파일. SameColorBond·AIBot 포함
 public/                            # test-result.png. 본판에 public/assets 디렉터리 없음
-index.html                         # ?v=20260912e + Cache-Control
+index.html                         # ?v=20260912f + Cache-Control
 ```
 
 ## 4. 부팅 (`main.js`)
@@ -353,6 +353,16 @@ count 1 → 항상 line(대치). count 3+defense → wedge. count 5+column → l
 
 `test:loop` (`?loop=1`, 포트 4179, env supabase 빈 문자열). 기기 393×852, 360×780, 412×1014, 1280×720, dpr 2.
 
-단언 요약: 판 NDC contained + `#table` 안 + spanX≥1.55 spanY≥0.40. 로비 가이드에 1인+AI, `1:1` 없음. `#lobby-mode-pvp` hidden. 초대만 안내 hidden. 가이드 표제에 도토리, 튜토리얼/바로시작. 점검 ≥18행, 액션캠·재배치·당김·바로시작·대기방·내닉네임·조준선. AI 입장 후 재배치 박스. 시작 버튼 `--board-cx` 중앙. 알 수 3·5·7·9와 진형 3버튼이 `#guide-btn`과 같은 줄, 기권·대기방·조준선 50×50. 시작 후 선택 칩 hidden, 턴 FAB 보임. 설정 미리보기 ≥220, **이력** 버튼, 액션캠/재배치 체크, scene-bg 키 없음. iPhone에서 결과 `대기실` 버튼.
+단언 요약: 판 NDC contained + `#table` 안 + spanX≥1.55 spanY≥0.40. 로비 가이드에 1인+AI, `1:1` 없음. `#lobby-mode-pvp` hidden. 초대만 안내 hidden. 가이드 표제에 도토리, 튜토리얼/바로시작. 점검 ≥18행, 액션캠·재배치·당김·바로시작·대기방·내닉네임·조준선·붙임·도주·3알·이력·턴. AI 입장 후 재배치 박스. 시작 버튼 `--board-cx` 중앙. 알 수 3·5·7·9와 진형 3버튼이 `#guide-btn`과 같은 줄, 기권·대기방·조준선 50×50. 시작 후 선택 칩 hidden, 턴 FAB 보임. 설정 미리보기 ≥220, **이력** 버튼, 액션캠/재배치 체크, scene-bg 키 없음. iPhone에서 결과 `대기실` 버튼.
+
+`runLobbyClinic` 26행 id 순서: engine, renderer, sound, session, night, modes, product, nick, bookSkip, first, acorn, forfeit, result, actionCam, ready, pull, cap, gate, fabs, volume, realtime, bond, aiFlee, playHud, visit, spin.
+
+헬퍼: `bondClinicOk` SCALE 1.5·SLOP 6·문턱 hold, `aiFleeClinicOk` gap 11 + clustered→flee / spaced→knockout, `playHudClinicOk` `#play-count-3|5|7|9` + `#play-formation-line|wedge|defense`, `visitClinicOk` 키·query/note·clear/delete 없음 + `#visit-log-open`, `spinClinicOk` STEP π/4·MS 260 + `#board-spin-btn` / `#board-spin-ccw`.
+
+`clinicSnapshot`(`main.js`)은 엔진·렌더·사운드·닉·도토리·모드 버튼·게이트·FAB·볼륨·액션캠·재배치·조준선색·당김 문구·킬캠 1.5·북 스킵/바로시작 + 위 칩·이력·턴 id를 넣는다.
+
+`renderClinicList` 리드: `물리 · 붙임 · AI 도주 · 알 수·진형 · 이력 · 턴 · 조준선 · 설정`.
 
 출력 `public/test-result.png` (iPhone 캡처).
+
+본판 동결: 네 MD 밖의 기능을 추가하지 않는다. 재현 완료 = 41파일/305 + loop exit 0 + Pages `/dotori-alkkagi/`.

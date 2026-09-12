@@ -22,10 +22,11 @@
 8. leftover 모듈(`RoomState`, `PvpInvite`, `LobbyAi` 등)은 테스트 305를 맞추기 위해 스텁으로 둘 수 있으나 제품 UI를 열지 않는다.
 9. 같은 색 붙임은 `SameColorBond.js`만. GameEngine은 RESOLVING `afterUpdate`에서 `planSameColorBondHold`만 호출. 슬링샷·다른 색 바디 숫자는 바꾸지 않는다.
 10. AI 도주(`kind: flee`)는 `AIBot.js`만. 흑 클러스터(표면≤11)면 판 안 짧은 샷. 장외·상대 선충돌 금지.
-11. `npm test` 100% (41파일 / 305). `npm run test:loop` exit 0. `index.html` `?v=20260912e`.
-12. Git은 사용자 승인 전 금지. 배포는 사용자가 **백업 및 배포**를 말한 뒤에만 `main` 푸시.
+11. 가이드북 7장 글자는 `UI_PROMPTS`. 점검은 `runLobbyClinic` 26행(붙임·도주·알 수·이력·턴 포함).
+12. `npm test` 100% (41파일 / 305). `npm run test:loop` exit 0. `index.html` `?v=20260912f`.
+13. Git은 사용자 승인 전 금지. 배포는 사용자가 **백업 및 배포**를 말한 뒤에만 `main` 푸시.
 
-완료 판정: 테스트·캡처 통과. 라이브가 1인·AI·설정 이력·진형 저장·카메라 턴·같은 색 붙임·AI 클러스터 도주를 `PRD`와 같게 동작. Pages `base /dotori-alkkagi/`.
+완료 판정: 테스트·캡처 통과. 라이브가 1인·AI·설정 이력·진형 저장·카메라 턴·같은 색 붙임·AI 클러스터 도주·가이드/점검 26행을 `PRD`와 같게 동작. Pages `base /dotori-alkkagi/`. **본판 동결** — 네 문서에 없는 기능을 더하지 않는다.
 
 ---
 

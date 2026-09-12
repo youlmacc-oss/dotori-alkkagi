@@ -146,6 +146,11 @@ try {
           && text.includes('대기방')
           && text.includes('내닉네임')
           && text.includes('조준선')
+          && text.includes('붙임')
+          && text.includes('도주')
+          && text.includes('3알')
+          && text.includes('이력')
+          && text.includes('턴')
           && !text.includes('1:1 참가 배제'),
         n: rows.length,
       };

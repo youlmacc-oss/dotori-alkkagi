@@ -76,10 +76,20 @@ describe('대기실 자가진단', () => {
       hasInviteOnlyNotice: true,
       hasBookSkip: true,
       hasBookPlay: true,
+      hasPlayCount3: true,
+      hasPlayCount5: true,
+      hasPlayCount7: true,
+      hasPlayCount9: true,
+      hasPlayLine: true,
+      hasPlayWedge: true,
+      hasPlayDefense: true,
+      hasVisitLogOpen: true,
+      hasSpinCw: true,
+      hasSpinCcw: true,
     });
     expect(report.ok).toBe(true);
     expect(report.fails).toBe(0);
-    expect(report.total).toBe(21);
+    expect(report.total).toBe(26);
     expect(report.items.find((row) => row.id === 'product')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'volume')?.detail).toContain('조준선');
     expect(report.items.find((row) => row.id === 'bookSkip')?.ok).toBe(true);
@@ -91,6 +101,11 @@ describe('대기실 자가진단', () => {
     expect(report.items.find((row) => row.id === 'actionCam')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'ready')?.ok).toBe(true);
     expect(report.items.find((row) => row.id === 'pull')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'bond')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'aiFlee')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'playHud')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'visit')?.ok).toBe(true);
+    expect(report.items.find((row) => row.id === 'spin')?.ok).toBe(true);
     expect(isLiveRealtime({ constructor: { name: 'MockSupabaseClient' } })).toBe(false);
     expect(isLiveRealtime({ constructor: { name: 'DualMockSupabaseClient' } })).toBe(false);
   });
@@ -121,12 +136,22 @@ describe('대기실 자가진단', () => {
     expect(GUIDE_PAGES.find((page) => page.id === 'fall')?.points.some((line) => line.includes('액션캠'))).toBe(true);
     expect(GUIDE_PAGES.find((page) => page.id === 'sound')?.title).toContain('액션캠');
     expect(GUIDE_PAGES.find((page) => page.id === 'cover')?.points.some((line) => line.includes('바로시작'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'cover')?.points.some((line) => line.includes('3·5·7·9'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'pull')?.points.some((line) => line.includes('같은 색'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'modes')?.points.some((line) => line.includes('5mm'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'ready')?.points.some((line) => line.includes('일자형'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'fall')?.points.some((line) => line.includes('나무판'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'sound')?.points.some((line) => line.includes('이력'))).toBe(true);
+    expect(GUIDE_PAGES.find((page) => page.id === 'sound')?.points.some((line) => line.includes('턴'))).toBe(true);
     expect(renderGuidePage(guidePageAt(0))).toContain('튜토리얼 시작');
     expect(renderGuidePage(guidePageAt(1))).toContain('당기고');
     expect(renderGuidePage(guidePageAt(3))).toContain('재배치');
     expect(renderClinicList(report)).toContain('clinic-row');
     expect(renderClinicList(report)).toContain('액션캠');
     expect(renderClinicList(report)).toContain('기권');
+    expect(renderClinicList(report)).toContain('붙임');
+    expect(renderClinicList(report)).toContain('도주');
+    expect(renderClinicList(report)).toContain('이력');
     expect(pvpJoinClinicOk()).toBe(true);
     expect(pvpInviteAcceptClinicOk()).toBe(true);
     expect(pvpPresenceClinicOk()).toBe(true);

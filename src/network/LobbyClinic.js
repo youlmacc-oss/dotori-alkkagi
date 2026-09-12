@@ -18,7 +18,9 @@ import { SESSION_ACORNS, acornSettleKey, shouldForfeitOnLeave, shouldForfeitOnOp
 import { AI_LOBBY_ACORNS, shouldSettleAiAcorns } from './LobbyAi.js';
 import { RESULT_BEAT_MS, RESULT_FALL_HOLD_MS } from '../physics/ResultBeat.js';
 import {
+  AI_DIFFICULTY,
   BOARD,
+  FORMATION_COUNTS,
   FORMATION_FIRST_LINE,
   FORMATION_ZONE,
   GAME_MODE,
@@ -30,6 +32,16 @@ import {
   finalizeStartedMode,
   intendedGameMode,
 } from '../physics/GameEngine.js';
+import {
+  SAME_COLOR_BOND,
+  effectiveBondSpeed,
+  sameColorBondThreshold,
+  shouldHoldSameColorBond,
+} from '../physics/SameColorBond.js';
+import { PLAYER_CLUSTER_GAP, calculateShot, playerHasCluster } from '../ai/AIBot.js';
+import { BOARD_SPIN_MS, BOARD_SPIN_STEP } from '../ui/BoardSpin.js';
+import { PLAY_FORMATION_PICK_COUNTS, PLAY_FORMATION_PICK_SHAPES } from '../ui/FormationModal.js';
+import * as VisitLog from './VisitLog.js';
 import { MY_NICK_LABEL, NICKNAME_MAX } from './Nickname.js';
 import { shouldOfferInviteOnlyNotice } from '../ui/GuideBook.js';
 import {
@@ -518,6 +530,55 @@ export function lobbyInviteClinicOk(_input = {}) {
     && intendedGameMode(GAME_MODE.PVP) === GAME_MODE.AI;
 }
 
+export function bondClinicOk() {
+  const threshold = sameColorBondThreshold();
+  return SAME_COLOR_BOND.SCALE === 1.5
+    && SAME_COLOR_BOND.CONTACT_SLOP === 6
+    && Math.abs(SAME_COLOR_BOND.BASELINE_SPEED - (360 * 3.8 * 0.025 * 0.3)) < 1e-9
+    && shouldHoldSameColorBond(threshold - 0.01) === true
+    && shouldHoldSameColorBond(threshold + 0.01) === false
+    && effectiveBondSpeed(10, 0) === 0
+    && effectiveBondSpeed(10, 1) === 10;
+}
+
+export function aiFleeClinicOk() {
+  const clustered = [{ id: 1, x: 360, y: 600 }, { id: 2, x: 414, y: 600 }];
+  const spaced = [{ id: 1, x: 360, y: 600 }, { id: 2, x: 200, y: 600 }];
+  const ai = [{ id: 10, x: 360, y: 200 }];
+  const flee = calculateShot(ai, clustered, AI_DIFFICULTY.EXPERT, { rng: () => 0.5, board: BOARD });
+  const attack = calculateShot(ai, spaced, AI_DIFFICULTY.EXPERT, { rng: () => 0.5, board: BOARD });
+  return PLAYER_CLUSTER_GAP === 11
+    && playerHasCluster(clustered) === true
+    && playerHasCluster(spaced) === false
+    && flee.kind === 'flee'
+    && attack.kind !== 'flee';
+}
+
+export function playHudClinicOk(input = {}) {
+  const counts = PLAY_FORMATION_PICK_COUNTS.map((row) => row.id).join();
+  const shapes = PLAY_FORMATION_PICK_SHAPES.map((row) => row.id).join();
+  return counts === FORMATION_COUNTS.join()
+    && shapes === 'line,wedge,defense'
+    && Boolean(input.hasPlayCount3 && input.hasPlayCount5 && input.hasPlayCount7 && input.hasPlayCount9)
+    && Boolean(input.hasPlayLine && input.hasPlayWedge && input.hasPlayDefense);
+}
+
+export function visitClinicOk(input = {}) {
+  return VisitLog.VISIT_LOG_KEY === 'dotori-alkkagi:visit-log'
+    && typeof VisitLog.queryVisitLog === 'function'
+    && typeof VisitLog.noteVisit === 'function'
+    && !('clearVisitLog' in VisitLog)
+    && !('deleteVisitLog' in VisitLog)
+    && !('removeVisit' in VisitLog)
+    && Boolean(input.hasVisitLogOpen);
+}
+
+export function spinClinicOk(input = {}) {
+  return BOARD_SPIN_STEP === Math.PI / 4
+    && BOARD_SPIN_MS === 260
+    && Boolean(input.hasSpinCw && input.hasSpinCcw);
+}
+
 export function pvpExpireClinicOk() {
   return PVP_WAIT_EXPIRE_MS === 0;
 }
@@ -685,6 +746,36 @@ export function runLobbyClinic(input = {}) {
       true,
       '대기실 접속 현황 없음 · 1인·AI만',
       CLINIC_PASS,
+    ),
+    item(
+      'bond',
+      '같은 색 붙임',
+      bondClinicOk(),
+      bondClinicOk() ? '약한 충격은 붙고 정면 1.5배만 갈라짐' : '붙임 상수 불일치',
+    ),
+    item(
+      'aiFlee',
+      'AI 클러스터 도주',
+      aiFleeClinicOk(),
+      aiFleeClinicOk() ? '상대 알 붙음·5mm 안이면 판 안으로 달아남' : 'AI 도주 규칙 불일치',
+    ),
+    item(
+      'playHud',
+      '알 수 · 진형',
+      playHudClinicOk(input),
+      playHudClinicOk(input) ? '시작 전 3알·5알·7알·9알 · 일자·쐐기·방어' : '시작 전 선택 칩 누락',
+    ),
+    item(
+      'visit',
+      '접속 이력',
+      visitClinicOk(input),
+      visitClinicOk(input) ? '조회만 · 앱이 지우지 않음' : '이력 버튼/키 누락',
+    ),
+    item(
+      'spin',
+      '보기 회전 · 턴',
+      spinClinicOk(input),
+      spinClinicOk(input) ? '턴 왼쪽 −45° · 오른쪽·빈 판 +45°' : '턴 버튼 누락',
     ),
   ];
 
