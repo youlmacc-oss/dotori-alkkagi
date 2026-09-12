@@ -8,7 +8,7 @@
 
 ## 재구축
 
-빈 PC에서는 네 MD만 연다.
+빈 PC에서는 네 MD만 연다. 상세 순서·유의는 `PRD.md` §11.
 
 1. Node 20 → `ARCHITECTURE.md` 스택·스크립트·파일 트리·상수·식·키.
 2. `UI_PROMPTS.md`로 `index.html`과 HUD. 1:1·초대 DOM은 hidden. `?v=20260912f`.
@@ -47,6 +47,7 @@ Git은 승인 전 금지.
 - 이력 패널은 설정 랩 오버레이. 도크 높이 불변.
 - 같은 색 붙임은 RESOLVING만. AI는 흑 클러스터를 때리지 않고 판 안으로 달아난다.
 - ROI 밖 오염 0.00%.
+- 재구축 유의 전문은 `PRD.md` §11. Playwright Chromium · Node 20 · visit-log 비삭제.
 
 ---
 

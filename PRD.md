@@ -119,6 +119,43 @@
 
 텍스트 채팅, 이모지, 토너먼트, 계정·랭킹·매칭 서버, 1:1 공개 매치, 관전 제품화, 대기실 봇 좌석, Vercel, 배경 이미지 업로드(`dotori-alkkagi-scene-bg` 레거시는 부팅 시 삭제).
 
-## 11. 본판 동결
+## 11. 본판 동결 · 다른 PC 재구축
 
-이 네 MD + `npm test` 305 + `test:loop` 0이면 **지금 라이브와 같은 제품**이다. 새 기능을 넣지 않는다. 라이브 `https://youlmacc-oss.github.io/dotori-alkkagi/`, `?v=20260912f`.
+이 네 MD만으로 **지금 라이브와 같은 제품**을 다시 만든다. 네 문서에 없는 기능은 추가하지 않는다.
+
+| 항목 | 값 |
+| --- | --- |
+| 라이브 | https://youlmacc-oss.github.io/dotori-alkkagi/ |
+| 저장소 | https://github.com/youlmacc-oss/dotori-alkkagi |
+| 본판 커밋 예 | `cf956d8` (clinic·guidebook 동결 푸시) |
+| 에셋 캐시 | `index.html` CSS/JS `?v=20260912f` |
+| 호스팅 | GitHub Pages만. `GITHUB_PAGES=1`이면 Vite `base` `/dotori-alkkagi/` |
+| 재현 완료 | `npm test` 41파일 / 305 Pass + `npm run test:loop` exit 0 |
+
+다른 PC에서 빈 폴더로 시작할 때:
+
+1. **Node 20**만 쓴다. Pages 워크플로와 같다. 18/22로 맞추지 않는다.
+2. `ARCHITECTURE.md` §1대로 `package.json` · `vite.config.js` · `scripts/purge-cache.js` · `.github/workflows/pages.yml`을 만든다. `npm ci` (실패 시 `npm install`). React/Vue를 넣지 않는다.
+3. `UI_PROMPTS.md`대로 `index.html` DOM·id·hidden·인라인 HUD CSS·Cache-Control(`no-cache, no-store, must-revalidate`)·`?v=20260912f`. `src/style.css` 토큰. `public/assets/` 디렉터리는 만들지 않는다.
+4. `ARCHITECTURE.md` §3 파일 트리. 엔트리 `src/main.js`. 본판 렌더는 `ThreeRenderer`만 `new`. `CanvasRenderer`는 파일이 있어도 import하지 않는다.
+5. 상수·식·키는 `ARCHITECTURE` 숫자를 그대로. 추측으로 슬링샷·바디·붙임 문턱을 바꾸지 않는다.
+6. 흐름은 이 문서: 대기실 → 1인/AI → 재배치 → 시작 전 알 수/진형 → 슬링샷 → 결과. 1:1 버튼은 `hidden` + no-op.
+7. `npm test` 41파일 / 305. `npm run test:loop` (Playwright, 포트 4179, `?loop=1`) exit 0이면 `public/test-result.png`가 생긴다.
+8. Pages: `main` 푸시 → `GITHUB_PAGES=1 npm run build` → `dist/index.html`을 `dist/404.html`로 복사. 로컬 확인은 `vite --force`.
+
+### 유의 (막히기 쉬운 곳)
+
+- **네 MD가 전부다.** 이미지 스튜디오, 썸네일 대기열, 3단 합성기, `showSaveFilePicker`, 배경 업로더는 이 게임이 아니다.
+- **1:1은 제품이 아니다.** `RoomState` / `PvpInvite` / `LobbyAi` 등은 테스트 305를 위해 남겨도 된다. `#lobby-mode-pvp`와 초대·관전 UI는 열지 않는다. `shouldOfferInviteOnlyNotice`는 항상 false.
+- **`setMatchConfig`는 LINE을 깐다.** 설정 적용·대전 입장·솔로/AI 한 판 더에서는 직후 `play-formation`을 복구한다. 저장 진형을 일자로 덮으면 실패다.
+- **접속이력 `dotori-alkkagi:visit-log`는 지우지 않는다.** 부팅이 지우는 키는 `dotori-alkkagi-acorns`, 영구 `dotori-alkkagi-nickname`, `dotori-alkkagi-scene-bg`뿐이다. VisitLog에 delete/clear를 만들지 않는다.
+- **같은 색 붙임**은 `SameColorBond.js`만. GameEngine은 RESOLVING `afterUpdate`에서 `planSameColorBondHold`만 호출. 슬링샷·다른 색 restitution은 그대로.
+- **AI 도주**는 `AIBot.js`만. 흑이 붙거나 표면 간격 ≤11(5mm)이면 `kind: flee`. 장외·상대 선충돌 샷은 고르지 않는다.
+- **캐시:** 수정·테스트 전에 `npm run cache:purge`. `dev`는 항상 `vite --force`. 배포 후 화면이 옛것이면 `?v=`를 올리고 강력 새로고침한다.
+- **실시간:** `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`가 있으면 실채널, 없으면 Mock. `test:loop`는 빈 키로 Mock. `?dual=1`은 제품이 아니다.
+- **`test:loop`:** Chromium이 필요하다 (`npx playwright install chromium`). 기기 393×852, 360×780, 412×1014, 1280×720, dpr 2. 점검 화면에 붙임·도주·3알·이력·턴이 보여야 한다. `1:1 참가 배제` 문구는 쓰지 않는다.
+- **가이드북 7장 글자**는 `UI_PROMPTS.md`와 한 글자도 같게. 점검은 `runLobbyClinic` 26행.
+- **HUD:** 기권·대기방·조준선 50×50 불변. 알 수/진형 칩만 줄여 한 줄을 지킨다. 설정 이력은 `.settings-lab` 오버레이, 도크 높이를 키우지 않는다.
+- **보기 회전은 카메라만.** 빈 판 탭은 시계 +45°만. 왼쪽 턴만 반시계. Matter 좌표는 돌리지 않는다.
+- **Windows PowerShell**에서는 `&&` 대신 `;`. 경로에 공백이 있는 MD 파일명은 따옴표로 감싼다.
+- Git 커밋·푸시는 사용자가 **백업 및 배포**를 말한 뒤에만. force-push·amend·훅 생략은 하지 않는다.

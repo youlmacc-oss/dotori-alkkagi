@@ -257,3 +257,7 @@ points:
 `npm run test:loop` 1회. 393×852, 360×780, 412×1014, 1280×720. `?loop=1`. `public/test-result.png`. 설정 도크에 **이력**.
 
 금지: 이미지 스튜디오, 썸네일 대기열, 3단 합성기, `showSaveFilePicker`, `checkerboard-bg`.
+
+## 10. 다른 PC 재현 (화면)
+
+상세 순서·유의는 `PRD.md` §11. `?v=20260912f`. 가이드북 7장 글자·점검 26행 라벨은 이 문서와 동일해야 한다. `#lobby-mode-pvp`와 초대 DOM은 hidden. 기권·대기방·조준선 50×50. `public/assets/` 없음. `test:loop` 전에 `npx playwright install chromium`. 배포 후 옛 화면이면 `?v=` + 강력 새로고침.

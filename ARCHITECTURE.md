@@ -44,12 +44,16 @@ Pages 워크플로 `.github/workflows/pages.yml`: `main` 푸시 또는 workflow_
 
 ## 2. 다른 PC 재현 순서
 
-1. Node 20. 위 `package.json`을 만들고 `npm ci`.
-2. §3 파일 트리대로 모듈을 나눈다. 상수는 이 문서 숫자를 그대로 쓴다.
-3. `index.html`은 `UI_PROMPTS.md` DOM·id·`?v=`·Cache-Control.
+상세 유의는 `PRD.md` §11. 라이브 https://youlmacc-oss.github.io/dotori-alkkagi/ , `?v=20260912f`.
+
+1. **Node 20**. 위 `package.json`을 만들고 `npm ci` (실패 시 `npm install`). 18/22 금지.
+2. §3 파일 트리대로 모듈을 나눈다. 상수는 이 문서 숫자를 그대로 쓴다. React 없음. `main.js`는 `ThreeRenderer`만 new.
+3. `index.html`은 `UI_PROMPTS.md` DOM·id·`?v=20260912f`·Cache-Control. `public/assets/` 없음.
 4. 실시간: `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`가 있으면 실채널, 없으면 Mock. `?loop=1` Mock(캡처). `?dual=1` DualMock(제품 아님).
-5. `npm test` 전원 Pass(본판 41파일 / 305). `npm run test:loop` exit 0, `public/test-result.png`.
-6. Pages는 §1 워크플로. Git은 사용자 승인 후.
+5. `npm test` 전원 Pass(본판 41파일 / 305). `npx playwright install chromium` 후 `npm run test:loop` exit 0, `public/test-result.png`.
+6. Pages는 §1 워크플로 (`GITHUB_PAGES=1`, `404.html` 복사). Git은 사용자 **백업 및 배포** 후.
+
+막히면: `setMatchConfig` 직후 play-formation 복구, visit-log 삭제 금지, SameColorBond/AIBot 식 불변, 1:1 UI hidden, `cache:purge` + `vite --force`. Windows는 `&&` 대신 `;`.
 
 ## 3. 파일 트리
 

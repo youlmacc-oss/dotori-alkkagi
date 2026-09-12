@@ -10,7 +10,7 @@
 
 ## 0. 네 MD만으로 다른 PC에서 재구축
 
-빈 폴더에서 이 순서만 따른다. 네 문서에 없는 기능은 만들지 않는다.
+빈 폴더에서 이 순서만 따른다. 네 문서에 없는 기능은 만들지 않는다. 상세 체크·유의사항은 `PRD.md` §11.
 
 1. Node 20. `ARCHITECTURE.md` §1 `package.json` · Vite 설정 · Pages 워크플로 · purge 스크립트.
 2. `UI_PROMPTS.md`대로 `index.html` DOM·id·hidden·인라인 HUD CSS·`?v=`·Cache-Control. `src/style.css` 토큰.
