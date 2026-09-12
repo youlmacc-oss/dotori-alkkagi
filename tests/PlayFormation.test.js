@@ -17,6 +17,7 @@ import {
   loadPlayFormation,
   playFormationPickVisible,
   savePlayFormation,
+  selectPlayFormationCount,
   selectPlayFormationShape,
 } from '../src/ui/FormationModal.js';
 
@@ -148,6 +149,32 @@ describe('설정 저장 → 본판 진형', () => {
     const again = applySavedPlayFormation(engine, loadPlayFormation());
     expect(again.ok).toBe(true);
     expect(engine.formation.shape).toBe(FORMATION_SHAPE.WEDGE);
+    engine.destroy();
+  });
+
+  it('시작 전 3·5·7·9알을 고르면 본판 수가 바뀐다', () => {
+    installMemoryStorage();
+    const engine = new GameEngine({
+      autoStart: false,
+      soundEngine: { playClashByVelocity: vi.fn(), unlock: vi.fn() },
+    });
+    savePlayFormation({
+      count: 5,
+      mode: FORMATION_MODE.PRESET,
+      shape: FORMATION_SHAPE.WEDGE,
+      positions: createPresetLayout(5, FORMATION_SHAPE.WEDGE),
+    });
+    expect(selectPlayFormationCount(engine, 7).ok).toBe(true);
+    expect(engine.formation.count).toBe(7);
+    expect(engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)).toHaveLength(7);
+    expect(engine.formation.shape).toBe(FORMATION_SHAPE.WEDGE);
+    expect(selectPlayFormationCount(engine, 3).ok).toBe(true);
+    expect(engine.formation.count).toBe(3);
+    expect(engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)).toHaveLength(3);
+    expect(loadPlayFormation().count).toBe(3);
+    expect(selectPlayFormationCount(engine, 9).ok).toBe(true);
+    expect(engine.formation.count).toBe(9);
+    expect(engine.stones.filter((s) => s.color === STONE_COLOR.BLACK)).toHaveLength(9);
     engine.destroy();
   });
 

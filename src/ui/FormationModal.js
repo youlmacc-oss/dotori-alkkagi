@@ -300,6 +300,38 @@ export function selectPlayFormationShape(engine, shape, fallbackCount = 5) {
   return { ok: true, shape: payload.shape, payload, result };
 }
 
+export const PLAY_FORMATION_PICK_COUNTS = Object.freeze([
+  { id: 3, label: '3알' },
+  { id: 5, label: '5알' },
+  { id: 7, label: '7알' },
+  { id: 9, label: '9알' },
+]);
+
+export function resolvePlayFormationCount(count) {
+  const n = Number(count);
+  return FORMATION_COUNTS.includes(n) ? n : 5;
+}
+
+export function loadPlayFormationCount() {
+  return resolvePlayFormationCount(loadPlayFormation()?.count);
+}
+
+export function selectPlayFormationCount(engine, count, fallbackShape = FORMATION_SHAPE.LINE) {
+  const n = resolvePlayFormationCount(count);
+  const play = loadPlayFormation();
+  const shape = resolvePlayFormationShape(play?.shape ?? fallbackShape);
+  const result = engine.setupFormation(n, FORMATION_MODE.PRESET, shape);
+  if (!result.ok) return { ok: false, count: n, payload: null, result };
+  const payload = savePlayFormation({
+    count: n,
+    mode: FORMATION_MODE.PRESET,
+    shape: result.formation?.shape ?? shape,
+    slot: FORMATION_SLOT.PRESET,
+    positions: result.layout,
+  });
+  return { ok: true, count: payload.count, payload, result };
+}
+
 function loadBoardColorState() {
   try {
     const raw = localStorage.getItem(BOARD_COLOR_KEY);
@@ -668,6 +700,20 @@ export class SettingsModal {
       this.draft = createRandomFormationLayout(this.count);
       this.setStatus('임의 배치했습니다. 프리셋을 다시 누르면 다른 배치가 나옵니다');
     }
+    this.syncChrome();
+    this.previewSync();
+  }
+
+  syncFromPlayFormation() {
+    const play = loadPlayFormation();
+    if (!play?.count) return;
+    this.count = play.count;
+    this.shape = play.shape ?? FORMATION_SHAPE.LINE;
+    this.mode = play.mode === FORMATION_MODE.CUSTOM ? FORMATION_MODE.CUSTOM : FORMATION_MODE.PRESET;
+    this.usingMine = play.slot === FORMATION_SLOT.MINE;
+    this.draft = (play.positions ?? []).map((s) => ({ ...s }));
+    this.testSim = null;
+    this.aimPreview = null;
     this.syncChrome();
     this.previewSync();
   }

@@ -48,7 +48,7 @@ Pages 워크플로 `.github/workflows/pages.yml`: `main` 푸시 또는 workflow_
 2. §3 파일 트리대로 모듈을 나눈다. 상수는 이 문서 숫자를 그대로 쓴다.
 3. `index.html`은 `UI_PROMPTS.md` DOM·id·`?v=`·Cache-Control.
 4. 실시간: `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`가 있으면 실채널, 없으면 Mock. `?loop=1` Mock(캡처). `?dual=1` DualMock(제품 아님).
-5. `npm test` 전원 Pass(본판 40파일 / 296). `npm run test:loop` exit 0, `public/test-result.png`.
+5. `npm test` 전원 Pass(본판 40파일 / 297). `npm run test:loop` exit 0, `public/test-result.png`.
 6. Pages는 §1 워크플로. Git은 사용자 승인 후.
 
 ## 3. 파일 트리
@@ -217,7 +217,7 @@ count 1 → 항상 line(대치). count 3+defense → wedge. count 5+column → l
 
 로비 1인/AI: `setGameMode(mode, { startMatch:true })` → 위와 같으나 `onApply({ toLobby:false })` → `enterMatchRoom()` → 솔로/AI면 다시 `applyCurrentPlayFormation` → `beginMatchReady`. `shouldStartWithoutPeer(solo|ai)` true.
 
-`playFormationPickVisible`: inMatch && awaitingStart && (solo|ai). HUD 칩은 slot preset.
+`playFormationPickVisible`: inMatch && awaitingStart && (solo|ai). HUD 칩은 slot preset. 같은 줄 알 수 버튼(`data-play-count` 3/5/7/9)은 `selectPlayFormationCount` → 현재 진형으로 `setupFormation(count, PRESET, shape)` 후 `savePlayFormation`. 설정 미리보기는 `SettingsModal.syncFromPlayFormation`.
 
 한 판 더 솔로/AI: `enterMatchRoom` + `setMatchConfig` + `applyCurrentPlayFormation`.
 
@@ -309,18 +309,18 @@ count 1 → 항상 line(대치). count 3+defense → wedge. count 5+column → l
 
 ## 13. 제품 시작 vs leftover
 
-구현해도 제품이 호출하지 않음: `startOwnPvpRoom`, 공개 방 참가, 대기실 `ai_dotori` 좌석, `openPvpGuidePick`(false), `shouldOfferInviteOnlyNotice`(false). 테스트(`RoomState`, `PvpInvite`, `LobbyAi` 등)와 스텁은 남겨 296을 맞출 수 있다. UI는 hidden.
+구현해도 제품이 호출하지 않음: `startOwnPvpRoom`, 공개 방 참가, 대기실 `ai_dotori` 좌석, `openPvpGuidePick`(false), `shouldOfferInviteOnlyNotice`(false). 테스트(`RoomState`, `PvpInvite`, `LobbyAi` 등)와 스텁은 남겨 297을 맞출 수 있다. UI는 hidden.
 
 1인: `myColor = currentTurn`. AI: 사람 black, 봇 white, 백 턴 입력 잠금. 혼자 로비 기본 제안은 AI이나 강제 전환하지 않음(`defaultGameModeForLobbyCount`).
 
 ## 14. 테스트 (재현 완료 조건)
 
-`vitest run` 40파일 / 296 Pass.
+`vitest run` 40파일 / 297 Pass.
 
 파일: VisitLog, PlayFormation, BoardSpin, StonePick, AIBot, FormationCamp, GameEngine, MatchReady, MatchStart, MatchSync, AcornPolicy, NightSession, Nickname, GuideColor, PlayPrefs, HudPower, MatchFab, ViewportShell, Tutorial, ResultBeat, BoardTone, FormationSlot, SoundEngine, KillCam, LobbyRooms, LobbyClinic, LobbyAi, LobbySeed, PresencePolicy, RoomState, PvpInvite, PvpCycle, PvpRematchLoop, PvpLiveSync, ChatSpectator, RealtimeClient, DualMock, GameExit, SeatYaw, MatchPlacement.
 
 `test:loop` (`?loop=1`, 포트 4179, env supabase 빈 문자열). 기기 393×852, 360×780, 412×1014, 1280×720, dpr 2.
 
-단언 요약: 판 NDC contained + `#table` 안 + spanX≥1.55 spanY≥0.40. 로비 가이드에 1인+AI, `1:1` 없음. `#lobby-mode-pvp` hidden. 초대만 안내 hidden. 가이드 표제에 도토리, 튜토리얼/바로시작. 점검 ≥18행, 액션캠·재배치·당김·바로시작·대기방·내닉네임·조준선. AI 입장 후 재배치 박스. 시작 버튼 `--board-cx` 중앙. 진형 3버튼이 `#guide-btn`과 같은 줄. 시작 후 진형 hidden, 턴 FAB 보임. 설정 미리보기 ≥220, **이력** 버튼, 액션캠/재배치 체크, scene-bg 키 없음. iPhone에서 결과 `대기실` 버튼.
+단언 요약: 판 NDC contained + `#table` 안 + spanX≥1.55 spanY≥0.40. 로비 가이드에 1인+AI, `1:1` 없음. `#lobby-mode-pvp` hidden. 초대만 안내 hidden. 가이드 표제에 도토리, 튜토리얼/바로시작. 점검 ≥18행, 액션캠·재배치·당김·바로시작·대기방·내닉네임·조준선. AI 입장 후 재배치 박스. 시작 버튼 `--board-cx` 중앙. 알 수 3·5·7·9와 진형 3버튼이 `#guide-btn`과 같은 줄, 기권·대기방·조준선 50×50. 시작 후 선택 칩 hidden, 턴 FAB 보임. 설정 미리보기 ≥220, **이력** 버튼, 액션캠/재배치 체크, scene-bg 키 없음. iPhone에서 결과 `대기실` 버튼.
 
 출력 `public/test-result.png` (iPhone 캡처).

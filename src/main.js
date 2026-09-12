@@ -15,8 +15,10 @@ import {
   SettingsModal,
   applySavedPlayFormation,
   loadPlayFormation,
+  loadPlayFormationCount,
   loadPlayFormationShape,
   playFormationPickVisible,
+  selectPlayFormationCount,
   selectPlayFormationShape,
 } from './ui/FormationModal.js';
 import { PowerRatioController } from './ui/SettingsPanel.js';
@@ -381,9 +383,14 @@ function syncPlayFormationPick() {
   });
   const play = loadPlayFormation();
   const selected = play?.mode === 'preset' ? loadPlayFormationShape() : '';
+  const selectedCount = loadPlayFormationCount();
   for (const btn of document.querySelectorAll('[data-play-shape]')) {
     btn.hidden = !visible;
     btn.classList.toggle('is-on', visible && btn.dataset.playShape === selected);
+  }
+  for (const btn of document.querySelectorAll('[data-play-count]')) {
+    btn.hidden = !visible;
+    btn.classList.toggle('is-on', visible && Number(btn.dataset.playCount) === selectedCount);
   }
 }
 
@@ -3277,22 +3284,42 @@ guideBtn.addEventListener('click', () => {
   settingsModal.toggleGuide();
 });
 
+function playPickState() {
+  return {
+    inMatch: inMatchRoom,
+    awaitingStart,
+    lobby: lobbyVisible,
+    spectating: engine.phase === PHASE.SPECTATING,
+    mode: engine.gameMode,
+  };
+}
+
+function afterPlayPick() {
+  settingsModal?.syncFromPlayFormation?.();
+  renderer.snapSeat(engine.getSnapshot());
+  flushMatchView();
+  syncPlayFormationPick();
+}
+
 for (const btn of document.querySelectorAll('[data-play-shape]')) {
   btn.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (!playFormationPickVisible({
-      inMatch: inMatchRoom,
-      awaitingStart,
-      lobby: lobbyVisible,
-      spectating: engine.phase === PHASE.SPECTATING,
-      mode: engine.gameMode,
-    })) return;
+    if (!playFormationPickVisible(playPickState())) return;
     const picked = selectPlayFormationShape(engine, btn.dataset.playShape, engine.formation?.count ?? 5);
     if (!picked.ok) return;
-    renderer.snapSeat(engine.getSnapshot());
-    flushMatchView();
-    syncPlayFormationPick();
+    afterPlayPick();
+  });
+}
+
+for (const btn of document.querySelectorAll('[data-play-count]')) {
+  btn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!playFormationPickVisible(playPickState())) return;
+    const picked = selectPlayFormationCount(engine, btn.dataset.playCount, engine.formation?.shape);
+    if (!picked.ok) return;
+    afterPlayPick();
   });
 }
 

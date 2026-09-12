@@ -2,7 +2,7 @@
 
 이 문서만으로 HUD·대기실·설정을 다시 짤 수 있어야 한다. 규칙은 `PRD.md`, 모듈은 `ARCHITECTURE.md`. **Zero-Layout-Shift**: 기존 컨테이너·버튼은 1px도 바꾸지 않는다.
 
-`index.html`은 인라인 HUD CSS + `/src/style.css?v=` + `/src/main.js?v=`. 본판 버전 문자열 예: `20260912c`. 배포 후 캐시를 깨려면 `?v=`만 올린다.
+`index.html`은 인라인 HUD CSS + `/src/style.css?v=` + `/src/main.js?v=`. 본판 버전 문자열 예: `20260912d`. 배포 후 캐시를 깨려면 `?v=`만 올린다.
 
 ## 1. 셸
 
@@ -141,11 +141,12 @@ box-shadow inset 0 2px 0 #fff, 0 3px 0 #c48a32, 0 6px 10px rgba(140,70,16,.22)
 | `#surrender-btn` | 50×50 flex 0 0 50 | 기권 |
 | `#lobby-leave` | 50×50 | 대기방 |
 | `#guide-btn` | 50×50 | 🎯 + ON/OFF. 기본 is-on |
+| `#play-count-3` … `#play-count-9` | 높이 50, 가로는 28(24–32). `data-play-count` | 3알·5알·7알·9알. 시작 전만 |
 | `#play-formation-line` | 높이 50, `data-play-shape=line` | 일자형. 시작 전만 |
 | `#play-formation-wedge` | `wedge` | 쐐기형 |
 | `#play-formation-defense` | `defense` | 방어형 |
 
-기권·대기방·조준선 **50×50 불변**. 진형 3개는 awaitingStart+solo/ai에서만 보이고 시작 후 hidden. 조준선과 **같은 줄**.
+기권·대기방·조준선 **50×50 불변**. 알 수 4개와 진형 3개는 awaitingStart+solo/ai에서만 보이고 시작 후 hidden. 조준선 오른쪽, **같은 줄** 순서: 3알→5알→7알→9알→일자형→쐐기형→방어형. 좁은 화면에서는 선택 칩만 줄인다 (`flex 0 1`). `?v=` 예: `20260912d`.
 
 ### 4-2. 턴 FAB (flex 밖 absolute)
 
@@ -228,7 +229,7 @@ box-shadow inset 0 2px 0 #fff, 0 3px 0 #c48a32, 0 6px 10px rgba(140,70,16,.22)
 
 ## 8. 고정 카피
 
-도토리 알까기 / 1인 / AI / 기권 / 대기방 / 조준선 / 일자형 / 쐐기형 / 방어형 / 턴 / 시작 / 한 판 더 / 대기실 / 설정 / 저장 / 이력 / 진형 저장 / 진형 열기 / 가이드북 / 점검 / 바로시작 / 튜토리얼 시작 / 게임종료 / 닉네임은 5글자 이내 / 1인 연습 · AI 대국 / 다음 접속시에는 이 창을 띄우지 않음.
+도토리 알까기 / 1인 / AI / 기권 / 대기방 / 조준선 / 3알 / 5알 / 7알 / 9알 / 일자형 / 쐐기형 / 방어형 / 턴 / 시작 / 한 판 더 / 대기실 / 설정 / 저장 / 이력 / 진형 저장 / 진형 열기 / 가이드북 / 점검 / 바로시작 / 튜토리얼 시작 / 게임종료 / 닉네임은 5글자 이내 / 1인 연습 · AI 대국 / 다음 접속시에는 이 창을 띄우지 않음.
 
 ## 9. 캡처
 

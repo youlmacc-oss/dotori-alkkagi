@@ -276,26 +276,42 @@ try {
     }
     const formationPick = await page.evaluate(() => {
       const guide = document.getElementById('guide-btn')?.getBoundingClientRect();
+      const countIds = ['play-count-3', 'play-count-5', 'play-count-7', 'play-count-9'];
+      const countLabels = ['3알', '5알', '7알', '9알'];
       const ids = ['play-formation-line', 'play-formation-wedge', 'play-formation-defense'];
       const labels = ['일자형', '쐐기형', '방어형'];
+      const counts = countIds.map((id) => document.getElementById(id));
       const buttons = ids.map((id) => document.getElementById(id));
+      const countBoxes = counts.map((el) => el?.getBoundingClientRect());
       const boxes = buttons.map((el) => el?.getBoundingClientRect());
-      const sameRow = boxes.every((box) => box && guide && Math.abs(box.top - guide.top) <= 3);
-      const sameH = boxes.every((box) => box && Math.abs(box.height - 50) <= 2);
-      const afterGuide = boxes[0] && guide && boxes[0].left >= guide.right - 2;
+      const row = [...countBoxes, ...boxes];
+      const sameRow = row.every((box) => box && guide && Math.abs(box.top - guide.top) <= 3);
+      const sameH = row.every((box) => box && Math.abs(box.height - 50) <= 2);
+      const afterGuide = countBoxes[0] && guide && countBoxes[0].left >= guide.right - 2;
+      const countThenShape = boxes[0] && countBoxes[3] && boxes[0].left >= countBoxes[3].right - 2;
+      const chainedCounts = countBoxes.every((box, i) => i === 0 || (countBoxes[i - 1] && box.left >= countBoxes[i - 1].right - 2));
       const chained = boxes.every((box, i) => i === 0 || (boxes[i - 1] && box.left >= boxes[i - 1].right - 2));
-      const named = buttons.every((el, i) => el?.textContent.includes(labels[i]));
+      const named = buttons.every((el, i) => el?.textContent.includes(labels[i]))
+        && counts.every((el, i) => el?.textContent.includes(countLabels[i]));
+      const fab50 = ['surrender-btn', 'lobby-leave', 'guide-btn'].every((id) => {
+        const box = document.getElementById(id)?.getBoundingClientRect();
+        return box && Math.abs(box.width - 50) <= 2 && Math.abs(box.height - 50) <= 2;
+      });
       return {
         ok: Boolean(
-          buttons.every((el) => el && !el.hidden)
+          counts.every((el) => el && !el.hidden)
+          && buttons.every((el) => el && !el.hidden)
           && named
           && sameRow
           && sameH
           && afterGuide
+          && countThenShape
+          && chainedCounts
           && chained
+          && fab50
         ),
-        hidden: buttons.map((el) => el?.hidden),
-        tops: boxes.map((box) => box?.top),
+        hidden: [...counts, ...buttons].map((el) => el?.hidden),
+        tops: row.map((box) => box?.top),
         guideTop: guide?.top,
       };
     });
@@ -326,8 +342,10 @@ try {
       const spin = spinEl?.getBoundingClientRect();
       const spinCcwEl = document.getElementById('board-spin-ccw');
       const spinCcw = spinCcwEl?.getBoundingClientRect();
-      const pickHidden = ['play-formation-line', 'play-formation-wedge', 'play-formation-defense']
-        .every((id) => {
+      const pickHidden = [
+        'play-count-3', 'play-count-5', 'play-count-7', 'play-count-9',
+        'play-formation-line', 'play-formation-wedge', 'play-formation-defense',
+      ].every((id) => {
           const el = document.getElementById(id);
           return !el || el.hidden || getComputedStyle(el).display === 'none';
         });

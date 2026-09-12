@@ -13,7 +13,7 @@
 1. Node 20 → `ARCHITECTURE.md` 스택·스크립트·파일 트리·상수·식·키.
 2. `UI_PROMPTS.md`로 `index.html`과 HUD. 1:1·초대 DOM은 hidden.
 3. `PRD.md` 잠금: 1인+AI, 세션 도토리, 이력 비삭제, 저장 진형, 카메라 턴.
-4. `npm test` 100% (296) + `npm run test:loop` exit 0이면 본판 재현.
+4. `npm test` 100% (297) + `npm run test:loop` exit 0이면 본판 재현.
 5. 호스팅 GitHub Pages (`GITHUB_PAGES=1`, `base /dotori-alkkagi/`).
 
 네 문서에 없는 기능은 추가하지 않는다.
